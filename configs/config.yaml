@@ -1,0 +1,45 @@
+# Master Configuration for TDC-Studio
+
+data:
+  type: "admet_loader"
+  dataset_name: "caco2_wang"
+  split_type: "scaffold"
+  batch_size: 32
+  max_epochs: 5
+  params:
+    dataset_name: "caco2_wang"
+    split_type: "scaffold"
+    task_type: "regression"
+
+model:
+  type: "graph_transformer"
+  in_dim: 14
+  hidden_dim: 128
+  num_layers: 3
+  dropout: 0.1
+
+lr: 0.001
+max_epochs: 5
+
+hpo:
+  sampler: "tpe"
+  direction: "minimize"
+  pruner:
+    type: "MedianPruner"
+  search_space:
+    lr:
+      type: "float"
+      low: 0.00005
+      high: 0.005
+      log: true
+    hidden_dim:
+      type: "categorical"
+      choices: [64, 128, 256]
+    dropout:
+      type: "float"
+      low: 0.05
+      high: 0.3
+
+tracking:
+  project: "tdc-studio-admet"
+  enabled: false

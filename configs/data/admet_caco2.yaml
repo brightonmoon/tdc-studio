@@ -1,0 +1,10 @@
+type: "admet_loader"
+dataset_name: "caco2_wang"
+split_type: "scaffold"
+batch_size: 32
+max_epochs: 10
+params:
+  dataset_name: "caco2_wang"
+  split_type: "scaffold"
+  task_type: "regression"
+  metric_name: "mae"

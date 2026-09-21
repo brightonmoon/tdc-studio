@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Testing & Linting caches
+.pytest_cache/
+.ruff_cache/
+
+# Experiment tracking & Artifacts
+wandb/
+models/export/
+models/checkpoint/
+*.pt
+*.pth
+*.onnx
+
+# Temporary logs & notebooks
+*.log
+tdc_colab*.ipynb
+.DS_Store
+Thumbs.db

@@ -1,0 +1,6 @@
+type: "sequence_transformer"
+vocab_size: 120
+hidden_dim: 128
+nhead: 4
+num_layers: 2
+dropout: 0.1

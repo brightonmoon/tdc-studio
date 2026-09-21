@@ -1,0 +1,36 @@
+# Multi-stage serving container optimized with UV and Python 3.11
+FROM ghcr.io/astral-sh/uv:0.6 AS uv_installer
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+COPY --from=uv_installer /uv /uvx /bin/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+# Install packages into target directory
+RUN uv pip install --no-cache --system --target=/install .
+
+# Stage 2: Runtime image
+FROM python:3.11-slim AS runtime
+WORKDIR /app
+
+# RDKit and system C-libraries (libgomp1 is critical for OpenMP)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    libxrender1 \
+    libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local/lib/python3.11/site-packages
+COPY tdc_studio/ /app/tdc_studio/
+COPY deploy/entrypoint.sh /app/entrypoint.sh
+
+RUN chmod +x /app/entrypoint.sh
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
+
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]

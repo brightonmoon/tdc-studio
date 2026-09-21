@@ -1,0 +1,5 @@
+type: "graph_transformer"
+in_dim: 14
+hidden_dim: 128
+num_layers: 3
+dropout: 0.1

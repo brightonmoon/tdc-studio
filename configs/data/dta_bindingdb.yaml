@@ -1,0 +1,10 @@
+type: "dta_loader"
+dataset_name: "bindingdb_kd"
+split_type: "cold_drug"
+batch_size: 16
+max_epochs: 15
+params:
+  dataset_name: "bindingdb_kd"
+  split_type: "cold_drug"
+  task_type: "regression"
+  metric_name: "mae"

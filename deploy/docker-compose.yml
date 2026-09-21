@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  tdc-serving:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.serving
+    image: tdc-studio-serving:latest
+    container_name: tdc-studio-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../models/export:/models:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

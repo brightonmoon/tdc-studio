@@ -12,8 +12,8 @@ def test_colab_runner_build_command():
 
     assert cmd[0] == "colab"
     assert cmd[1] == "run"
-    assert "--gpu=a100" in cmd
-    assert any("colab_bootstrap.sh" in arg for arg in cmd)
+    assert "--gpu=A100" in cmd
+    assert any("colab_runner_job.py" in arg for arg in cmd)
 
 
 def test_colab_runner_dry_run():

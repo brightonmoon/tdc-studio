@@ -57,7 +57,8 @@ class TDCStudioObjective:
                 import wandb
 
                 wandb_run = wandb.init(
-                    project=self.tracking_cfg.get("project", "tdc-studio"),
+                    project=self.tracking_cfg.get("project", "tdc-learning"),
+                    entity=self.tracking_cfg.get("entity", None),
                     group=f"{self.data_cfg.get('dataset_name', 'default')}_optuna",
                     name=f"trial_{trial.number}",
                     config=sampled_params,

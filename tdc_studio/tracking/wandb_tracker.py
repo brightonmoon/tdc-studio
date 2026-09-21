@@ -29,8 +29,9 @@ class WandBTracker:
                 reinit=True,
             )
             return self.run
-        except Exception:
+        except Exception as e:
             # Fallback gracefully if wandb login or offline
+            print(f"[Warning] Failed to initialize W&B run: {e}")
             return None
 
     def log_metrics(self, metrics: Dict[str, Any], step: Optional[int] = None) -> None:

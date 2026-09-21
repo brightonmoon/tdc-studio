@@ -61,22 +61,38 @@ def train(
     model = model_cls(model_cfg)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg.get("lr", 1e-3)))
 
+    # 3. Setup Tracking
+    tracking_cfg = cfg.get("tracking", {})
+    from tdc_studio.tracking.wandb_tracker import WandBTracker
+
+    tracker = WandBTracker(tracking_cfg)
+    tracker.init_run(
+        name=f"train_{data_cfg.get('dataset_name', 'model')}",
+        config=cfg,
+        group=f"{data_cfg.get('dataset_name', 'default')}_train",
+    )
+
     max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", 5))
     console.print(f"Training for {max_epochs} epoch(s) (dry_run={dry_run})...")
 
-    for epoch in range(max_epochs):
-        model.train()
-        for i, batch in enumerate(train_loader):
-            optimizer.zero_grad()
-            preds = model(batch)
-            loss = model.compute_loss(preds, batch["labels"])
-            loss.backward()
-            optimizer.step()
+    try:
+        for epoch in range(max_epochs):
+            model.train()
+            loss = torch.tensor(0.0)
+            for i, batch in enumerate(train_loader):
+                optimizer.zero_grad()
+                preds = model(batch)
+                loss = model.compute_loss(preds, batch["labels"])
+                loss.backward()
+                optimizer.step()
+                if dry_run:
+                    break
+            console.print(f"Epoch {epoch + 1}/{max_epochs} complete. Loss: {loss.item():.4f}")
+            tracker.log_metrics({"epoch": epoch + 1, "loss": loss.item()}, step=epoch + 1)
             if dry_run:
                 break
-        console.print(f"Epoch {epoch + 1}/{max_epochs} complete. Loss: {loss.item():.4f}")
-        if dry_run:
-            break
+    finally:
+        tracker.finish()
 
     console.print("[bold green]Training Completed Successfully![/bold green]")
 

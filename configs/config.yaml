@@ -41,5 +41,6 @@ hpo:
       high: 0.3
 
 tracking:
-  project: "tdc-studio-admet"
-  enabled: false
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

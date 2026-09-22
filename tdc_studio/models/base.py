@@ -16,8 +16,18 @@ class BaseTherapeuticsModel(nn.Module, ABC):
         self.task_type = config.get("task_type", "regression")
 
         # Dynamic Loss Strategy
+        loss_type = str(
+            config.get("loss_type", "smooth_l1" if self.task_type == "regression" else "default")
+        ).lower()
+
         if self.task_type == "regression":
-            self.criterion: nn.Module = nn.MSELoss()
+            if loss_type in ("smooth_l1", "smoothl1", "huber"):
+                beta = float(config.get("huber_beta", 1.0))
+                self.criterion: nn.Module = nn.SmoothL1Loss(beta=beta)
+            elif loss_type in ("l1", "mae"):
+                self.criterion = nn.L1Loss()
+            else:
+                self.criterion = nn.MSELoss()
         elif self.task_type == "binary_classification":
             self.criterion = nn.BCEWithLogitsLoss()
         elif self.task_type == "multiclass_classification":

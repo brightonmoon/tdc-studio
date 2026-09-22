@@ -6,7 +6,8 @@ data:
   dataset_name: "caco2_wang"
   split_type: "scaffold"
   batch_size: 32
-  max_epochs: 15
+  max_epochs: 50
+  metric_name: "composite"
   params:
     dataset_name: "caco2_wang"
     split_type: "scaffold"
@@ -18,9 +19,12 @@ model:
   hidden_dim: 256
   num_layers: 3
   dropout: 0.0754589884825096
+  loss_type: "smooth_l1"
+  huber_beta: 1.0
 
 lr: 0.002441751696153142
-max_epochs: 15
+max_epochs: 50
+early_stopping: 15
 
 tracking:
   project: "tdc-learning"

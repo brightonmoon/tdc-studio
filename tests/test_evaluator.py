@@ -33,6 +33,11 @@ def test_evaluator_regression_metrics():
     r2 = evaluator.compute(preds, targets, "r2")
     assert 0.9 < r2 <= 1.0
 
+    comp = evaluator.compute(preds, targets, "composite")
+    assert isinstance(comp, float)
+    # mae ~ 0.15, rmse ~ 0.15, r2 ~ 0.98 -> comp should be negative (good performance)
+    assert comp < 0.0
+
 
 def test_evaluator_with_torch_tensors():
     preds = torch.tensor([[1.0], [2.0], [3.0]])
@@ -83,6 +88,7 @@ def test_compute_all_suite():
     assert "pearson" in reg_metrics
     assert "spearman" in reg_metrics
     assert "r2" in reg_metrics
+    assert "composite" in reg_metrics
 
     cls_preds = np.array([0.8, 0.2])
     cls_targets = np.array([1, 0])
@@ -99,3 +105,4 @@ def test_is_metric_higher_better():
     assert is_metric_higher_better("mae") is False
     assert is_metric_higher_better("rmse") is False
     assert is_metric_higher_better("mse") is False
+    assert is_metric_higher_better("composite") is False

@@ -112,6 +112,17 @@ class TherapeuticsEvaluator:
                 return 0.0
             return float(r2_score(y_true, y_pred))
 
+        if metric in ("composite", "composite_score", "balanced", "balanced_regression"):
+            mae_val = float(mean_absolute_error(y_true, y_pred))
+            rmse_val = float(np.sqrt(mean_squared_error(y_true, y_pred)))
+            if len(y_true) < 2 or np.all(y_true == y_true[0]):
+                r2_val = 0.0
+            else:
+                r2_val = float(r2_score(y_true, y_pred))
+            r2_clamped = max(-1.0, min(1.0, r2_val))
+            # Minimize MAE and RMSE while maximizing R2 (lower is better)
+            return float(mae_val + 0.5 * rmse_val - r2_clamped)
+
         if metric in ("pearson", "pearsonr", "pcc"):
             if len(y_true) < 2 or np.all(y_true == y_true[0]) or np.all(y_pred == y_pred[0]):
                 return 0.0
@@ -188,6 +199,7 @@ class TherapeuticsEvaluator:
             metrics["pearson"] = self.compute(preds, targets, "pearson")
             metrics["spearman"] = self.compute(preds, targets, "spearman")
             metrics["r2"] = self.compute(preds, targets, "r2")
+            metrics["composite"] = self.compute(preds, targets, "composite")
         elif task in ("binary_classification", "classification"):
             metrics["roc_auc"] = self.compute(preds, targets, "roc_auc")
             metrics["pr_auc"] = self.compute(preds, targets, "pr_auc")

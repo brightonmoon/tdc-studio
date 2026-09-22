@@ -1,6 +1,6 @@
 """Objective function builder for Optuna HPO with W&B integration."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import optuna
 import torch
@@ -99,7 +99,8 @@ class TDCStudioObjective:
             model = model_cls(curr_model_cfg).to(self.device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=sampled_params.get("lr", 1e-3))
 
-            max_epochs = 1 if self.dry_run else self.data_cfg.get("max_epochs", 5)
+            max_epochs = 1 if self.dry_run else int(self.hpo_cfg.get("max_epochs", self.data_cfg.get("max_epochs", 50)))
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, max_epochs), eta_min=1e-6)
             best_metric = -float("inf") if self.direction == "maximize" else float("inf")
 
             for epoch in range(max_epochs):
@@ -120,12 +121,16 @@ class TDCStudioObjective:
                         break
 
                 # Evaluation step
-                val_metric = self.evaluate(model, self.val_loader)
+                val_metric, all_metrics = self.evaluate(model, self.val_loader)
+                scheduler.step()
 
                 if wandb_run is not None:
-                    wandb_run.log(
-                        {"epoch": epoch, f"val_{self.metric_name}": val_metric}, step=epoch
-                    )
+                    log_payload = {
+                        "epoch": epoch + 1,
+                        f"val_{self.metric_name}": val_metric,
+                        **{f"val_{k}": v for k, v in all_metrics.items()},
+                    }
+                    wandb_run.log(log_payload, step=epoch + 1)
 
                 trial.report(val_metric, epoch)
                 if trial.should_prune():
@@ -144,8 +149,8 @@ class TDCStudioObjective:
             if wandb_run is not None:
                 wandb_run.finish()
 
-    def evaluate(self, model: torch.nn.Module, val_loader: Any) -> float:
-        """Evaluate model on validation loader using domain metric."""
+    def evaluate(self, model: torch.nn.Module, val_loader: Any) -> Tuple[float, Dict[str, float]]:
+        """Evaluate model on validation loader using domain metric and full metric suite."""
         model.eval()
         all_preds = []
         all_labels = []
@@ -159,8 +164,10 @@ class TDCStudioObjective:
                     break
 
         if not all_preds:
-            return 0.0
+            return 0.0, {}
 
         preds_cat = torch.cat(all_preds, dim=0)
         labels_cat = torch.cat(all_labels, dim=0)
-        return self.evaluator.compute(preds_cat, labels_cat, self.metric_name)
+        target_metric = self.evaluator.compute(preds_cat, labels_cat, self.metric_name)
+        all_metrics = self.evaluator.compute_all(preds_cat, labels_cat, self.task_type)
+        return target_metric, all_metrics

@@ -5,7 +5,8 @@ data:
   dataset_name: "caco2_wang"
   split_type: "scaffold"
   batch_size: 32
-  max_epochs: 5
+  max_epochs: 50
+  metric_name: "composite"
   params:
     dataset_name: "caco2_wang"
     split_type: "scaffold"
@@ -17,17 +18,22 @@ model:
   hidden_dim: 128
   num_layers: 3
   dropout: 0.1
+  loss_type: "smooth_l1"
+  huber_beta: 1.0
 
 lr: 0.001
-max_epochs: 5
+max_epochs: 50
+early_stopping: 15
 
 hpo:
   sampler: "tpe"
   direction: "minimize"
+  metric_name: "composite"
+  max_epochs: 50
   pruner:
     type: "MedianPruner"
     n_startup_trials: 3
-    n_warmup_steps: 1
+    n_warmup_steps: 10
   search_space:
     lr:
       type: "float"

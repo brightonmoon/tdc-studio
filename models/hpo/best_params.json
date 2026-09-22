@@ -1,14 +1,23 @@
 {
-  "best_value": 0.5855189470144418,
+  "best_value": 0.14909378539030427,
   "best_params": {
-    "lr": 0.002441751696153142,
+    "lr": 0.0034469254123653016,
     "hidden_dim": 256,
-    "dropout": 0.0754589884825096
+    "dropout": 0.1283700262312818
   },
-  "best_trial_number": 4,
+  "best_trial_number": 1,
   "n_trials": 10,
-  "target_metric": "mae",
+  "target_metric": "composite",
   "dataset": "caco2_wang",
   "accelerator": "NVIDIA T4 GPU",
-  "wandb_group": "caco2_wang_optuna"
+  "wandb_group": "caco2_wang_optuna",
+  "max_epochs": 50,
+  "loss_type": "smooth_l1",
+  "metrics_summary": {
+    "val_mae": 0.39932,
+    "val_rmse": 0.54272,
+    "val_r2": 0.50087,
+    "val_pearson": 0.73556,
+    "val_spearman": 0.79688
+  }
 }

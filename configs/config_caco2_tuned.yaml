@@ -1,5 +1,5 @@
-# Optimized Configuration for Caco-2 Wang (Post-HPO Optuna Tuning)
-# Tuned on NVIDIA T4 GPU via Colab CLI (Trial #4, Best Val MAE: 0.5855)
+# Optimized Configuration for Caco-2 Wang (Post-HPO 50-Epoch Benchmark Tuning)
+# Tuned on NVIDIA T4 GPU via Colab CLI (Trial #1, Val MAE: 0.3993, Val RMSE: 0.5427, Val R2: 0.5009)
 
 data:
   type: "admet_loader"
@@ -18,11 +18,11 @@ model:
   in_dim: 14
   hidden_dim: 256
   num_layers: 3
-  dropout: 0.0754589884825096
+  dropout: 0.1283700262312818
   loss_type: "smooth_l1"
   huber_beta: 1.0
 
-lr: 0.002441751696153142
+lr: 0.0034469254123653016
 max_epochs: 50
 early_stopping: 15
 

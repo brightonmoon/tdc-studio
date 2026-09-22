@@ -1,6 +1,6 @@
-# Best hyperparameters identified from Optuna HPO Study (Trial #4) on Google Colab T4 GPU
-# Target Metric: MAE = 0.5855 (Caco2 Wang)
+# Best hyperparameters identified from Optuna HPO Study (Trial #1, 50 Epochs, Benchmark Standard) on Google Colab T4 GPU
+# Target Metric: Composite Score = 0.1491 (Val MAE: 0.3993, Val RMSE: 0.5427, Val R2: 0.5009, Pearson: 0.7356, Spearman: 0.7969)
 
-lr: 0.002441751696153142
+lr: 0.0034469254123653016
 hidden_dim: 256
-dropout: 0.0754589884825096
+dropout: 0.1283700262312818

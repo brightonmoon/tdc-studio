@@ -22,6 +22,20 @@ QUOTA_ERROR_PATTERNS = [
 ]
 
 
+def _safe_stream_write(stream, text: str) -> None:
+    """Safely write text to a stream handling Windows cp949/UnicodeEncodeError."""
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        sanitized = text.encode(encoding, errors="replace").decode(encoding)
+        stream.write(sanitized)
+    except Exception:
+        pass
+    with contextlib.suppress(Exception):
+        stream.flush()
+
+
 class ColabRunner:
     """Orchestrates ephemeral GPU jobs and active session execution on Google Colab."""
 
@@ -231,6 +245,7 @@ class ColabRunner:
         """Prepare environment variables with UTF-8 encoding support for Windows."""
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         return env
 
     def run_remote_job(
@@ -281,8 +296,7 @@ class ColabRunner:
 
                 if process.stdout:
                     for line in iter(process.stdout.readline, ""):
-                        sys.stdout.write(line)
-                        sys.stdout.flush()
+                        _safe_stream_write(sys.stdout, line)
                         accumulated_output.append(line)
                     process.stdout.close()
 

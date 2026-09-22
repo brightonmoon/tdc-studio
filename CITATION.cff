@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: TDC-Studio
+message: "If you use this software in your research, please cite it as below."
+type: software
+authors:
+  - name: brightonmoon
+repository-code: "https://github.com/brightonmoon/tdc-studio"
+abstract: >
+  Modular MLOps studio for ADMET property prediction using the Therapeutics Data
+  Commons (TDC) benchmark suite. Implements D-MPNN, Multi-Task Learning ensembles,
+  Optuna hyperparameter optimization, Weights & Biases experiment tracking,
+  Google Colab GPU orchestration, and FastAPI model serving.
+keywords:
+  - admet
+  - drug-discovery
+  - therapeutics-data-commons
+  - cheminformatics
+  - graph-neural-network
+  - multi-task-learning
+  - mlops
+license: MIT
+version: 0.1.0
+date-released: "2026-09-22"

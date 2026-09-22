@@ -85,3 +85,61 @@ def test_cli_train_dry_run_with_synthetic_data(tmp_path, dummy_smiles_df, monkey
     assert result.exit_code == 0
     assert "Starting Training Pipeline" in result.output
     assert "Training Pipeline Finished" in result.output
+
+
+def test_cli_ensemble_dry_run_with_synthetic_data(tmp_path, dummy_smiles_df):
+    from tdc_studio.core.registry import DATASETS
+    from tdc_studio.data.single_pred import ADMETDataModule
+
+    class DummyDataModule(ADMETDataModule):
+        def __init__(self, **kwargs):
+            super().__init__(dataset_name="dummy_ens", synthetic_df=dummy_smiles_df, **kwargs)
+
+    DATASETS.register("dummy_ens_loader")(DummyDataModule)
+
+    config_content = {
+        "data": {
+            "type": "dummy_ens_loader",
+            "dataset_name": "dummy_ens",
+            "batch_size": 2,
+            "metric_name": "mae",
+            "params": {},
+        },
+        "model": {
+            "type": "dmpnn",
+            "in_dim": 14,
+            "edge_dim": 6,
+            "hidden_dim": 16,
+            "depth": 2,
+            "use_descriptors": False,
+        },
+        "lr": 0.001,
+        "max_epochs": 1,
+        "tracking": {"enabled": False},
+    }
+
+    config_file = str(tmp_path / "ensemble_config.yaml")
+    with open(config_file, "w") as f:
+        yaml.dump(config_content, f)
+
+    chk_dir = str(tmp_path / "ens_checkpoints")
+    result = runner.invoke(
+        app,
+        [
+            "ensemble",
+            "--config",
+            config_file,
+            "--n-models",
+            "2",
+            "--seeds",
+            "42,43",
+            "--checkpoint-dir",
+            chk_dir,
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Starting Ensemble Pipeline" in result.output
+    assert "Ensemble Benchmark Results" in result.output
+    assert os.path.exists(os.path.join(chk_dir, "ensemble_summary.json"))
+

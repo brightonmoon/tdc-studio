@@ -394,6 +394,306 @@ def tune(
 
 
 @app.command()
+def ensemble(
+    config: str = typer.Option("configs/config_caco2_dmpnn.yaml", help="Path to main YAML config"),
+    n_models: int = typer.Option(5, "--n-models", help="Number of ensemble models (default 5)"),
+    seeds: str = typer.Option("42,43,44,45,46", "--seeds", help="Comma-separated seeds for models"),
+    epochs: Optional[int] = typer.Option(None, "--epochs", help="Epochs per ensemble model"),
+    checkpoint_dir: str = typer.Option(
+        "./models/checkpoint/ensemble", help="Dir to save ensemble checkpoints"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Dry run 1 step per model for testing"),
+):
+    """Train an ensemble of models with multiple random seeds and compute consensus predictions."""
+    import json
+    import os
+
+    import numpy as np
+    import torch
+    from rich.table import Table
+
+    from tdc_studio.core.registry import DATASETS, MODELS
+    from tdc_studio.evaluation.evaluator import TherapeuticsEvaluator
+    from tdc_studio.tracking.wandb_tracker import WandBTracker
+
+    cfg = load_yaml(config)
+    seed_list = [int(s.strip()) for s in seeds.split(",")][:n_models]
+    console.print(
+        f"[bold green]Starting Ensemble Pipeline[/bold green] with {len(seed_list)} models (Seeds: {seed_list})..."
+    )
+
+    data_cfg = cfg.get("data", {})
+    model_cfg = cfg.get("model", {})
+    dataset_name = data_cfg.get("dataset_name", "dataset")
+
+    # 1. Load Data once
+    data_type = data_cfg.get("type", data_cfg.get("name"))
+    data_cls = DATASETS.get(data_type)
+    data_params = (
+        dict(data_cfg.get("params", {}))
+        if "params" in data_cfg and isinstance(data_cfg["params"], dict)
+        else {k: v for k, v in data_cfg.items() if k not in ("type", "name", "batch_size")}
+    )
+    data_module = data_cls(**data_params)
+    data_module.prepare_data()
+
+    batch_size = data_cfg.get("batch_size", 32)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    task_type = data_module.task_type
+    target_metric = (
+        data_cfg.get("metric_name")
+        or getattr(data_module, "metric_name", None)
+        or ("composite" if task_type == "regression" else "roc_auc")
+    )
+    evaluator = TherapeuticsEvaluator(default_metric=target_metric, task_type=task_type)
+
+    tracking_cfg = cfg.get("tracking", {})
+    tracker = WandBTracker(tracking_cfg)
+    tracker.init_run(
+        name=f"ensemble_{dataset_name}",
+        config={**cfg, "ensemble_seeds": seed_list, "n_models": len(seed_list)},
+        group=f"{dataset_name}_ensemble",
+    )
+
+    max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", 80))
+    patience = 20
+
+    all_test_preds = []
+    all_val_preds = []
+    model_metrics_list = []
+    test_labels_real = None
+    val_labels_real = None
+
+    try:
+        for idx, seed in enumerate(seed_list):
+            console.print(
+                f"\n[bold cyan]─── Training Ensemble Model #{idx + 1}/{len(seed_list)} (Seed: {seed}) ───[/bold cyan]"
+            )
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
+            train_loader, val_loader, test_loader = data_module.setup_loaders(
+                batch_size=batch_size
+            )
+
+            curr_model_cfg = {**model_cfg, "task_type": task_type}
+            model_cls = MODELS.get(curr_model_cfg.get("type", curr_model_cfg.get("name")))
+            model = model_cls(curr_model_cfg).to(device)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg.get("lr", 1e-3)))
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=max(1, max_epochs), eta_min=1e-6
+            )
+
+            best_metric = float("inf")
+            best_epoch = 0
+            patience_counter = 0
+            best_state_dict = None
+
+            for epoch in range(max_epochs):
+                model.train()
+                for batch in train_loader:
+                    dev_batch = _batch_to_device(batch, device)
+                    optimizer.zero_grad()
+                    preds = model(dev_batch)
+                    mask = dev_batch.get("mask")
+                    if mask is not None:
+                        loss = model.compute_loss(preds, dev_batch["labels"], mask=mask)
+                    else:
+                        loss = model.compute_loss(preds, dev_batch["labels"])
+                    loss.backward()
+                    optimizer.step()
+                    if dry_run:
+                        break
+
+                # Validation
+                model.eval()
+                v_preds_list = []
+                v_labels_list = []
+                with torch.no_grad():
+                    for batch in val_loader:
+                        dev_batch = _batch_to_device(batch, device)
+                        preds = model(dev_batch)
+                        v_preds_list.append(preds.squeeze(-1).detach().cpu())
+                        v_labels_list.append(dev_batch["labels"].detach().cpu())
+                        if dry_run:
+                            break
+
+                v_preds_cat = (
+                    torch.cat(v_preds_list, dim=0) if v_preds_list else torch.tensor([])
+                )
+                v_labels_cat = (
+                    torch.cat(v_labels_list, dim=0) if v_labels_list else torch.tensor([])
+                )
+
+                if (
+                    getattr(data_module, "standardize_target", False)
+                    and task_type == "regression"
+                ):
+                    mean = getattr(data_module, "target_mean", 0.0)
+                    std = getattr(data_module, "target_std", 1.0)
+                    eval_p = v_preds_cat * std + mean
+                    eval_y = v_labels_cat * std + mean
+                else:
+                    eval_p = v_preds_cat
+                    eval_y = v_labels_cat
+
+                val_metric = evaluator.compute(eval_p, eval_y, target_metric)
+                scheduler.step()
+
+                if val_metric < best_metric:
+                    best_metric = val_metric
+                    best_epoch = epoch + 1
+                    patience_counter = 0
+                    best_state_dict = {
+                        k: v.cpu().clone() for k, v in model.state_dict().items()
+                    }
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience and not dry_run:
+                        break
+
+                if dry_run:
+                    break
+
+            console.print(
+                f"  Model #{idx + 1} Best Epoch: {best_epoch} (Val {target_metric.upper()}={best_metric:.4f})"
+            )
+
+            # Load best weights
+            if best_state_dict is not None:
+                model.load_state_dict({k: v.to(device) for k, v in best_state_dict.items()})
+
+            # Evaluate Model on Test Set
+            model.eval()
+            t_preds_list = []
+            t_labels_list = []
+            with torch.no_grad():
+                for batch in test_loader:
+                    dev_batch = _batch_to_device(batch, device)
+                    preds = model(dev_batch)
+                    t_preds_list.append(preds.squeeze(-1).detach().cpu())
+                    t_labels_list.append(dev_batch["labels"].detach().cpu())
+                    if dry_run:
+                        break
+
+            t_preds_cat = (
+                torch.cat(t_preds_list, dim=0) if t_preds_list else torch.tensor([])
+            )
+            t_labels_cat = (
+                torch.cat(t_labels_list, dim=0) if t_labels_list else torch.tensor([])
+            )
+
+            if (
+                getattr(data_module, "standardize_target", False)
+                and task_type == "regression"
+            ):
+                mean = getattr(data_module, "target_mean", 0.0)
+                std = getattr(data_module, "target_std", 1.0)
+                real_t_p = t_preds_cat * std + mean
+                real_t_y = t_labels_cat * std + mean
+                real_v_p = v_preds_cat * std + mean
+                real_v_y = v_labels_cat * std + mean
+            else:
+                real_t_p = t_preds_cat
+                real_t_y = t_labels_cat
+                real_v_p = v_preds_cat
+                real_v_y = v_labels_cat
+
+            test_labels_real = real_t_y
+            val_labels_real = real_v_y
+
+            all_test_preds.append(real_t_p)
+            all_val_preds.append(real_v_p)
+
+            m_metrics = evaluator.compute_all(real_t_p, real_t_y, task_type)
+            model_metrics_list.append(m_metrics)
+            console.print(
+                f"  Model #{idx + 1} Test Metrics: R2={m_metrics.get('r2', 0):.4f}, "
+                f"MAE={m_metrics.get('mae', 0):.4f}, RMSE={m_metrics.get('rmse', 0):.4f}, "
+                f"Pearson={m_metrics.get('pearson', 0):.4f}"
+            )
+
+            # Save individual model checkpoint
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            chk_path = os.path.join(checkpoint_dir, f"model_seed_{seed}.pt")
+            torch.save(
+                {"model_state": model.state_dict(), "seed": seed, "config": curr_model_cfg},
+                chk_path,
+            )
+
+        # 2. Ensemble Averaging
+        if all_test_preds and test_labels_real is not None:
+            ens_test_preds = torch.stack(all_test_preds, dim=0).mean(dim=0)
+            ens_test_metrics = evaluator.compute_all(
+                ens_test_preds, test_labels_real, task_type
+            )
+
+            ens_val_preds = torch.stack(all_val_preds, dim=0).mean(dim=0)
+            ens_val_metrics = evaluator.compute_all(
+                ens_val_preds, val_labels_real, task_type
+            )
+
+            table = Table(
+                title=f"★ Ensemble Benchmark Results: {dataset_name.upper()} (N={len(seed_list)} Models)"
+            )
+            table.add_column("Metric", style="bold cyan")
+            for idx, s in enumerate(seed_list):
+                table.add_column(f"M#{idx + 1} ({s})", justify="center")
+            table.add_column("Individual Mean ± Std", justify="center", style="yellow")
+            table.add_column("★ Ensemble", justify="center", style="bold green")
+            table.add_column("Literature SOTA", justify="center", style="magenta")
+
+            lit_refs = {
+                "r2": "0.743 ± 0.018",
+                "rmse": "0.325 ± 0.013",
+                "mae": "0.242 ± 0.011",
+                "pearson": "~0.86",
+                "spearman": "~0.83",
+            }
+
+            def _fmt(vals):
+                return f"{np.mean(vals):.4f} ± {np.std(vals):.4f}"
+
+            row_metrics = ["r2", "rmse", "mae", "pearson", "spearman"]
+            for m in row_metrics:
+                m_vals = [ml.get(m, 0) for ml in model_metrics_list]
+                indiv_cells = [f"{v:.4f}" for v in m_vals]
+                table.add_row(
+                    m.upper(),
+                    *indiv_cells,
+                    _fmt(m_vals),
+                    f"[bold green]{ens_test_metrics.get(m, 0):.4f}[/bold green]",
+                    lit_refs.get(m, "N/A"),
+                )
+
+            console.print("\n")
+            console.print(table)
+
+            tracker.log_metrics(
+                {f"ensemble_test_{k}": v for k, v in ens_test_metrics.items()}
+            )
+            tracker.log_metrics({f"ensemble_val_{k}": v for k, v in ens_val_metrics.items()})
+
+            summary_path = os.path.join(checkpoint_dir, "ensemble_summary.json")
+            summary_data = {
+                "dataset": dataset_name,
+                "n_models": len(seed_list),
+                "seeds": seed_list,
+                "individual_models": model_metrics_list,
+                "ensemble_test_metrics": ens_test_metrics,
+                "ensemble_val_metrics": ens_val_metrics,
+                "literature_benchmark": lit_refs,
+            }
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(summary_data, f, indent=2)
+            console.print(f"\n[green]Saved ensemble summary to: {summary_path}[/green]")
+    finally:
+        tracker.finish()
+
+
+@app.command()
 def export(
     checkpoint_dir: str = typer.Option(
         "./models/checkpoint",

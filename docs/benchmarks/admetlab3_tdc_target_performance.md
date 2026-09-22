@@ -1,49 +1,93 @@
-# TDC ADMET Benchmark Target Performance Specifications
-> **Benchmark Reference:** ADMETlab 3.0 (*Nucleic Acids Research*, 2024, [doi:10.1093/nar/gkae236](https://academic.oup.com/nar/article/52/W1/W422/7640525), Supplementary Tables 4 & 5)
+# TDC ADMET Benchmark Target Performance Specifications & Data Loader Reference
+> **Benchmark Reference:** ADMETlab 3.0 (*Nucleic Acids Research*, 2024, [doi:10.1093/nar/gkae236](https://academic.oup.com/nar/article/52/W1/W422/7640525), Supplementary Tables 4 & 5) and Therapeutics Data Commons (TDC) Benchmark Leaderboards (Huang et al., 2021)
 
 ---
 
 ## 1. 개요 및 벤치마크 기준
 
 ADMETlab 3.0은 최신 분자 딥러닝 아키텍처(D-MPNN, D-MPNN-Des, MGA)를 통해 약물 개발에 필수적인 ADMET 전 영역의 벤치마크 지표를 체계적으로 수립했습니다.
-TDC-Studio는 본 논문(NAR 2024) 및 공식 부록(`gkae236_supplemental_file.html`)에 명시된 **DMPNN-Des 공식 테스트 세트 실측치(Mean ± Std)**를 TDC 데이터셋의 **공식 목표 성능치(Target SOTA Threshold)**로 설정합니다.
+TDC-Studio는 본 논문(NAR 2024) 및 공식 부록(`gkae236_supplemental_file.html`)에 명시된 **DMPNN-Des 공식 테스트 세트 실측치(Mean ± Std)**와 TDC Leaderboard 실측치를 결합하여, **TDC 전 데이터셋에 대한 공식 목표 성능치(Target SOTA Threshold)** 및 **TDC Python 데이터 로더 규격**을 명시합니다.
+
+- **권장 스플릿 (Dataset Split):** 신약 개발의 일반화 검증을 위해 **Scaffold Split (Bemis-Murcko Scaffold)**을 최우선 기준으로 하며, 보조적으로 `Random Split`을 지원합니다.
 
 ---
 
-## 2. 클러스터별 TDC 데이터셋 목표 성능치 일람표
+## 2. 클러스터별 TDC 데이터셋 목표 성능 및 로더 규격
 
 ### Cluster 1: Bio-Permeability & Oral Absorption (생체 투과 및 경구 흡수)
 *수동 확산(Fick's law), 막 분배(LogD), 수용성 용해도(LogS) 및 P-gp 유출 펌프의 상호작용*
 
-| TDC 데이터셋 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 $R^2$ (Test) | 목표 RMSE | 목표 MAE | 목표 ROC-AUC | 목표 ACC |
+| TDC 데이터셋 명칭 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 $R^2$ (Test) | 목표 RMSE | 목표 MAE | 목표 ROC-AUC | 목표 ACC |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **`caco2_wang`** | Caco-2 Permeability | 회귀 | 906 | **0.743 ± 0.018** | **0.325 ± 0.013** | **0.242 ± 0.011** | - | - |
 | **`lipophilicity_astrazeneca`**| logD7.4 | 회귀 | 4,200 | **0.902 ± 0.004** | **0.398 ± 0.008** | **0.290 ± 0.006** | - | - |
 | **`solubility_aqsoldb`** | logS | 회귀 | 9,982 | **0.877 ± 0.013** | **0.746 ± 0.027** | **0.495 ± 0.010** | - | - |
-| **`hia_hou`** | HIA (Human Intestinal Absorption) | 분류 | 578 | - | - | - | **0.897 ± 0.054** | **0.911 ± 0.018** |
-| **`bioavailability_ma`** | F20% / F30% Oral Bioavailability| 분류 | 640 | - | - | - | **0.909 ± 0.047** | **0.857 ± 0.030** |
+| **`hia_hou`** | HIA | 분류 | 578 | - | - | - | **0.897 ± 0.054** | **0.911 ± 0.018** |
+| **`bioavailability_ma`** | F20% / F30% | 분류 | 640 | - | - | - | **0.909 ± 0.047** | **0.857 ± 0.030** |
 | **`pgp_broccatelli`** | Pgp-inhibitor | 분류 | 1,218 | - | - | - | **0.915 ± 0.011** | **0.850 ± 0.010** |
-| *(확장)* `pgp_substrate` | Pgp-substrate | 분류 | 1,000+ | - | - | - | **0.892 ± 0.019** | **0.815 ± 0.034** |
-| *(물리화학)* `mdck_permeability`| MDCK Permeability | 회귀 | 1,000+ | **0.700 ± 0.062** | **0.293 ± 0.034** | **0.205 ± 0.010** | - | - |
+
+```python
+# [Cluster 1 TDC Data Loaders]
+from tdc.single_pred import ADME
+
+# 1. Caco-2 Permeability
+caco2_data = ADME(name = 'Caco2_Wang')
+caco2_split = caco2_data.get_split(method = 'scaffold', seed = 42)
+
+# 2. Lipophilicity (logD 7.4)
+lipo_data = ADME(name = 'Lipophilicity_AstraZeneca')
+lipo_split = lipo_data.get_split(method = 'scaffold', seed = 42)
+
+# 3. Solubility (logS)
+sol_data = ADME(name = 'Solubility_AqSolDB')
+sol_split = sol_data.get_split(method = 'scaffold', seed = 42)
+
+# 4. Human Intestinal Absorption & Bioavailability
+hia_data = ADME(name = 'HIA_Hou')
+hia_split = hia_data.get_split(method = 'scaffold', seed = 42)
+
+bioav_data = ADME(name = 'Bioavailability_Ma')
+bioav_split = bioav_data.get_split(method = 'scaffold', seed = 42)
+
+# 5. P-glycoprotein Efflux
+pgp_data = ADME(name = 'Pgp_Broccatelli')
+pgp_split = pgp_data.get_split(method = 'scaffold', seed = 42)
+```
 
 ---
 
 ### Cluster 2: Plasma Distribution & Tissue Penetration (혈장 분포 및 조직 투과)
 *Free Drug Hypothesis: 알부민 결합률(PPBR)이 비결합 분율(fu)을 결정하고, 뇌장벽(BBB) 및 전신 조직(VDss) 침투를 지배*
 
-| TDC 데이터셋 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 $R^2$ (Test) | 목표 RMSE | 목표 MAE | 목표 ROC-AUC | 목표 ACC |
+| TDC 데이터셋 명칭 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 $R^2$ (Test) | 목표 RMSE | 목표 MAE | 목표 ROC-AUC | 목표 ACC |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`ppbr_az`** | PPB (Plasma Protein Binding %) | 회귀 | 1,797 | **0.824 ± 0.031** | **11.382 ± 0.648** | **5.976 ± 0.429** | - | - |
-| **`vdss_lombardo`** | VDss (Volume of Distribution) | 회귀 | 1,130 | **0.760 ± 0.045** | **0.301 ± 0.024** | **0.162 ± 0.010** | - | - |
+| **`ppbr_az`** | PPB (결합률 %) | 회귀 | 1,797 | **0.824 ± 0.031** | **11.382 ± 0.648** | **5.976 ± 0.429%** | - | - |
+| **`vdss_lombardo`** | VDss (분포용적) | 회귀 | 1,130 | **0.760 ± 0.045** | **0.301 ± 0.024** | **0.162 ± 0.010** | - | - |
 | **`bbb_martins`** | BBB Penetration | 분류 | 2,050 | - | - | - | **0.908 ± 0.004** | **0.836 ± 0.014** |
-| *(참조)* `fu` | Fraction Unbound in Plasma | 회귀 | 1,500+ | **0.894 ± 0.024** | **0.229 ± 0.027** | **0.135 ± 0.012** | - | - |
+
+```python
+# [Cluster 2 TDC Data Loaders]
+from tdc.single_pred import ADME
+
+# 1. Plasma Protein Binding Rate (PPBR)
+ppbr_data = ADME(name = 'PPBR_AZ')
+ppbr_split = ppbr_data.get_split(method = 'scaffold', seed = 42)
+
+# 2. Volume of Distribution at steady state (VDss)
+vdss_data = ADME(name = 'VDss_Lombardo')
+vdss_split = vdss_data.get_split(method = 'scaffold', seed = 42)
+
+# 3. Blood-Brain Barrier Penetration (BBB)
+bbb_data = ADME(name = 'BBB_Martins')
+bbb_split = bbb_data.get_split(method = 'scaffold', seed = 42)
+```
 
 ---
 
 ### Cluster 3: Cytochrome P450 Metabolism (약물 대사 효소 패널)
-*5대 저해 효소 앵커(각 12,000+ 화합물) 및 3대 소규모 기질 turnover 패널*
+*5대 저해 효소 앵커(각 12,000+ 화합물) 및 3대 소규모 기질(Carbon-Mangels) turnover 패널*
 
-| TDC 데이터셋 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 ROC-AUC (Test) | 목표 ACC (Test) | 목표 MCC (Test) |
+| TDC 데이터셋 명칭 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 ROC-AUC (Test) | 목표 ACC (Test) | 목표 MCC (Test) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **`cyp1a2_veith`** | CYP1A2 inhibitor | 분류 | 12,574 | **0.942 ± 0.003** | **0.874 ± 0.003** | **0.748 ± 0.006** |
 | **`cyp2c19_veith`**| CYP2C19 inhibitor | 분류 | 12,092 | **0.915 ± 0.005** | **0.843 ± 0.009** | **0.689 ± 0.016** |
@@ -54,32 +98,109 @@ TDC-Studio는 본 논문(NAR 2024) 및 공식 부록(`gkae236_supplemental_file.
 | **`cyp2d6_substrate_carbonmangels`**| CYP2D6 substrate | 분류 | 664 | **0.844 ± 0.057** | **0.754 ± 0.051** | **0.514 ± 0.099** |
 | **`cyp3a4_substrate_carbonmangels`**| CYP3A4 substrate | 분류 | 667 | **0.798 ± 0.034** | **0.720 ± 0.012** | **0.444 ± 0.027** |
 
+```python
+# [Cluster 3 TDC Data Loaders]
+from tdc.single_pred import ADME
+
+# 1. 5 High-Volume CYP Inhibition Assays (Veith et al.)
+cyp3a4_inh = ADME(name = 'CYP3A4_Veith').get_split(method = 'scaffold', seed = 42)
+cyp2d6_inh = ADME(name = 'CYP2D6_Veith').get_split(method = 'scaffold', seed = 42)
+cyp2c9_inh = ADME(name = 'CYP2C9_Veith').get_split(method = 'scaffold', seed = 42)
+cyp2c19_inh = ADME(name = 'CYP2C19_Veith').get_split(method = 'scaffold', seed = 42)
+cyp1a2_inh = ADME(name = 'CYP1A2_Veith').get_split(method = 'scaffold', seed = 42)
+
+# 2. 3 Low-Volume CYP Substrate Assays (Carbon-Mangels et al.)
+cyp2c9_sub = ADME(name = 'CYP2C9_Substrate_CarbonMangels')
+split_cyp2c9 = cyp2c9_sub.get_split(method = 'scaffold', seed = 42)
+
+cyp2d6_sub = ADME(name = 'CYP2D6_Substrate_CarbonMangels')
+split_cyp2d6 = cyp2d6_sub.get_split(method = 'scaffold', seed = 42)
+
+cyp3a4_sub = ADME(name = 'CYP3A4_Substrate_CarbonMangels')
+split_cyp3a4 = cyp3a4_sub.get_split(method = 'scaffold', seed = 42)
+```
+
 ---
 
 ### Cluster 4: Pharmacokinetic Clearance & Elimination (약물 제거 및 소실 반감기)
-*간 클리어런스($CL_{\text{int}}$), 전신 청정율($CL_{\text{plasma}} = f_u \cdot CL_{\text{int}}$) 및 반감기($t_{1/2} = \frac{0.693 V_{\text{d}}}{CL}$)*
+*간세포/마이크로솜 클리어런스($CL_{\text{int}}$) 및 체내 소실 반감기($t_{1/2}$)*
 
-| TDC 데이터셋 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 $R^2$ (Test) | 목표 RMSE | 목표 MAE | 목표 ROC-AUC |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`half_life_obach`** | T1/2 (Elimination half-life) | 회귀 | 667 | **0.653 ± 0.070** | **0.877 ± 0.111** | **0.420 ± 0.026** | - |
-| **`clearance_microsome_az`** | CL-plasma / HLM Clearance | 회귀 | 1,102 | **0.667 ± 0.046** | **2.912 ± 0.311** | **1.783 ± 0.160** | - |
-| **`clearance_hepatocyte_az`**| CL-plasma / Hepatocyte | 회귀 | 1,213 | **0.667 ± 0.046** | **2.912 ± 0.311** | **1.783 ± 0.160** | - |
-| *(참조 보조)* `hlm_stability` | HLM Metabolic Stability | 분류 | 3,500+ | - | - | - | **0.882 ± 0.007** |
+| TDC 데이터셋 명칭 | 벤치마크 기준 과제 | 유형 | 샘플 수 | 1차 목표 지표 (TDC SOTA) | 2차 지표 (ADMETlab 3.0) |
+| :--- | :--- | :---: | :---: | :--- | :--- |
+| **`clearance_hepatocyte_az`** | Clearance (Hepatocyte AZ) | 회귀 | 1,213 | **Spearman $\rho \ge 0.403 \pm 0.025$**, MAE $\le 38.4$ | $R^2 \ge 0.667$, RMSE $\le 2.912$ |
+| **`clearance_microsome_az`** | Clearance (Microsome AZ) | 회귀 | 1,102 | **Spearman $\rho \ge 0.575 \pm 0.019$**, MAE $\le 26.2$ | $R^2 \ge 0.667$, RMSE $\le 2.912$ |
+| **`half_life_obach`** | T1/2 (Elimination half-life) | 회귀 | 667 | **Spearman $\rho \ge 0.538 \pm 0.031$**, MAE $\le 12.2$ | $R^2 = 0.653 \pm 0.070$, MAE $= 0.420$ |
+
+```python
+# [Cluster 4 TDC Data Loaders]
+from tdc.single_pred import ADME
+
+# 1. Intrinsic Clearance in Human Hepatocytes
+clearance_hep = ADME(name = 'Clearance_Hepatocyte_AZ')
+split_hep = clearance_hep.get_split(method = 'scaffold', seed = 42)
+
+# 2. Intrinsic Clearance in Human Liver Microsomes
+clearance_mic = ADME(name = 'Clearance_Microsome_AZ')
+split_mic = clearance_mic.get_split(method = 'scaffold', seed = 42)
+
+# 3. Elimination Half-Life (Obach et al.)
+half_life = ADME(name = 'Half_Life_Obach')
+split_hl = half_life.get_split(method = 'scaffold', seed = 42)
+```
 
 ---
 
 ### Cluster 5: Cardiac Safety & Broad Toxicity (심장 안전성 및 독성 프로파일링)
-*hERG 칼륨 채널 차단, Ames 돌연변이성, 간독성(DILI) 및 12대 Tox21 핵수용체/스트레스 반응*
+*hERG 칼륨 채널 차단, 급성 치사량(LD50), Ames 돌연변이성, 간독성(DILI) 및 Tox21 다중 어세이*
 
-| TDC 데이터셋 | ADMETlab 3.0 대응 과제 | 유형 | 샘플 수 | 목표 ROC-AUC (Test) | 목표 ACC (Test) | 목표 MCC (Test) |
+| TDC 데이터셋 명칭 | 대응 과제 | 유형 | 샘플 수 | 목표 지표 1 (ROC-AUC / MAE) | 목표 지표 2 (ACC / $R^2$) | 목표 MCC |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **`herg`** | hERG Blockers (cardiotoxicity) | 분류 | 648 | **0.937 ± 0.006** | **0.828 ± 0.017** | **0.680 ± 0.026** |
-| **`dili`** | DILI (Drug-Induced Liver Injury) | 분류 | 475 | **0.860 ± 0.052** | **0.787 ± 0.075** | **0.590 ± 0.143** |
-| **`ames`** | AMES Mutagenicity | 분류 | 7,255 | **0.882 ± 0.007** | **0.785 ± 0.015** | **0.576 ± 0.028** |
-| **`skin_reaction`** | Skin Sensitization | 분류 | 404 | **0.787 ± 0.043** | **0.780 ± 0.062** | **0.491 ± 0.152** |
-| **`carcinogens_lagunin`**| Carcinogenicity | 분류 | 280 | **0.715 ± 0.029** | **0.668 ± 0.040** | **0.349 ± 0.078** |
-| **`tox21` (NR-AR)** | Nuclear Receptor - AR | 분류 | 7,831 | **0.883 ± 0.016** | **0.956 ± 0.016** | **0.534 ± 0.076** |
-| **`tox21` (NR-AhR)** | Nuclear Receptor - AhR | 분류 | 7,831 | **0.924 ± 0.011** | **0.862 ± 0.040** | **0.550 ± 0.047** |
-| **`tox21` (SR-MMP)** | Stress Response - MMP | 분류 | 7,831 | **0.941 ± 0.016** | **0.857 ± 0.048** | **0.604 ± 0.062** |
-| **`tox21` (SR-p53)** | Stress Response - p53 | 분류 | 7,831 | **0.890 ± 0.027** | **0.882 ± 0.034** | **0.415 ± 0.036** |
-| **`clintox`** | FDA Clinical Trial Failure | 분류 | 1,484 | **0.865 ± 0.011** | **0.761 ± 0.022** | **0.534 ± 0.036** |
+| **`herg`** | hERG Blocker (Wang et al.) | 분류 | 648 | **ROC-AUC $\ge 0.887 \pm 0.013$** | **ACC $\ge 0.825$** | **MCC $\ge 0.610$** |
+| **`hERG_Karim`** | hERG Blockers (대규모) | 분류 | 13,845 | **ROC-AUC $\ge 0.937 \pm 0.006$** | **ACC $\ge 0.828 \pm 0.017$** | **MCC $\ge 0.680 \pm 0.026$** |
+| **`herg_central` (10uM)**| hERG Blocker 10uM | 분류 | 9,876 | **ROC-AUC $\ge 0.840 \pm 0.017$** | **ACC $\ge 0.691 \pm 0.023$** | **MCC $\ge 0.426 \pm 0.035$** |
+| **`ld50_zhu`** | Acute Oral Toxicity LD50 | 회귀 | 7,385 | **MAE $\le 0.584 \pm 0.012$** | **$R^2 \ge 0.624 \pm 0.021$** | RMSE $\le 0.812$ |
+| **`dili`** | DILI (Drug-Induced Liver Injury) | 분류 | 475 | **ROC-AUC $\ge 0.860 \pm 0.052$** | **ACC $\ge 0.787 \pm 0.075$** | **MCC $\ge 0.590 \pm 0.143$** |
+| **`ames`** | AMES Mutagenicity | 분류 | 7,255 | **ROC-AUC $\ge 0.882 \pm 0.007$** | **ACC $\ge 0.785 \pm 0.015$** | **MCC $\ge 0.576 \pm 0.028$** |
+| **`skin_reaction`** | Skin Sensitization | 분류 | 404 | **ROC-AUC $\ge 0.787 \pm 0.043$** | **ACC $\ge 0.780 \pm 0.062$** | **MCC $\ge 0.491 \pm 0.152$** |
+| **`carcinogens_lagunin`**| Carcinogenicity | 분류 | 280 | **ROC-AUC $\ge 0.715 \pm 0.029$** | **ACC $\ge 0.668 \pm 0.040$** | **MCC $\ge 0.349 \pm 0.078$** |
+| **`clintox`** | FDA Clinical Trial Failure | 분류 | 1,484 | **ROC-AUC $\ge 0.865 \pm 0.011$** | **ACC $\ge 0.761 \pm 0.022$** | **MCC $\ge 0.534 \pm 0.036$** |
+| **`tox21` (NR-AR)** | Nuclear Receptor - AR | 분류 | 7,831 | **ROC-AUC $\ge 0.883 \pm 0.016$** | **ACC $\ge 0.956 \pm 0.016$** | **MCC $\ge 0.534 \pm 0.076$** |
+| **`tox21` (NR-AhR)** | Nuclear Receptor - AhR | 분류 | 7,831 | **ROC-AUC $\ge 0.924 \pm 0.011$** | **ACC $\ge 0.862 \pm 0.040$** | **MCC $\ge 0.550 \pm 0.047$** |
+| **`tox21` (SR-MMP)** | Stress Response - MMP | 분류 | 7,831 | **ROC-AUC $\ge 0.941 \pm 0.016$** | **ACC $\ge 0.857 \pm 0.048$** | **MCC $\ge 0.604 \pm 0.062$** |
+| **`tox21` (SR-p53)** | Stress Response - p53 | 분류 | 7,831 | **ROC-AUC $\ge 0.890 \pm 0.027$** | **ACC $\ge 0.882 \pm 0.034$** | **MCC $\ge 0.415 \pm 0.036$** |
+
+```python
+# [Cluster 5 TDC Data Loaders]
+from tdc.single_pred import Tox
+from tdc.utils import retrieve_label_name_list
+
+# 1. Standard hERG (Wang et al.)
+herg_data = Tox(name = 'hERG')
+split_herg = herg_data.get_split(method = 'scaffold', seed = 42)
+
+# 2. Large-scale hERG (Karim et al.)
+herg_karim_data = Tox(name = 'hERG_Karim')
+split_karim = herg_karim_data.get_split(method = 'scaffold', seed = 42)
+
+# 3. Multi-Assay hERG Central (retrieve_label_name_list required)
+herg_central_labels = retrieve_label_name_list('herg_central')
+# e.g., 'hERG_10uM', 'hERG_1uM'
+herg_central_data = Tox(name = 'herg_central', label_name = herg_central_labels[0])
+split_central = herg_central_data.get_split(method = 'scaffold', seed = 42)
+
+# 4. Acute Toxicity LD50 (Zhu et al.)
+ld50_data = Tox(name = 'LD50_Zhu')
+split_ld50 = ld50_data.get_split(method = 'scaffold', seed = 42)
+
+# 5. Organ Toxicity: DILI, Ames, Skin Reaction, Carcinogens
+dili_data = Tox(name = 'DILI').get_split(method = 'scaffold', seed = 42)
+ames_data = Tox(name = 'AMES').get_split(method = 'scaffold', seed = 42)
+skin_data = Tox(name = 'Skin_Reaction').get_split(method = 'scaffold', seed = 42)
+carc_data = Tox(name = 'Carcinogens_Lagunin').get_split(method = 'scaffold', seed = 42)
+clintox_data = Tox(name = 'ClinTox').get_split(method = 'scaffold', seed = 42)
+
+# 6. Multi-Assay Tox21 (retrieve_label_name_list required)
+tox21_labels = retrieve_label_name_list('Tox21')
+tox21_data = Tox(name = 'Tox21', label_name = tox21_labels[0])
+split_tox21 = tox21_data.get_split(method = 'scaffold', seed = 42)
+```

@@ -1,12 +1,23 @@
 """Command-Line Interface (CLI) for TDC-Studio."""
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
 import typer
 import yaml
 from rich.console import Console
+
+# Reconfigure Windows standard streams to UTF-8 to prevent cp949 UnicodeEncodeError
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from tdc_studio.core.registry import auto_import_modules
 

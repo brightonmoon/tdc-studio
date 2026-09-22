@@ -26,6 +26,8 @@ hpo:
   direction: "minimize"
   pruner:
     type: "MedianPruner"
+    n_startup_trials: 3
+    n_warmup_steps: 1
   search_space:
     lr:
       type: "float"

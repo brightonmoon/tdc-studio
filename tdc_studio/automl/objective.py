@@ -10,6 +10,17 @@ from tdc_studio.core.registry import DATASETS, MODELS
 from tdc_studio.evaluation.evaluator import TherapeuticsEvaluator, is_metric_higher_better
 
 
+def _batch_to_device(batch: dict, device: Any) -> dict:
+    """Move tensor and PyG graph structures in batch to target device."""
+    out = {}
+    for k, v in batch.items():
+        if hasattr(v, "to"):
+            out[k] = v.to(device)
+        else:
+            out[k] = v
+    return out
+
+
 class TDCStudioObjective:
     """Optuna objective function for tuning TDC deep learning pipelines."""
 
@@ -27,6 +38,7 @@ class TDCStudioObjective:
         self.hpo_cfg = hpo_cfg
         self.tracking_cfg = tracking_cfg or {"enabled": False}
         self.dry_run = dry_run
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # 1. Prepare data module once to prevent re-parsing overhead in trials
         if data_module is not None:
@@ -71,20 +83,20 @@ class TDCStudioObjective:
                     group=f"{self.data_cfg.get('dataset_name', 'default')}_optuna",
                     name=f"trial_{trial.number}",
                     config=sampled_params,
-                    reinit=True,
+                    reinit="finish_previous",
                 )
             except Exception:
                 wandb_run = None
 
         try:
-            # Build model with sampled hyperparams
+            # Build model with sampled hyperparams and move to GPU
             curr_model_cfg = {
                 **self.model_cfg,
                 **sampled_params,
                 "task_type": self.task_type,
             }
             model_cls = MODELS.get(curr_model_cfg["type"])
-            model = model_cls(curr_model_cfg)
+            model = model_cls(curr_model_cfg).to(self.device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=sampled_params.get("lr", 1e-3))
 
             max_epochs = 1 if self.dry_run else self.data_cfg.get("max_epochs", 5)
@@ -94,9 +106,14 @@ class TDCStudioObjective:
                 # Train single epoch (or single batch in dry_run)
                 model.train()
                 for i, batch in enumerate(self.train_loader):
+                    dev_batch = _batch_to_device(batch, self.device)
                     optimizer.zero_grad()
-                    preds = model(batch)
-                    loss = model.compute_loss(preds, batch["labels"])
+                    preds = model(dev_batch)
+                    mask = dev_batch.get("mask")
+                    if mask is not None:
+                        loss = model.compute_loss(preds, dev_batch["labels"], mask=mask)
+                    else:
+                        loss = model.compute_loss(preds, dev_batch["labels"])
                     loss.backward()
                     optimizer.step()
                     if self.dry_run:
@@ -134,9 +151,10 @@ class TDCStudioObjective:
         all_labels = []
         with torch.no_grad():
             for batch in val_loader:
-                preds = model(batch)
+                dev_batch = _batch_to_device(batch, self.device)
+                preds = model(dev_batch)
                 all_preds.append(preds.squeeze(-1).detach().cpu())
-                all_labels.append(batch["labels"].detach().cpu())
+                all_labels.append(dev_batch["labels"].detach().cpu())
                 if self.dry_run:
                     break
 

@@ -337,9 +337,14 @@ def train(
 def tune(
     config: str = typer.Option("configs/config.yaml", help="Path to main YAML config"),
     n_trials: int = typer.Option(10, "--n-trials", help="Number of Optuna trials"),
+    save_path: str = typer.Option(
+        "configs/best_hpo_params.yaml", help="Path to save best hyperparameters YAML"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Dry run 1 step per trial for testing"),
 ):
     """Run Optuna Hyperparameter Optimization (HPO)."""
+    import json
+
     from tdc_studio.automl.tuner import StudioTuner
 
     cfg = load_yaml(config)
@@ -356,6 +361,19 @@ def tune(
     console.print("[bold green]Tuning Finished![/bold green]")
     console.print(f"Best Trial #{result['best_trial_number']}: Metric = {result['best_value']:.4f}")
     console.print(f"Best Hyperparameters: {result['best_params']}")
+
+    if not dry_run:
+        save_file = Path(save_path)
+        save_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(save_file, "w", encoding="utf-8") as f:
+            yaml.dump(result["best_params"], f, default_flow_style=False)
+        console.print(f"Saved best parameters YAML to: [cyan]{save_file}[/cyan]")
+
+        json_path = Path("models/hpo/best_params.json")
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+        console.print(f"Saved full study summary JSON to: [cyan]{json_path}[/cyan]")
 
 
 @app.command()

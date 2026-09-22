@@ -1,0 +1,60 @@
+data:
+  type: single_prediction
+  dataset_name: distribution_mtl
+  split_type: scaffold
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: ppbr_az
+  metric_name: r2
+  use_descriptors: true
+  standardize_target: true
+  tasks:
+    - name: ppbr_az
+      category: distribution
+      type: regression
+    - name: bbb_martins
+      category: distribution
+      type: binary_classification
+    - name: vdss_lombardo
+      category: distribution
+      type: regression
+    - name: lipophilicity_astrazeneca
+      category: physicochemical
+      type: regression
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 450
+  num_layers: 4
+  dropout: 0.20
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: ppbr_az
+      type: regression
+    - name: bbb_martins
+      type: binary_classification
+    - name: vdss_lombardo
+      type: regression
+    - name: lipophilicity_astrazeneca
+      type: regression
+  task_weights:
+    ppbr_az: 1.0
+    bbb_martins: 1.0
+    vdss_lombardo: 1.0
+    lipophilicity_astrazeneca: 0.3
+  use_uncertainty: true
+
+lr: 0.0006
+weight_decay: 1.0e-5
+max_epochs: 70
+early_stopping: 25
+eval_metric: r2
+
+tracking:
+  enabled: true
+  project: tdc-learning
+  entity: tdc-studio

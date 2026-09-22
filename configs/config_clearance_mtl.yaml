@@ -1,0 +1,66 @@
+data:
+  type: single_prediction
+  dataset_name: clearance_elimination_mtl
+  split_type: scaffold
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: half_life_obach
+  metric_name: r2
+  use_descriptors: true
+  standardize_target: true
+  tasks:
+    - name: half_life_obach
+      category: excretion
+      type: regression
+    - name: clearance_hepatocyte_az
+      category: excretion
+      type: regression
+    - name: clearance_microsome_az
+      category: excretion
+      type: regression
+    - name: cyp3a4_veith
+      category: metabolism
+      type: binary_classification
+    - name: ppbr_az
+      category: distribution
+      type: regression
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 400
+  num_layers: 4
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: half_life_obach
+      type: regression
+    - name: clearance_hepatocyte_az
+      type: regression
+    - name: clearance_microsome_az
+      type: regression
+    - name: cyp3a4_veith
+      type: binary_classification
+    - name: ppbr_az
+      type: regression
+  task_weights:
+    half_life_obach: 2.0
+    clearance_hepatocyte_az: 1.5
+    clearance_microsome_az: 1.5
+    cyp3a4_veith: 0.5
+    ppbr_az: 0.5
+  use_uncertainty: false
+
+lr: 0.0006
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: r2
+
+tracking:
+  enabled: true
+  project: tdc-learning
+  entity: tdc-studio

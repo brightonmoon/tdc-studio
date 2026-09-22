@@ -1,0 +1,72 @@
+data:
+  type: single_prediction
+  dataset_name: toxicity_mtl
+  split_type: scaffold
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: herg
+  metric_name: roc_auc
+  use_descriptors: true
+  standardize_target: false
+  tasks:
+    - name: herg
+      category: tox
+      type: binary_classification
+    - name: dili
+      category: tox
+      type: binary_classification
+    - name: ames
+      category: tox
+      type: binary_classification
+    - name: skin_reaction
+      category: tox
+      type: binary_classification
+    - name: carcinogens_lagunin
+      category: tox
+      type: binary_classification
+    - name: clintox
+      category: tox
+      type: binary_classification
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 450
+  num_layers: 4
+  dropout: 0.20
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: herg
+      type: binary_classification
+    - name: dili
+      type: binary_classification
+    - name: ames
+      type: binary_classification
+    - name: skin_reaction
+      type: binary_classification
+    - name: carcinogens_lagunin
+      type: binary_classification
+    - name: clintox
+      type: binary_classification
+  task_weights:
+    herg: 2.0
+    dili: 2.0
+    ames: 1.0
+    skin_reaction: 1.0
+    carcinogens_lagunin: 1.0
+    clintox: 1.0
+  use_uncertainty: false
+
+lr: 0.0006
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: roc_auc
+
+tracking:
+  enabled: true
+  project: tdc-learning
+  entity: tdc-studio

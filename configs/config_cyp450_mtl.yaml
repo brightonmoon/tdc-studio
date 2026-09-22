@@ -1,0 +1,84 @@
+data:
+  type: single_prediction
+  dataset_name: cyp450_mtl
+  split_type: scaffold
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: cyp3a4_veith
+  metric_name: roc_auc
+  use_descriptors: true
+  standardize_target: false
+  tasks:
+    - name: cyp3a4_veith
+      category: metabolism
+      type: binary_classification
+    - name: cyp2d6_veith
+      category: metabolism
+      type: binary_classification
+    - name: cyp2c9_veith
+      category: metabolism
+      type: binary_classification
+    - name: cyp2c19_veith
+      category: metabolism
+      type: binary_classification
+    - name: cyp1a2_veith
+      category: metabolism
+      type: binary_classification
+    - name: cyp3a4_substrate_carbonmangels
+      category: metabolism
+      type: binary_classification
+    - name: cyp2d6_substrate_carbonmangels
+      category: metabolism
+      type: binary_classification
+    - name: cyp2c9_substrate_carbonmangels
+      category: metabolism
+      type: binary_classification
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 450
+  num_layers: 4
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: cyp3a4_veith
+      type: binary_classification
+    - name: cyp2d6_veith
+      type: binary_classification
+    - name: cyp2c9_veith
+      type: binary_classification
+    - name: cyp2c19_veith
+      type: binary_classification
+    - name: cyp1a2_veith
+      type: binary_classification
+    - name: cyp3a4_substrate_carbonmangels
+      type: binary_classification
+    - name: cyp2d6_substrate_carbonmangels
+      type: binary_classification
+    - name: cyp2c9_substrate_carbonmangels
+      type: binary_classification
+  task_weights:
+    cyp3a4_veith: 1.0
+    cyp2d6_veith: 1.0
+    cyp2c9_veith: 1.0
+    cyp2c19_veith: 1.0
+    cyp1a2_veith: 1.0
+    cyp3a4_substrate_carbonmangels: 2.0
+    cyp2d6_substrate_carbonmangels: 2.0
+    cyp2c9_substrate_carbonmangels: 2.0
+  use_uncertainty: false
+
+lr: 0.0006
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: roc_auc
+
+tracking:
+  enabled: true
+  project: tdc-learning
+  entity: tdc-studio

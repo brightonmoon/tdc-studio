@@ -13,6 +13,13 @@ data:
     - name: herg
       category: tox
       type: binary_classification
+    - name: herg_central
+      category: tox
+      label_name: hERG_inhib
+      type: binary_classification
+    - name: ld50_zhu
+      category: tox
+      type: regression
     - name: dili
       category: tox
       type: binary_classification
@@ -41,6 +48,10 @@ model:
   tasks:
     - name: herg
       type: binary_classification
+    - name: herg_central
+      type: binary_classification
+    - name: ld50_zhu
+      type: regression
     - name: dili
       type: binary_classification
     - name: ames
@@ -53,12 +64,14 @@ model:
       type: binary_classification
   task_weights:
     herg: 2.0
+    herg_central: 1.5
+    ld50_zhu: 1.0
     dili: 2.0
     ames: 1.0
     skin_reaction: 1.0
     carcinogens_lagunin: 1.0
     clintox: 1.0
-  use_uncertainty: false
+  use_uncertainty: true
 
 lr: 0.0006
 weight_decay: 1.0e-5

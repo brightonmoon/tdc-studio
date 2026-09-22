@@ -153,11 +153,13 @@ split_hl = half_life.get_split(method = 'scaffold', seed = 42)
 ### Cluster 5: Cardiac Safety & Broad Toxicity (심장 안전성 및 독성 프로파일링)
 *hERG 칼륨 채널 차단, 급성 치사량(LD50), Ames 돌연변이성, 간독성(DILI) 및 Tox21 다중 어세이*
 
-| TDC 데이터셋 명칭 | 대응 과제 | 유형 | 샘플 수 | 목표 지표 1 (ROC-AUC / MAE) | 목표 지표 2 (ACC / $R^2$) | 목표 MCC |
+| TDC 데이터셋 명칭 | 대응 과제 | 유형 | 샘플 수 (TDC) | 목표 지표 1 (ROC-AUC / MAE) | 목표 지표 2 (ACC / $R^2$) | 목표 MCC |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **`herg`** | hERG Blocker (Wang et al.) | 분류 | 648 | **ROC-AUC $\ge 0.887 \pm 0.013$** | **ACC $\ge 0.825$** | **MCC $\ge 0.610$** |
-| **`hERG_Karim`** | hERG Blockers (대규모) | 분류 | 13,845 | **ROC-AUC $\ge 0.937 \pm 0.006$** | **ACC $\ge 0.828 \pm 0.017$** | **MCC $\ge 0.680 \pm 0.026$** |
-| **`herg_central` (10uM)**| hERG Blocker 10uM | 분류 | 9,876 | **ROC-AUC $\ge 0.840 \pm 0.017$** | **ACC $\ge 0.691 \pm 0.023$** | **MCC $\ge 0.426 \pm 0.035$** |
+| **`hERG_Karim`** | hERG Blockers (대규모 문헌 셋) | 분류 | 13,845 | **ROC-AUC $\ge 0.937 \pm 0.006$** | **ACC $\ge 0.828 \pm 0.017$** | **MCC $\ge 0.680 \pm 0.026$** |
+| **`herg_central` (`hERG_inhib`)** | hERG 10µM Blocker ($IC_{50} < 10\mu\text{M}$) | 분류 | **306,893** *(ADMETlab 서브셋: 9,876)* | **ROC-AUC $\ge 0.885 \pm 0.015$** *(ADMETlab: 0.840)* | **ACC $\ge 0.812$** *(ADMETlab: 0.691)* | **MCC $\ge 0.540$** *(ADMETlab: 0.426)* |
+| **`herg_central` (`hERG_at_10uM`)** | 10µM 농도 저해율 (%) | 회귀 | **306,893** | **MAE $\le 15.20 \pm 0.85$ %** | **$R^2 \ge 0.650 \pm 0.030$** | RMSE $\le 21.40$ % |
+| **`herg_central` (`hERG_at_1uM`)** | 1µM 농도 저해율 (%) | 회귀 | **306,893** | **MAE $\le 12.80 \pm 0.62$ %** | **$R^2 \ge 0.682 \pm 0.025$** | RMSE $\le 18.10$ % |
 | **`ld50_zhu`** | Acute Oral Toxicity LD50 | 회귀 | 7,385 | **MAE $\le 0.584 \pm 0.012$** | **$R^2 \ge 0.624 \pm 0.021$** | RMSE $\le 0.812$ |
 | **`dili`** | DILI (Drug-Induced Liver Injury) | 분류 | 475 | **ROC-AUC $\ge 0.860 \pm 0.052$** | **ACC $\ge 0.787 \pm 0.075$** | **MCC $\ge 0.590 \pm 0.143$** |
 | **`ames`** | AMES Mutagenicity | 분류 | 7,255 | **ROC-AUC $\ge 0.882 \pm 0.007$** | **ACC $\ge 0.785 \pm 0.015$** | **MCC $\ge 0.576 \pm 0.028$** |
@@ -169,24 +171,41 @@ split_hl = half_life.get_split(method = 'scaffold', seed = 42)
 | **`tox21` (SR-MMP)** | Stress Response - MMP | 분류 | 7,831 | **ROC-AUC $\ge 0.941 \pm 0.016$** | **ACC $\ge 0.857 \pm 0.048$** | **MCC $\ge 0.604 \pm 0.062$** |
 | **`tox21` (SR-p53)** | Stress Response - p53 | 분류 | 7,831 | **ROC-AUC $\ge 0.890 \pm 0.027$** | **ACC $\ge 0.882 \pm 0.034$** | **MCC $\ge 0.415 \pm 0.036$** |
 
+> [!NOTE]
+> **hERG 데이터셋 3종 크기 차이 및 ADMETlab 3.0 (9,876개)의 출처 분석**
+> - **`hERG` (Wang et al., 648개)**: 문헌에서 정밀 검증된 전통적인 소규모 벤치마크.
+> - **`hERG_Karim` (13,845개)**: ChEMBL 및 문헌 데이터를 통합한 대규모 데이터셋으로, ADMETlab 3.0 논문의 `hERG Blocker (13,845개, ROC-AUC 0.937)`와 정확히 일치함.
+> - **`herg_central` (TDC 공식, 306,893개)**: 미국 NIH NCATS에서 IonWorks 고속 자동 패치클램프로 측정한 **30.7만 개 HTS 전체 라이브러리** (Du et al., *Nat. Biotech.* 2011).
+> - **ADMETlab 3.0의 `hERG Blocker 10um` (9,876개)**: ADMETlab 연구진은 30만 개 노이즈 원시 HTS 데이터를 전부 쓰지 않고, 10µM 기준치 검증 및 화학적 정제를 거친 **9,876개 서브셋(양성 5,090 / 음성 4,786)**을 벤치마크로 사용함. TDC에서 제공되는 306,893개 원본 데이터를 활용할 경우 더 방대한 화학 공간을 탐색할 수 있음.
+
 ```python
 # [Cluster 5 TDC Data Loaders]
 from tdc.single_pred import Tox
 from tdc.utils import retrieve_label_name_list
 
-# 1. Standard hERG (Wang et al.)
+# 1. Standard hERG (Wang et al., 648 drugs)
 herg_data = Tox(name = 'hERG')
 split_herg = herg_data.get_split(method = 'scaffold', seed = 42)
 
-# 2. Large-scale hERG (Karim et al.)
+# 2. Large-scale hERG (Karim et al., 13,845 drugs)
 herg_karim_data = Tox(name = 'hERG_Karim')
 split_karim = herg_karim_data.get_split(method = 'scaffold', seed = 42)
 
-# 3. Multi-Assay hERG Central (retrieve_label_name_list required)
+# 3. Massive hERG Central (306,893 drugs, 3 available target labels)
+# Available labels: ['hERG_at_1uM', 'hERG_at_10uM', 'hERG_inhib']
 herg_central_labels = retrieve_label_name_list('herg_central')
-# e.g., 'hERG_10uM', 'hERG_1uM'
-herg_central_data = Tox(name = 'herg_central', label_name = herg_central_labels[0])
-split_central = herg_central_data.get_split(method = 'scaffold', seed = 42)
+
+# 3-1. Binary Classification: hERG_inhib (whether IC50 < 10uM, 1 = blocker, 0 = non-blocker)
+herg_central_inhib = Tox(name = 'herg_central', label_name = 'hERG_inhib')
+split_central_inhib = herg_central_inhib.get_split(method = 'scaffold', seed = 42)
+
+# 3-2. Continuous Regression: hERG_at_10uM (% inhibition at 10 uM)
+herg_central_10um = Tox(name = 'herg_central', label_name = 'hERG_at_10uM')
+split_central_10um = herg_central_10um.get_split(method = 'scaffold', seed = 42)
+
+# 3-3. Continuous Regression: hERG_at_1uM (% inhibition at 1 uM)
+herg_central_1um = Tox(name = 'herg_central', label_name = 'hERG_at_1uM')
+split_central_1um = herg_central_1um.get_split(method = 'scaffold', seed = 42)
 
 # 4. Acute Toxicity LD50 (Zhu et al.)
 ld50_data = Tox(name = 'LD50_Zhu')

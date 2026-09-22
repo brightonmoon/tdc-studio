@@ -71,14 +71,16 @@ class ColabRunner:
                 return True
         return False
 
-    @staticmethod
+    @classmethod
     @contextlib.contextmanager
     def create_injected_exec_script(
+        cls,
         script_path: str,
         script_args: Optional[List[str]] = None,
+        bundle_b64: Optional[str] = None,
         temp_dir: Optional[str] = None,
     ) -> Generator[str, None, None]:
-        """Creates a temporary Python wrapper script injecting sys.argv and CLI flags.
+        """Creates a temporary Python wrapper script injecting sys.argv, CLI flags, and workspace bundle.
 
         This ports the `colab_exec.ps1` technique to native cross-platform Python.
         Colab CLI's `colab exec` command does not natively pass command line arguments
@@ -94,9 +96,11 @@ class ColabRunner:
         args = script_args or []
         args_repr = repr(args)
         path_repr = repr(str(resolved_path))
+        b64_str = bundle_b64 if bundle_b64 is not None else cls.create_bundle_b64()
 
         header = (
             "# Auto-generated argument injection wrapper by TDC-Studio ColabRunner\n"
+            f'BUNDLE_B64 = "{b64_str}"\n'
             "import os\n"
             "import sys\n"
             f"sys.argv = [{path_repr}] + {args_repr}\n"
@@ -314,10 +318,16 @@ class ColabRunner:
                 )
                 next_account = self.account_manager.rotate_to_next_account()
                 if next_account:
-                    print(f"[ColabRunner] Rotated to account '{next_account}'. Retrying job...", flush=True)
+                    print(
+                        f"[ColabRunner] Rotated to account '{next_account}'. Retrying job...",
+                        flush=True,
+                    )
                     continue
                 else:
-                    print("[ColabRunner] No alternate saved accounts available for rotation.", flush=True)
+                    print(
+                        "[ColabRunner] No alternate saved accounts available for rotation.",
+                        flush=True,
+                    )
                     break
             else:
                 return returncode

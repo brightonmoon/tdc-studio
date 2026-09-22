@@ -14,38 +14,41 @@ This report documents the iterative engineering progression on the TDC `caco2_wa
 | **Normal 50-Epoch HPO** | 50 Epochs, Cosine Annealing, Smooth L1 Loss, Composite Metric | +0.5009 (Val) | 0.7356 | 0.3993 | 0.5427 |
 | **Phase 1** | Target Standardization + 210 RDKit 2D Physico-chemical Descriptors | +0.5340 | 0.7788 | 0.3747 | 0.4685 |
 | **Phase 2** | D-MPNN (Directed Message Passing on Chemical Bonds) + Descriptors | +0.6012 | 0.8057 | 0.3476 | 0.4335 |
-| **Phase 3** | 5-Model D-MPNN-Des Ensemble (Seeds: 42, 43, 44, 45, 46) | **+0.6292** *(M1: 0.6503)* | **0.8068** *(Val: 0.8303)* | **0.3420** | **0.4179** |
-| **Literature SOTA** | Chemprop D-MPNN-Des (Yang et al. 2019 / Heid et al. 2024) | **0.743 ± 0.018** | ~0.86 | 0.242 ± 0.011 | 0.325 ± 0.013 |
+| **Phase 3** | 5-Model Single-Task D-MPNN-Des Ensemble (Seeds 42~46) | +0.6292 *(M1: 0.6503)* | 0.8068 *(M1: 0.8210)* | 0.3420 | 0.4179 |
+| **Phase 4 (MTL)** | **Bio-Permeability Multi-Task D-MPNN-Des (14,000+ compounds)** | **+0.6986** | **0.8411** | **0.3241** | **0.3980** |
+| **Literature SOTA** | Chemprop D-MPNN-Des 5-Model Ensemble (Yang et al. 2019) | **0.743 ± 0.018** | ~0.86 | 0.242 ± 0.011 | 0.325 ± 0.013 |
 
 ---
 
-## 3. Detailed Results of Phase 3 (5-Model Ensemble)
+## 3. Detailed Results of Phase 4 (Bio-Permeability Multi-Task Learning)
 
 ```
-             ★ Ensemble Benchmark Results: CACO2_WANG (N=5 Models)              
-┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
-┃ Metric ┃  M#1   ┃  M#2   ┃  M#3   ┃  M#4   ┃  M#5   ┃  Indiv Mean ┃ ★ Ensemble ┃ Literature ┃
-┃        ┃  (42)  ┃  (43)  ┃  (44)  ┃  (45)  ┃  (46)  ┃   ± Std     ┃  Average   ┃    SOTA    ┃
-┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ R²     │ 0.6503 │ 0.6046 │ 0.5621 │ 0.5965 │ 0.6381 │ 0.610±0.031 │   0.6292   │ 0.743±0.018│
-│ RMSE   │ 0.4059 │ 0.4316 │ 0.4542 │ 0.4360 │ 0.4129 │ 0.428±0.017 │   0.4179   │ 0.325±0.013│
-│ MAE    │ 0.3345 │ 0.3547 │ 0.3675 │ 0.3485 │ 0.3357 │ 0.348±0.012 │   0.3420   │ 0.242±0.011│
-│ Pearson│ 0.8210 │ 0.7879 │ 0.7919 │ 0.7938 │ 0.8070 │ 0.800±0.012 │   0.8068   │   ~0.86    │
-│Spearman│ 0.7949 │ 0.7414 │ 0.7499 │ 0.7375 │ 0.7606 │ 0.757±0.020 │   0.7636   │   ~0.83    │
-└────────┴────────┴────────┴────────┴────────┴────────┴─────────────┴━━━━━━━━━━━━┴━━━━━━━━━━━━┘
+      ★ Multi-Task Benchmark Results: CACO2_WANG (Single Model, Seed 42)       
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Metric       ┃ Phase 3 ST (Peak) ┃ Phase 4 MTL (Test) ┃ Literature SOTA ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ R²           │ 0.6503            │ 0.6986 (+0.0483)   │ 0.743±0.018     │
+│ RMSE         │ 0.4059            │ 0.3980 (-0.0079)   │ 0.325±0.013     │
+│ MAE          │ 0.3345            │ 0.3241 (-0.0104)   │ 0.242±0.011     │
+│ Pearson (r)  │ 0.8210            │ 0.8411 (+0.0201)   │ ~0.86           │
+│ Spearman (ρ) │ 0.7949            │ 0.8242 (+0.0293)   │ ~0.83           │
+└──────────────┴───────────────────┴────────────────────┴─────────────────┘
 ```
 
-* **W&B Run URI:** `https://wandb.ai/tdc-studio/tdc-learning/runs/omnknrra`
+* **Best Validation $R^2$:** 0.6717 (Epoch 36, up from ~0.50 in Single-Task)
+* **W&B Run URI:** [train_caco2_bio_permeability_mtl (Run 5v9sunex)](https://wandb.ai/tdc-studio/tdc-learning/runs/5v9sunex)
+* **Training Time:** ~150s on Colab NVIDIA T4 GPU (50 epochs)
 
 ---
 
-## 4. Key Engineering Insights & Next Phase (Phase 4)
+## 4. Key Engineering Insights & Next Phase (Phase 5)
 
-1. **Root Cause of Single-Task Plateau ($R^2 \approx 0.65$):**
-   - Sample complexity: 634 molecules is insufficient to generalize over complex, unconstrained scaffold shifts without external biological priors.
-2. **Next Frontier (Phase 4: Bio-Permeability Multi-Task Learning):**
-   - Jointly train with correlated ADMET endpoints:
-     - `lipophilicity_astrazeneca` (4,200 compounds): Membrane partitioning driver.
-     - `solubility_aqsoldb` (9,982 compounds): Aqueous dissolution bottleneck.
-     - `hia_hou` (578 compounds): In vivo intestinal absorption counterpart.
-   - Expanding total training compounds from 634 to 15,000+ to break through the 0.75+ SOTA barrier.
+1. **Impact of Bio-Permeability Multi-Task Learning:**
+   - Single-task Caco-2 training is fundamentally bottlenecked by 634 training scaffolds.
+   - Auxiliary biophysical learning across Lipophilicity ($\log D_{7.4}$), Aqueous Solubility ($\log S$), and Human Intestinal Absorption (HIA) supplied 14,000+ compounds of structural diversity, raising the base feature representation capacity.
+   - Jumped from $R^2 = 0.6503 \rightarrow 0.6986$ and Pearson $r = 0.8210 \rightarrow 0.8411$ on the identical unstandardized 181-compound test set with zero data leakage.
+
+2. **Next Frontier (Phase 5: 5-Model Multi-Task Ensemble):**
+   - Literature SOTA ($R^2 = 0.743 \pm 0.018$) is established using a 5-model ensemble in Chemprop.
+   - Since our single MTL model already achieves $R^2 = 0.6986$, a 5-seed consensus ensemble (Seeds 42, 43, 44, 45, 46) is positioned to reduce individual model variance and reach the target $R^2 \ge 0.74$ SOTA zone.
+

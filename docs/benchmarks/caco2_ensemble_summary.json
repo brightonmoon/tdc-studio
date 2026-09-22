@@ -1,0 +1,92 @@
+{
+  "dataset": "caco2_wang",
+  "n_models": 5,
+  "seeds": [42, 43, 44, 45, 46],
+  "model_type": "dmpnn",
+  "accelerator": "Google Colab NVIDIA T4 GPU",
+  "individual_models": [
+    {
+      "seed": 42,
+      "best_epoch": 6,
+      "val_composite": -0.1576,
+      "test_metrics": {
+        "r2": 0.6503,
+        "mae": 0.3345,
+        "rmse": 0.4059,
+        "pearson": 0.8210,
+        "spearman": 0.7949
+      }
+    },
+    {
+      "seed": 43,
+      "best_epoch": 6,
+      "val_composite": -0.1812,
+      "test_metrics": {
+        "r2": 0.6046,
+        "mae": 0.3547,
+        "rmse": 0.4316,
+        "pearson": 0.7879,
+        "spearman": 0.7414
+      }
+    },
+    {
+      "seed": 44,
+      "best_epoch": 11,
+      "val_composite": -0.2204,
+      "test_metrics": {
+        "r2": 0.5621,
+        "mae": 0.3675,
+        "rmse": 0.4542,
+        "pearson": 0.7919,
+        "spearman": 0.7499
+      }
+    },
+    {
+      "seed": 45,
+      "best_epoch": 7,
+      "val_composite": -0.2160,
+      "test_metrics": {
+        "r2": 0.5965,
+        "mae": 0.3485,
+        "rmse": 0.4360,
+        "pearson": 0.7938,
+        "spearman": 0.7375
+      }
+    },
+    {
+      "seed": 46,
+      "best_epoch": 8,
+      "val_composite": -0.1587,
+      "test_metrics": {
+        "r2": 0.6381,
+        "mae": 0.3357,
+        "rmse": 0.4129,
+        "pearson": 0.8070,
+        "spearman": 0.7606
+      }
+    }
+  ],
+  "ensemble_test_metrics": {
+    "r2": 0.62924,
+    "rmse": 0.41793,
+    "mae": 0.34199,
+    "pearson": 0.80683,
+    "spearman": 0.76359,
+    "composite": -0.07829
+  },
+  "ensemble_val_metrics": {
+    "r2": 0.62149,
+    "rmse": 0.41477,
+    "mae": 0.33749,
+    "pearson": 0.83025,
+    "spearman": 0.78120,
+    "composite": -0.04770
+  },
+  "literature_benchmark": {
+    "r2": "0.743 ± 0.018",
+    "rmse": "0.325 ± 0.013",
+    "mae": "0.242 ± 0.011",
+    "pearson": "~0.86",
+    "spearman": "~0.83"
+  }
+}

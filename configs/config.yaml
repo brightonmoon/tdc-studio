@@ -1,4 +1,4 @@
-# Master Configuration for TDC-Studio
+# Master Configuration for TDC-Studio (Phase 1: Hybrid Graph + RDKit 2D Descriptors)
 
 data:
   type: "admet_loader"
@@ -11,17 +11,21 @@ data:
     dataset_name: "caco2_wang"
     split_type: "scaffold"
     task_type: "regression"
+    use_descriptors: true
+    standardize_target: true
 
 model:
   type: "graph_transformer"
   in_dim: 14
-  hidden_dim: 128
+  hidden_dim: 256
   num_layers: 3
-  dropout: 0.1
+  dropout: 0.128
+  use_descriptors: true
+  descriptor_dim: 210
   loss_type: "smooth_l1"
   huber_beta: 1.0
 
-lr: 0.001
+lr: 0.003
 max_epochs: 50
 early_stopping: 15
 
@@ -42,11 +46,11 @@ hpo:
       log: true
     hidden_dim:
       type: "categorical"
-      choices: [64, 128, 256]
+      choices: [128, 256]
     dropout:
       type: "float"
       low: 0.05
-      high: 0.3
+      high: 0.25
 
 tracking:
   project: "tdc-learning"

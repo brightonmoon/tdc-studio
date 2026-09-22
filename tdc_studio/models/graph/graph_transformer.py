@@ -53,12 +53,29 @@ class GraphTransformerModel(BaseTherapeuticsModel):
         self.dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
         self.act = nn.ReLU()
 
-        self.head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
-        )
+        self.use_descriptors = config.get("use_descriptors", False)
+        self.descriptor_dim = config.get("descriptor_dim", 210)
+
+        if self.use_descriptors:
+            self.desc_encoder = nn.Sequential(
+                nn.BatchNorm1d(self.descriptor_dim),
+                nn.Linear(self.descriptor_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            )
+            self.head = nn.Sequential(
+                nn.Linear(hidden_dim * 2, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, 1),
+            )
+        else:
+            self.head = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, 1),
+            )
 
     def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
         """Extract graph representation h in R^{hidden_dim} via global mean pooling."""
@@ -92,6 +109,19 @@ class GraphTransformerModel(BaseTherapeuticsModel):
 
     def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
         hg = self.extract_features(batch)
+        if (
+            self.use_descriptors
+            and hasattr(self, "desc_encoder")
+            and "descriptors" in batch
+            and batch["descriptors"] is not None
+        ):
+            desc = batch["descriptors"]
+            if desc.size(0) == 1 and self.desc_encoder[0].training:
+                h_desc = self.desc_encoder[1:](desc)
+            else:
+                h_desc = self.desc_encoder(desc)
+            h_joint = torch.cat([hg, h_desc], dim=-1)
+            return self.head(h_joint)
         return self.head(hg)
 
 

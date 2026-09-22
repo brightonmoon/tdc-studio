@@ -73,4 +73,15 @@ def molecule_collate_fn(batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
             else torch.tensor(masks, dtype=torch.bool)
         )
 
+    # 7. Collate 2D chemical descriptors if present
+    if "descriptors" in valid_items[0] and valid_items[0]["descriptors"] is not None:
+        first_desc = valid_items[0]["descriptors"]
+        descs = [
+            item["descriptors"]
+            if item.get("descriptors") is not None
+            else torch.zeros_like(first_desc)
+            for item in valid_items
+        ]
+        batch["descriptors"] = torch.stack(descs, dim=0)
+
     return batch

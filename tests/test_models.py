@@ -59,3 +59,40 @@ def test_sequence_transformer_forward():
 
     preds = model(batch)
     assert preds.shape == torch.Size([2, 1])
+
+
+def test_graph_transformer_with_descriptors():
+    from tdc_studio.data.transforms import RDKit2DDescriptorsTransform
+
+    transform = SmilesToGraphTransform()
+    desc_trans = RDKit2DDescriptorsTransform()
+
+    g1 = transform("CC(=O)O")
+    g2 = transform("CCN")
+    d1 = desc_trans("CC(=O)O")
+    d2 = desc_trans("CCN")
+
+    assert d1 is not None and d1.shape[0] >= 200
+    assert d2 is not None and d2.shape[0] >= 200
+
+    batch = molecule_collate_fn(
+        [
+            {"drug_graph": g1, "descriptors": d1, "label": 1.5},
+            {"drug_graph": g2, "descriptors": d2, "label": 2.5},
+        ]
+    )
+
+    config = {
+        "in_dim": 14,
+        "hidden_dim": 32,
+        "num_layers": 2,
+        "use_descriptors": True,
+        "descriptor_dim": d1.shape[0],
+        "task_type": "regression",
+    }
+    model = GraphTransformerModel(config)
+
+    preds = model(batch)
+    assert preds.shape == torch.Size([2, 1])
+    assert not torch.isnan(preds).any()
+

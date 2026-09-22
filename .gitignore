@@ -24,7 +24,7 @@ models/checkpoint/
 *.onnx
 
 # Data caches
-data/
+/data/
 
 # Temporary logs & notebooks
 *.log

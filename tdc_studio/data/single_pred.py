@@ -10,6 +10,7 @@ from tdc_studio.data.base import BaseTDCDataModule, MolecularDataset
 from tdc_studio.data.collate import molecule_collate_fn
 from tdc_studio.data.transforms import (
     MorganFingerprintTransform,
+    RDKit2DDescriptorsTransform,
     SmilesToGraphTransform,
     SmilesTokenizer,
 )
@@ -124,9 +125,14 @@ class ADMETDataModule(BaseTDCDataModule):
             synthetic_df=synthetic_df,
         )
         self.modality = modality.lower()
+        self.use_descriptors = kwargs.get("use_descriptors", True)
+        self.standardize_target = kwargs.get("standardize_target", True)
+        self.target_mean = 0.0
+        self.target_std = 1.0
         self.graph_transform = SmilesToGraphTransform()
         self.smiles_tokenizer = SmilesTokenizer()
         self.fingerprint_transform = MorganFingerprintTransform()
+        self.desc_transform = RDKit2DDescriptorsTransform() if self.use_descriptors else None
 
     def prepare_data(self) -> None:
         """Load dataset from synthetic data or TDC library with Dataverse fallback."""
@@ -155,6 +161,16 @@ class ADMETDataModule(BaseTDCDataModule):
                 )
         self.is_prepared = True
 
+        # Fit target standardization scaler on training set
+        if self.standardize_target and self.task_type == "regression" and "train" in self.splits:
+            train_df = self.splits["train"]
+            label_col = "Y" if "Y" in train_df.columns else "label"
+            if label_col in train_df.columns:
+                self.target_mean = float(train_df[label_col].mean())
+                self.target_std = float(train_df[label_col].std())
+                if self.target_std < 1e-6:
+                    self.target_std = 1.0
+
     def _build_dataset(self, df: pd.DataFrame) -> MolecularDataset:
         samples: List[Dict[str, Any]] = []
         smiles_col = "Drug" if "Drug" in df.columns else "smiles"
@@ -163,18 +179,36 @@ class ADMETDataModule(BaseTDCDataModule):
         for _, row in df.iterrows():
             s = str(row[smiles_col])
             lbl = float(row[label_col]) if label_col in row else 0.0
+            norm_lbl = (
+                (lbl - self.target_mean) / self.target_std
+                if (self.standardize_target and self.task_type == "regression")
+                else lbl
+            )
+
+            sample_desc = None
+            if self.use_descriptors and self.desc_transform is not None:
+                sample_desc = self.desc_transform(s)
 
             if self.modality == "graph":
                 g = self.graph_transform(s)
                 if g is not None:
-                    samples.append({"drug_graph": g, "label": lbl})
+                    item: Dict[str, Any] = {"drug_graph": g, "label": norm_lbl}
+                    if sample_desc is not None:
+                        item["descriptors"] = sample_desc
+                    samples.append(item)
             elif self.modality == "sequence":
                 seq = self.smiles_tokenizer(s)
-                samples.append({"smiles_seq": seq, "label": lbl})
+                item = {"smiles_seq": seq, "label": norm_lbl}
+                if sample_desc is not None:
+                    item["descriptors"] = sample_desc
+                samples.append(item)
             elif self.modality == "fingerprint":
                 fp = self.fingerprint_transform(s)
                 if fp is not None:
-                    samples.append({"fingerprint": fp, "label": lbl})
+                    item = {"fingerprint": fp, "label": norm_lbl}
+                    if sample_desc is not None:
+                        item["descriptors"] = sample_desc
+                    samples.append(item)
             else:
                 raise ValueError(
                     f"Unsupported modality '{self.modality}'. Choose from 'graph', 'sequence', 'fingerprint'."

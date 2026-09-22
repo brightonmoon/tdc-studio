@@ -168,6 +168,17 @@ class TDCStudioObjective:
 
         preds_cat = torch.cat(all_preds, dim=0)
         labels_cat = torch.cat(all_labels, dim=0)
-        target_metric = self.evaluator.compute(preds_cat, labels_cat, self.metric_name)
-        all_metrics = self.evaluator.compute_all(preds_cat, labels_cat, self.task_type)
+
+        # Invert target standardization if enabled
+        if getattr(self.data_module, "standardize_target", False) and self.task_type == "regression":
+            mean = getattr(self.data_module, "target_mean", 0.0)
+            std = getattr(self.data_module, "target_std", 1.0)
+            eval_preds = preds_cat * std + mean
+            eval_labels = labels_cat * std + mean
+        else:
+            eval_preds = preds_cat
+            eval_labels = labels_cat
+
+        target_metric = self.evaluator.compute(eval_preds, eval_labels, self.metric_name)
+        all_metrics = self.evaluator.compute_all(eval_preds, eval_labels, self.task_type)
         return target_metric, all_metrics

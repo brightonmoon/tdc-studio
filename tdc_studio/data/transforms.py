@@ -3,9 +3,10 @@
 import re
 from typing import Dict, List, Optional, Sequence
 
+import numpy as np
 import torch
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, Descriptors
 from torch_geometric.data import Data
 
 from tdc_studio.core.registry import TRANSFORMS
@@ -366,4 +367,32 @@ class RandomizedSmilesAugmenter:
         if mol is None:
             return smiles
         return Chem.MolToSmiles(mol, doRandom=True, canonical=False)
+
+
+@TRANSFORMS.register("rdkit_2d_descriptors")
+class RDKit2DDescriptorsTransform:
+    """Extract 210 RDKit 2D Physico-chemical descriptors (Chemprop/DMPNN-Des baseline)."""
+
+    def __init__(self, fill_na: float = 0.0):
+        self.fill_na = fill_na
+
+    def __call__(self, smiles: str) -> Optional[torch.Tensor]:
+        if not smiles or not isinstance(smiles, str):
+            return None
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        try:
+            desc_dict = Descriptors.CalcMolDescriptors(mol)
+            vals = []
+            for v in desc_dict.values():
+                if v is None or np.isnan(v) or np.isinf(v):
+                    vals.append(self.fill_na)
+                else:
+                    vals.append(float(v))
+            t = torch.tensor(vals, dtype=torch.float32)
+            return torch.nan_to_num(t, nan=self.fill_na, posinf=1e5, neginf=-1e5)
+        except Exception:
+            return None
+
 

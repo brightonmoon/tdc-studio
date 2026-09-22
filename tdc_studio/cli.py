@@ -212,14 +212,22 @@ def train(
                                 t_p, t_y, t_metric_name
                             )
             else:
+                eval_p = val_preds_cat.squeeze(-1) if val_preds_cat.ndim > 1 else val_preds_cat
+                eval_y = val_labels_cat.squeeze(-1) if val_labels_cat.ndim > 1 else val_labels_cat
+                if getattr(data_module, "standardize_target", False) and task_type == "regression":
+                    mean = getattr(data_module, "target_mean", 0.0)
+                    std = getattr(data_module, "target_std", 1.0)
+                    eval_p = eval_p * std + mean
+                    eval_y = eval_y * std + mean
+
                 current_val_metric = evaluator.compute(
-                    val_preds_cat.squeeze(-1) if val_preds_cat.ndim > 1 else val_preds_cat,
-                    val_labels_cat.squeeze(-1) if val_labels_cat.ndim > 1 else val_labels_cat,
+                    eval_p,
+                    eval_y,
                     target_metric,
                 )
                 all_val_metrics = evaluator.compute_all(
-                    val_preds_cat.squeeze(-1) if val_preds_cat.ndim > 1 else val_preds_cat,
-                    val_labels_cat.squeeze(-1) if val_labels_cat.ndim > 1 else val_labels_cat,
+                    eval_p,
+                    eval_y,
                     task_type,
                 )
 
@@ -315,8 +323,17 @@ def train(
                 torch.cat(test_labels_list, dim=0) if test_labels_list else torch.tensor([])
             )
 
-            test_metric_val = evaluator.compute(test_preds_cat, test_labels_cat, target_metric)
-            all_test_metrics = evaluator.compute_all(test_preds_cat, test_labels_cat, task_type)
+            if getattr(data_module, "standardize_target", False) and task_type == "regression":
+                mean = getattr(data_module, "target_mean", 0.0)
+                std = getattr(data_module, "target_std", 1.0)
+                test_preds_eval = test_preds_cat * std + mean
+                test_labels_eval = test_labels_cat * std + mean
+            else:
+                test_preds_eval = test_preds_cat
+                test_labels_eval = test_labels_cat
+
+            test_metric_val = evaluator.compute(test_preds_eval, test_labels_eval, target_metric)
+            all_test_metrics = evaluator.compute_all(test_preds_eval, test_labels_eval, task_type)
 
             console.print(
                 f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"

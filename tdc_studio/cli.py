@@ -105,9 +105,15 @@ def train(
         eval_metric
         or data_cfg.get("metric_name")
         or getattr(data_module, "metric_name", None)
-        or ("val_loss" if task_type == "multi_task" else ("mae" if task_type == "regression" else "roc_auc"))
+        or (
+            "val_loss"
+            if task_type == "multi_task"
+            else ("mae" if task_type == "regression" else "roc_auc")
+        )
     )
-    higher_is_better = is_metric_higher_better(target_metric) if target_metric != "val_loss" else False
+    higher_is_better = (
+        is_metric_higher_better(target_metric) if target_metric != "val_loss" else False
+    )
     evaluator = TherapeuticsEvaluator(default_metric=target_metric, task_type=task_type)
 
     # 2. Build Model & Device
@@ -212,8 +218,13 @@ def train(
                         if int(t_valid.sum().item()) > 0:
                             t_p = val_preds_cat[t_valid, t_idx]
                             t_y = val_labels_cat[t_valid, t_idx]
-                            if getattr(data_module, "standardize_target", False) and t_type == "regression":
-                                stat = getattr(data_module, "task_stats", {}).get(t_name, {"mean": 0.0, "std": 1.0})
+                            if (
+                                getattr(data_module, "standardize_target", False)
+                                and t_type == "regression"
+                            ):
+                                stat = getattr(data_module, "task_stats", {}).get(
+                                    t_name, {"mean": 0.0, "std": 1.0}
+                                )
                                 t_p = t_p * stat["std"] + stat["mean"]
                                 t_y = t_y * stat["std"] + stat["mean"]
 
@@ -223,9 +234,15 @@ def train(
                             )
                             if t_type == "regression":
                                 all_val_metrics[f"{t_name}_r2"] = evaluator.compute(t_p, t_y, "r2")
-                                all_val_metrics[f"{t_name}_rmse"] = evaluator.compute(t_p, t_y, "rmse")
-                                all_val_metrics[f"{t_name}_pearson"] = evaluator.compute(t_p, t_y, "pearson")
-                                all_val_metrics[f"{t_name}_composite"] = evaluator.compute(t_p, t_y, "composite")
+                                all_val_metrics[f"{t_name}_rmse"] = evaluator.compute(
+                                    t_p, t_y, "rmse"
+                                )
+                                all_val_metrics[f"{t_name}_pearson"] = evaluator.compute(
+                                    t_p, t_y, "pearson"
+                                )
+                                all_val_metrics[f"{t_name}_composite"] = evaluator.compute(
+                                    t_p, t_y, "composite"
+                                )
 
                 if primary_task and f"{primary_task}_{target_metric}" in all_val_metrics:
                     current_val_metric = all_val_metrics[f"{primary_task}_{target_metric}"]
@@ -257,7 +274,6 @@ def train(
                 f"Val Loss: {avg_val_loss:.4f} | "
                 f"Val {target_metric.upper()}: [bold cyan]{current_val_metric:.4f}[/bold cyan]"
             )
-
 
             # Track metrics
             log_dict = {
@@ -360,8 +376,13 @@ def train(
                     if int(t_valid.sum().item()) > 0:
                         t_p = test_preds_cat[t_valid, t_idx]
                         t_y = test_labels_cat[t_valid, t_idx]
-                        if getattr(data_module, "standardize_target", False) and t_type == "regression":
-                            stat = getattr(data_module, "task_stats", {}).get(t_name, {"mean": 0.0, "std": 1.0})
+                        if (
+                            getattr(data_module, "standardize_target", False)
+                            and t_type == "regression"
+                        ):
+                            stat = getattr(data_module, "task_stats", {}).get(
+                                t_name, {"mean": 0.0, "std": 1.0}
+                            )
                             t_p = t_p * stat["std"] + stat["mean"]
                             t_y = t_y * stat["std"] + stat["mean"]
 
@@ -369,12 +390,22 @@ def train(
                             all_test_metrics[f"{t_name}_r2"] = evaluator.compute(t_p, t_y, "r2")
                             all_test_metrics[f"{t_name}_rmse"] = evaluator.compute(t_p, t_y, "rmse")
                             all_test_metrics[f"{t_name}_mae"] = evaluator.compute(t_p, t_y, "mae")
-                            all_test_metrics[f"{t_name}_pearson"] = evaluator.compute(t_p, t_y, "pearson")
-                            all_test_metrics[f"{t_name}_spearman"] = evaluator.compute(t_p, t_y, "spearman")
+                            all_test_metrics[f"{t_name}_pearson"] = evaluator.compute(
+                                t_p, t_y, "pearson"
+                            )
+                            all_test_metrics[f"{t_name}_spearman"] = evaluator.compute(
+                                t_p, t_y, "spearman"
+                            )
                         else:
-                            all_test_metrics[f"{t_name}_roc_auc"] = evaluator.compute(t_p, t_y, "roc_auc")
+                            all_test_metrics[f"{t_name}_roc_auc"] = evaluator.compute(
+                                t_p, t_y, "roc_auc"
+                            )
 
-                target_key = f"{primary_task}_{target_metric}" if primary_task and f"{primary_task}_{target_metric}" in all_test_metrics else target_metric
+                target_key = (
+                    f"{primary_task}_{target_metric}"
+                    if primary_task and f"{primary_task}_{target_metric}" in all_test_metrics
+                    else target_metric
+                )
                 test_metric_val = all_test_metrics.get(target_key, 0.0)
 
                 console.print(
@@ -419,8 +450,12 @@ def train(
                     test_preds_eval = test_preds_cat
                     test_labels_eval = test_labels_cat
 
-                test_metric_val = evaluator.compute(test_preds_eval, test_labels_eval, target_metric)
-                all_test_metrics = evaluator.compute_all(test_preds_eval, test_labels_eval, task_type)
+                test_metric_val = evaluator.compute(
+                    test_preds_eval, test_labels_eval, target_metric
+                )
+                all_test_metrics = evaluator.compute_all(
+                    test_preds_eval, test_labels_eval, task_type
+                )
 
                 console.print(
                     f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"
@@ -577,9 +612,7 @@ def ensemble(
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
 
-            train_loader, val_loader, test_loader = data_module.setup_loaders(
-                batch_size=batch_size
-            )
+            train_loader, val_loader, test_loader = data_module.setup_loaders(batch_size=batch_size)
 
             curr_model_cfg = {**model_cfg, "task_type": task_type}
             model_cls = MODELS.get(curr_model_cfg.get("type", curr_model_cfg.get("name")))
@@ -627,9 +660,7 @@ def ensemble(
                         if dry_run:
                             break
 
-                v_preds_cat = (
-                    torch.cat(v_preds_list, dim=0) if v_preds_list else torch.tensor([])
-                )
+                v_preds_cat = torch.cat(v_preds_list, dim=0) if v_preds_list else torch.tensor([])
                 v_labels_cat = (
                     torch.cat(v_labels_list, dim=0) if v_labels_list else torch.tensor([])
                 )
@@ -653,7 +684,13 @@ def ensemble(
                     eval_p = v_preds_cat
                     eval_y = v_labels_cat
 
-                val_metric = evaluator.compute(eval_p, eval_y, target_metric)
+                val_mask = ~torch.isnan(eval_y) & ~torch.isnan(eval_p)
+                if val_mask.sum() > 0:
+                    val_metric = evaluator.compute(
+                        eval_p[val_mask], eval_y[val_mask], target_metric
+                    )
+                else:
+                    val_metric = 0.0
                 scheduler.step()
 
                 improved = (
@@ -663,9 +700,7 @@ def ensemble(
                     best_metric = val_metric
                     best_epoch = epoch + 1
                     patience_counter = 0
-                    best_state_dict = {
-                        k: v.cpu().clone() for k, v in model.state_dict().items()
-                    }
+                    best_state_dict = {k: v.cpu().clone() for k, v in model.state_dict().items()}
                 else:
                     patience_counter += 1
                     if patience_counter >= patience and not dry_run:
@@ -699,17 +734,10 @@ def ensemble(
                     if dry_run:
                         break
 
-            t_preds_cat = (
-                torch.cat(t_preds_list, dim=0) if t_preds_list else torch.tensor([])
-            )
-            t_labels_cat = (
-                torch.cat(t_labels_list, dim=0) if t_labels_list else torch.tensor([])
-            )
+            t_preds_cat = torch.cat(t_preds_list, dim=0) if t_preds_list else torch.tensor([])
+            t_labels_cat = torch.cat(t_labels_list, dim=0) if t_labels_list else torch.tensor([])
 
-            if (
-                getattr(data_module, "standardize_target", False)
-                and eval_task_type == "regression"
-            ):
+            if getattr(data_module, "standardize_target", False) and eval_task_type == "regression":
                 if task_type == "multi_task":
                     stat = getattr(data_module, "task_stats", {}).get(
                         primary_task, {"mean": 0.0, "std": 1.0}
@@ -735,7 +763,13 @@ def ensemble(
             all_test_preds.append(real_t_p)
             all_val_preds.append(real_v_p)
 
-            m_metrics = evaluator.compute_all(real_t_p, real_t_y, eval_task_type)
+            t_valid = ~torch.isnan(real_t_y) & ~torch.isnan(real_t_p)
+            if t_valid.sum() > 0:
+                m_metrics = evaluator.compute_all(
+                    real_t_p[t_valid], real_t_y[t_valid], eval_task_type
+                )
+            else:
+                m_metrics = {}
             model_metrics_list.append(m_metrics)
             console.print(
                 f"  Model #{idx + 1} Test Results ({eval_task_type}): R2={m_metrics.get('r2', 0):.4f} | "
@@ -754,13 +788,23 @@ def ensemble(
         # 2. Ensemble Averaging
         if all_test_preds and test_labels_real is not None:
             ens_test_preds = torch.stack(all_test_preds, dim=0).mean(dim=0)
-            ens_test_metrics = evaluator.compute_all(
-                ens_test_preds, test_labels_real, eval_task_type
+            t_valid = ~torch.isnan(test_labels_real) & ~torch.isnan(ens_test_preds)
+            ens_test_metrics = (
+                evaluator.compute_all(
+                    ens_test_preds[t_valid], test_labels_real[t_valid], eval_task_type
+                )
+                if t_valid.sum() > 0
+                else {}
             )
 
             ens_val_preds = torch.stack(all_val_preds, dim=0).mean(dim=0)
-            ens_val_metrics = evaluator.compute_all(
-                ens_val_preds, val_labels_real, eval_task_type
+            v_valid = ~torch.isnan(val_labels_real) & ~torch.isnan(ens_val_preds)
+            ens_val_metrics = (
+                evaluator.compute_all(
+                    ens_val_preds[v_valid], val_labels_real[v_valid], eval_task_type
+                )
+                if v_valid.sum() > 0
+                else {}
             )
 
             table = Table(
@@ -799,9 +843,7 @@ def ensemble(
             console.print("\n")
             console.print(table)
 
-            tracker.log_metrics(
-                {f"ensemble_test_{k}": v for k, v in ens_test_metrics.items()}
-            )
+            tracker.log_metrics({f"ensemble_test_{k}": v for k, v in ens_test_metrics.items()})
             tracker.log_metrics({f"ensemble_val_{k}": v for k, v in ens_val_metrics.items()})
 
             summary_path = os.path.join(checkpoint_dir, "ensemble_summary.json")
@@ -917,28 +959,36 @@ def switch_account(account: str = typer.Argument(..., help="Account name to acti
     mgr = ColabAccountManager()
     try:
         mgr.use_account(account)
-        console.print(f"[bold green]Successfully switched active Colab account to:[/bold green] [cyan]{account}[/cyan]")
+        console.print(
+            f"[bold green]Successfully switched active Colab account to:[/bold green] [cyan]{account}[/cyan]"
+        )
     except Exception as e:
         console.print(f"[bold red]Failed to switch account:[/bold red] {e}")
         raise typer.Exit(1)
 
 
 @switch_app.command("save")
-def save_account(account: str = typer.Argument(..., help="Name to save current active credentials as")):
+def save_account(
+    account: str = typer.Argument(..., help="Name to save current active credentials as"),
+):
     """Save currently active credentials as a named account."""
     from tdc_studio.remote.colab_account import ColabAccountManager
 
     mgr = ColabAccountManager()
     try:
         path = mgr.save_account(account)
-        console.print(f"[bold green]Saved current Colab credentials as:[/bold green] [cyan]{account}[/cyan] ({path})")
+        console.print(
+            f"[bold green]Saved current Colab credentials as:[/bold green] [cyan]{account}[/cyan] ({path})"
+        )
     except Exception as e:
         console.print(f"[bold red]Failed to save account:[/bold red] {e}")
         raise typer.Exit(1)
 
 
 @switch_app.command("new")
-def new_account(account: str = typer.Argument(..., help="Name for the newly authenticated account")):
+def new_account(
+    account: str = typer.Argument(..., help="Name for the newly authenticated account"),
+):
     """Authenticate a new Google account via OAuth browser flow and save credentials."""
     from tdc_studio.remote.colab_account import ColabAccountManager
 
@@ -946,7 +996,9 @@ def new_account(account: str = typer.Argument(..., help="Name for the newly auth
     try:
         success = mgr.new_account(account)
         if success:
-            console.print(f"[bold green]Successfully created and registered account:[/bold green] [cyan]{account}[/cyan]")
+            console.print(
+                f"[bold green]Successfully created and registered account:[/bold green] [cyan]{account}[/cyan]"
+            )
         else:
             console.print("[bold yellow]Authentication flow was aborted or failed.[/bold yellow]")
             raise typer.Exit(1)
@@ -963,7 +1015,9 @@ def delete_account(account: str = typer.Argument(..., help="Account name to dele
     mgr = ColabAccountManager()
     try:
         mgr.delete_account(account)
-        console.print(f"[bold green]Deleted credentials for account:[/bold green] [cyan]{account}[/cyan]")
+        console.print(
+            f"[bold green]Deleted credentials for account:[/bold green] [cyan]{account}[/cyan]"
+        )
     except Exception as e:
         console.print(f"[bold red]Failed to delete account:[/bold red] {e}")
         raise typer.Exit(1)
@@ -1004,7 +1058,9 @@ def remote_exec(
         None, help="Command payload for deploy/colab_runner_job.py"
     ),
     session: Optional[str] = typer.Option(None, "-s", "--session", help="Active Colab session ID"),
-    script: Optional[str] = typer.Option(None, "-f", "--script", help="Local python script to execute"),
+    script: Optional[str] = typer.Option(
+        None, "-f", "--script", help="Local python script to execute"
+    ),
     script_args: Optional[List[str]] = typer.Option(
         None, "--arg", help="Arguments to inject and pass to the script"
     ),
@@ -1015,7 +1071,9 @@ def remote_exec(
     from tdc_studio.remote.colab_runner import ColabRunner
 
     runner = ColabRunner(account=account)
-    console.print("[bold cyan]Executing remote job on Colab instance via `colab exec`[/bold cyan]...")
+    console.print(
+        "[bold cyan]Executing remote job on Colab instance via `colab exec`[/bold cyan]..."
+    )
 
     returncode = runner.run_remote_exec(
         command_to_run=command or "tdc-studio train --config configs/config.yaml",
@@ -1051,4 +1109,3 @@ def export_notebook(
 
 if __name__ == "__main__":
     app()
-

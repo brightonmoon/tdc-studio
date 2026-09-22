@@ -57,6 +57,7 @@ class Registry:
 MODELS = Registry("models")
 DATASETS = Registry("datasets")
 TRANSFORMS = Registry("transforms")
+EVALUATORS = Registry("evaluators")
 
 
 def auto_import_modules(package_name: str) -> None:

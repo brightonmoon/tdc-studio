@@ -14,6 +14,7 @@ services:
       - ../models/export:/models:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - MODEL_DIR=/models
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 10s

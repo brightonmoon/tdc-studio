@@ -29,3 +29,15 @@ class RemoteExecutionError(TDCStudioError):
     """Raised when remote execution via Google Colab CLI fails."""
 
     pass
+
+
+class ServingError(TDCStudioError):
+    """Raised when model loading or serving pipeline execution fails."""
+
+    pass
+
+
+class EvaluationError(TDCStudioError):
+    """Raised when evaluation metric computation fails."""
+
+    pass

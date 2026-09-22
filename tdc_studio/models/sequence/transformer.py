@@ -37,8 +37,8 @@ class SequenceTransformerModel(BaseTherapeuticsModel):
             nn.Linear(hidden_dim // 2, 1),
         )
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
-        # Accepts 'target_seq' or 'smiles_seq'
+    def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Extract sequence representation h in R^{hidden_dim}."""
         seq = batch.get("target_seq")
         if seq is None:
             seq = batch.get("smiles_seq")
@@ -51,5 +51,9 @@ class SequenceTransformerModel(BaseTherapeuticsModel):
 
         # Mean pooling over non-padded tokens
         expanded_mask = (~mask).unsqueeze(-1).float()
-        pooled = (encoded * expanded_mask).sum(dim=1) / expanded_mask.sum(dim=1).clamp(min=1.0)
+        return (encoded * expanded_mask).sum(dim=1) / expanded_mask.sum(dim=1).clamp(min=1.0)
+
+    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+        pooled = self.extract_features(batch)
         return self.head(pooled)
+

@@ -3,9 +3,15 @@
 from typing import Any, List, Optional
 
 import torch
+from torch_geometric.data import Data
 
 from tdc_studio.data.collate import molecule_collate_fn
-from tdc_studio.data.transforms import SequenceTokenizer, SmilesToGraphTransform
+from tdc_studio.data.transforms import (
+    MorganFingerprintTransform,
+    SequenceTokenizer,
+    SmilesToGraphTransform,
+    SmilesTokenizer,
+)
 
 
 class InferencePipeline:
@@ -16,39 +22,57 @@ class InferencePipeline:
         model: torch.nn.Module,
         device: str = "cpu",
         is_dta: bool = False,
+        modality: str = "graph",
     ):
         self.model = model.to(device)
         self.model.eval()
         self.device = device
         self.is_dta = is_dta
+        self.modality = modality.lower()
+
         self.graph_transform = SmilesToGraphTransform()
-        self.seq_tokenizer = SequenceTokenizer() if is_dta else None
+        self.smiles_tokenizer = SmilesTokenizer()
+        self.fingerprint_transform = MorganFingerprintTransform()
+        self.target_tokenizer = SequenceTokenizer() if is_dta else None
 
     def predict(
         self, smiles_list: List[str], target_seqs: Optional[List[str]] = None
     ) -> List[float]:
-        """Run batch inference on raw SMILES and optional targets."""
+        """Run batch inference on raw SMILES and optional targets across modalities."""
         batch_items = []
         for i, sm in enumerate(smiles_list):
-            g = self.graph_transform(sm)
-            if g is None:
-                # If invalid SMILES, create dummy graph with 0-filled feature
-                from torch_geometric.data import Data
+            item: dict[str, Any] = {}
 
-                g = Data(x=torch.zeros((1, 14)), edge_index=torch.empty((2, 0), dtype=torch.long))
+            if self.modality == "sequence":
+                item["smiles_seq"] = self.smiles_tokenizer(sm)
+            elif self.modality == "fingerprint":
+                fp = self.fingerprint_transform(sm)
+                if fp is None:
+                    fp = torch.zeros(2048, dtype=torch.float32)
+                item["fingerprint"] = fp
+            else:
+                # Default to graph
+                g = self.graph_transform(sm)
+                if g is None:
+                    g = Data(
+                        x=torch.zeros((1, 14)),
+                        edge_index=torch.empty((2, 0), dtype=torch.long),
+                        edge_attr=torch.empty((0, 6), dtype=torch.float),
+                    )
+                item["drug_graph"] = g
 
-            item: dict[str, Any] = {"drug_graph": g}
             if self.is_dta and target_seqs is not None and i < len(target_seqs):
-                item["target_seq"] = self.seq_tokenizer(target_seqs[i])
+                item["target_seq"] = self.target_tokenizer(target_seqs[i])
+
             batch_items.append(item)
 
         # Collate items
         collated = molecule_collate_fn(batch_items)
 
         # Move to device
-        collated["drug_graph"] = collated["drug_graph"].to(self.device)
-        if "target_seq" in collated:
-            collated["target_seq"] = collated["target_seq"].to(self.device)
+        for k, v in collated.items():
+            if hasattr(v, "to"):
+                collated[k] = v.to(self.device)
 
         with torch.no_grad():
             preds = self.model(collated)

@@ -1,0 +1,101 @@
+experiment:
+  name: "admet_categorical_mtl"
+  seed: 42
+  device: "cpu"
+  paradigm: "categorical_mtl"
+
+data:
+  name: "multitask_loader"
+  modality: "graph"
+  split_type: "scaffold"
+  tasks:
+    - name: "caco2_wang"
+      category: "absorption"
+      type: "regression"
+    - name: "hia_hou"
+      category: "absorption"
+      type: "binary_classification"
+    - name: "bbb_martins"
+      category: "distribution"
+      type: "binary_classification"
+    - name: "ppbr_az"
+      category: "distribution"
+      type: "regression"
+    - name: "cyp3a4_veith"
+      category: "metabolism"
+      type: "binary_classification"
+    - name: "half_life_obach"
+      category: "excretion"
+      type: "regression"
+    - name: "herg"
+      category: "toxicity"
+      type: "binary_classification"
+    - name: "ames"
+      category: "toxicity"
+      type: "binary_classification"
+    - name: "dili"
+      category: "toxicity"
+      type: "binary_classification"
+    - name: "solubility_aqsoldb"
+      category: "physicochemical"
+      type: "regression"
+
+model:
+  name: "categorical_mtl"
+  backbone_type: "gine"
+  backbone_config:
+    in_dim: 14
+    edge_dim: 6
+    hidden_dim: 128
+    num_layers: 3
+    dropout: 0.1
+  backbone_hidden_dim: 256
+  freeze_backbone: false
+  head_hidden_dim: 128
+  dropout: 0.1
+  specialized_tasks:
+    - "caco2_wang"
+    - "herg"
+  tasks:
+    - name: "caco2_wang"
+      category: "absorption"
+      type: "regression"
+    - name: "hia_hou"
+      category: "absorption"
+      type: "binary_classification"
+    - name: "bbb_martins"
+      category: "distribution"
+      type: "binary_classification"
+    - name: "ppbr_az"
+      category: "distribution"
+      type: "regression"
+    - name: "cyp3a4_veith"
+      category: "metabolism"
+      type: "binary_classification"
+    - name: "half_life_obach"
+      category: "excretion"
+      type: "regression"
+    - name: "herg"
+      category: "toxicity"
+      type: "binary_classification"
+    - name: "ames"
+      category: "toxicity"
+      type: "binary_classification"
+    - name: "dili"
+      category: "toxicity"
+      type: "binary_classification"
+    - name: "solubility_aqsoldb"
+      category: "physicochemical"
+      type: "regression"
+
+loss:
+  name: "masked_multitask_loss"
+  use_uncertainty: true
+
+training:
+  batch_size: 32
+  epochs: 50
+  lr: 0.0005
+  weight_decay: 0.00001
+  early_stopping_patience: 10
+  dry_run_batches: 2

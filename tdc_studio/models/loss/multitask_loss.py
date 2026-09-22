@@ -1,0 +1,96 @@
+"""Masked Multi-Task Loss with Kendall et al. Homoscedastic Uncertainty Weighting."""
+
+from typing import Dict, List, Optional, Tuple
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class MaskedMultiTaskLoss(nn.Module):
+    """Multi-task loss supporting missing labels (masking) and mixed regression/classification tasks."""
+
+    def __init__(
+        self,
+        task_names: List[str],
+        task_types: List[str],
+        use_uncertainty: bool = True,
+    ):
+        super().__init__()
+        self.task_names = task_names
+        self.task_types = [t.lower() for t in task_types]
+        self.num_tasks = len(task_names)
+        self.use_uncertainty = use_uncertainty
+
+        if len(self.task_types) != self.num_tasks:
+            raise ValueError("task_names and task_types must have identical length.")
+
+        # Trainable log variance parameters (log(sigma^2)) initialized to 0 (sigma=1)
+        if self.use_uncertainty:
+            self.log_vars = nn.Parameter(torch.zeros(self.num_tasks, dtype=torch.float32))
+        else:
+            self.register_parameter("log_vars", None)
+
+    def forward(
+        self,
+        preds: torch.Tensor,
+        targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """Compute masked multi-task loss.
+
+        Args:
+            preds: Tensor of shape [B, num_tasks]
+            targets: Tensor of shape [B, num_tasks]
+            mask: Optional boolean or binary Tensor of shape [B, num_tasks] (1: valid, 0: missing)
+
+        Returns:
+            total_loss: Scalar Tensor for backpropagation
+            task_losses_dict: Dictionary of unweighted loss values per task for logging
+        """
+        device = preds.device
+        if mask is None:
+            # If mask not provided, consider non-NaN targets as valid
+            mask = ~torch.isnan(targets)
+        else:
+            mask = mask.bool() & ~torch.isnan(targets)
+
+        task_losses: Dict[str, float] = {}
+        total_loss = torch.tensor(0.0, device=device, requires_grad=True)
+        valid_task_count = 0
+
+        for i in range(self.num_tasks):
+            valid_idx = mask[:, i]
+            n_valid = int(valid_idx.sum().item())
+            if n_valid == 0:
+                continue
+
+            t_preds = preds[valid_idx, i]
+            t_targets = targets[valid_idx, i]
+            t_type = self.task_types[i]
+
+            if t_type == "regression":
+                t_loss = F.mse_loss(t_preds, t_targets)
+            elif t_type in ("binary_classification", "classification"):
+                t_loss = F.binary_cross_entropy_with_logits(t_preds, t_targets)
+            else:
+                t_loss = F.mse_loss(t_preds, t_targets)
+
+            task_losses[self.task_names[i]] = float(t_loss.item())
+            valid_task_count += 1
+
+            if self.use_uncertainty and self.log_vars is not None:
+                log_var = self.log_vars[i]
+                precision = torch.exp(-log_var)
+                if t_type == "regression":
+                    weighted_loss = 0.5 * precision * t_loss + 0.5 * log_var
+                else:
+                    weighted_loss = precision * t_loss + 0.5 * log_var
+                total_loss = total_loss + weighted_loss
+            else:
+                total_loss = total_loss + t_loss
+
+        if valid_task_count > 0 and not self.use_uncertainty:
+            total_loss = total_loss / valid_task_count
+
+        return total_loss, task_losses

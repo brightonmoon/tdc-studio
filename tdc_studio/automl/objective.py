@@ -7,6 +7,7 @@ import torch
 
 from tdc_studio.automl.sampler import sample_parameters
 from tdc_studio.core.registry import DATASETS, MODELS
+from tdc_studio.evaluation.evaluator import TherapeuticsEvaluator, is_metric_higher_better
 
 
 class TDCStudioObjective:
@@ -43,7 +44,15 @@ class TDCStudioObjective:
         )
 
         self.task_type = getattr(self.data_module, "task_type", "regression")
-        self.direction = "minimize" if self.task_type == "regression" else "maximize"
+        self.metric_name = (
+            self.data_cfg.get("metric_name")
+            or getattr(self.data_module, "metric_name", None)
+            or ("mae" if self.task_type == "regression" else "roc_auc")
+        )
+        self.evaluator = TherapeuticsEvaluator(
+            default_metric=self.metric_name, task_type=self.task_type
+        )
+        self.direction = "maximize" if is_metric_higher_better(self.metric_name) else "minimize"
 
     def __call__(self, trial: optuna.Trial) -> float:
         # Sample parameters
@@ -79,7 +88,7 @@ class TDCStudioObjective:
             optimizer = torch.optim.AdamW(model.parameters(), lr=sampled_params.get("lr", 1e-3))
 
             max_epochs = 1 if self.dry_run else self.data_cfg.get("max_epochs", 5)
-            best_metric = float("inf") if self.direction == "minimize" else -float("inf")
+            best_metric = -float("inf") if self.direction == "maximize" else float("inf")
 
             for epoch in range(max_epochs):
                 # Train single epoch (or single batch in dry_run)
@@ -97,16 +106,18 @@ class TDCStudioObjective:
                 val_metric = self.evaluate(model, self.val_loader)
 
                 if wandb_run is not None:
-                    wandb_run.log({"epoch": epoch, "val_loss": val_metric}, step=epoch)
+                    wandb_run.log(
+                        {"epoch": epoch, f"val_{self.metric_name}": val_metric}, step=epoch
+                    )
 
                 trial.report(val_metric, epoch)
                 if trial.should_prune():
                     raise optuna.exceptions.TrialPruned()
 
-                if self.direction == "minimize":
-                    best_metric = min(best_metric, val_metric)
-                else:
+                if self.direction == "maximize":
                     best_metric = max(best_metric, val_metric)
+                else:
+                    best_metric = min(best_metric, val_metric)
 
                 if self.dry_run:
                     break
@@ -117,16 +128,21 @@ class TDCStudioObjective:
                 wandb_run.finish()
 
     def evaluate(self, model: torch.nn.Module, val_loader: Any) -> float:
-        """Evaluate model on validation loader."""
+        """Evaluate model on validation loader using domain metric."""
         model.eval()
-        total_loss = 0.0
-        count = 0
+        all_preds = []
+        all_labels = []
         with torch.no_grad():
             for batch in val_loader:
                 preds = model(batch)
-                loss = model.compute_loss(preds, batch["labels"])
-                total_loss += float(loss.item())
-                count += 1
+                all_preds.append(preds.squeeze(-1).detach().cpu())
+                all_labels.append(batch["labels"].detach().cpu())
                 if self.dry_run:
                     break
-        return total_loss / max(1, count)
+
+        if not all_preds:
+            return 0.0
+
+        preds_cat = torch.cat(all_preds, dim=0)
+        labels_cat = torch.cat(all_labels, dim=0)
+        return self.evaluator.compute(preds_cat, labels_cat, self.metric_name)

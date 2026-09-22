@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.nn import GCNConv, TransformerConv, global_mean_pool
 
 from tdc_studio.core.registry import MODELS
 from tdc_studio.models.base import BaseTherapeuticsModel
@@ -12,17 +12,44 @@ from tdc_studio.models.base import BaseTherapeuticsModel
 
 @MODELS.register("graph_transformer")
 class GraphTransformerModel(BaseTherapeuticsModel):
-    """Molecular Graph Convolutional Network / Transformer for single-molecule property prediction."""
+    """Molecular Graph Transformer with Multi-Head Attention and edge feature bias."""
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        in_dim = config.get("in_dim", 14)  # DEFAULT_ATOM_LIST size (10) + 4 extra features
+        in_dim = config.get("in_dim", 14)
+        edge_dim = config.get("edge_dim", 6)
         hidden_dim = config.get("hidden_dim", 128)
         num_layers = config.get("num_layers", 3)
+        heads = config.get("heads", 4)
         dropout = config.get("dropout", 0.1)
+        self.use_transformer_conv = config.get("use_transformer_conv", True)
 
         self.embedding = nn.Linear(in_dim, hidden_dim)
-        self.convs = nn.ModuleList([GCNConv(hidden_dim, hidden_dim) for _ in range(num_layers)])
+
+        if self.use_transformer_conv:
+            out_per_head = max(1, hidden_dim // heads)
+            self.convs = nn.ModuleList(
+                [
+                    TransformerConv(
+                        in_channels=hidden_dim,
+                        out_channels=out_per_head,
+                        heads=heads,
+                        edge_dim=edge_dim,
+                        dropout=dropout,
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
+            # Projection in case hidden_dim is not evenly divisible by heads
+            self.proj = (
+                nn.Linear(out_per_head * heads, hidden_dim)
+                if out_per_head * heads != hidden_dim
+                else nn.Identity()
+            )
+        else:
+            self.convs = nn.ModuleList([GCNConv(hidden_dim, hidden_dim) for _ in range(num_layers)])
+            self.proj = nn.Identity()
+
         self.dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
         self.act = nn.ReLU()
 
@@ -33,20 +60,40 @@ class GraphTransformerModel(BaseTherapeuticsModel):
             nn.Linear(hidden_dim // 2, 1),
         )
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Extract graph representation h in R^{hidden_dim} via global mean pooling."""
         graph = batch["drug_graph"]
         x, edge_index, batch_idx = graph.x, graph.edge_index, graph.batch
 
         h = self.embedding(x)
+
+        has_edge_attr = (
+            hasattr(graph, "edge_attr")
+            and graph.edge_attr is not None
+            and graph.edge_attr.numel() > 0
+            and graph.edge_attr.size(0) == edge_index.size(1)
+        )
+        edge_attr = graph.edge_attr if has_edge_attr else None
+
         for conv, drop in zip(self.convs, self.dropouts):
-            h = conv(h, edge_index)
+            if self.use_transformer_conv:
+                if edge_attr is not None:
+                    h = conv(h, edge_index, edge_attr=edge_attr)
+                else:
+                    h = conv(h, edge_index)
+                h = self.proj(h)
+            else:
+                h = conv(h, edge_index)
             h = self.act(h)
             h = drop(h)
 
         # Global readout pooling (mean across nodes in each graph)
-        hg = global_mean_pool(h, batch_idx)
-        out = self.head(hg)
-        return out
+        return global_mean_pool(h, batch_idx)
+
+    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+        hg = self.extract_features(batch)
+        return self.head(hg)
+
 
 
 @MODELS.register("graph_transformer_dta")

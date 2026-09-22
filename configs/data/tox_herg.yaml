@@ -1,0 +1,11 @@
+type: "tox_loader"
+dataset_name: "herg"
+split_type: "scaffold"
+batch_size: 32
+max_epochs: 10
+params:
+  dataset_name: "herg"
+  split_type: "scaffold"
+  task_type: "binary_classification"
+  metric_name: "roc_auc"
+  modality: "graph"

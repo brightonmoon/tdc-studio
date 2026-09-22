@@ -5,6 +5,7 @@ description = "Modular MLOps Studio for Therapeutics Data Commons with Cloud GPU
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "setuptools<72",
     "numpy>=1.26.4,<2.0.0",
     "torch>=2.2.0",
     "torch-geometric>=2.5.0",

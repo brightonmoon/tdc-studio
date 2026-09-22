@@ -105,6 +105,71 @@ class ColabRunner:
                 except OSError:
                     pass
 
+    @classmethod
+    def create_bundle_b64(cls, workspace_root: Optional[Path] = None) -> str:
+        """Pack core project code (tdc_studio, configs, pyproject.toml, README.md) into base64 zip."""
+        import base64
+        import io
+        import zipfile
+
+        root = (workspace_root or Path.cwd()).resolve()
+        targets = ["tdc_studio", "configs", "pyproject.toml", "README.md"]
+        buf = io.BytesIO()
+
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for t in targets:
+                tp = root / t
+                if tp.is_file():
+                    zf.write(tp, arcname=t)
+                elif tp.is_dir():
+                    for item in tp.rglob("*"):
+                        if "__pycache__" in item.parts or item.suffix in (
+                            ".pyc",
+                            ".pt",
+                            ".pth",
+                            ".log",
+                        ):
+                            continue
+                        if item.is_file():
+                            rel_path = item.relative_to(root)
+                            zf.write(item, arcname=str(rel_path).replace("\\", "/"))
+
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    @classmethod
+    @contextlib.contextmanager
+    def create_injected_run_script(
+        cls,
+        runner_script: str = "deploy/colab_runner_job.py",
+        bundle_b64: Optional[str] = None,
+        temp_dir: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        """Inject BUNDLE_B64 into runner script so Colab runs the exact local workspace."""
+        resolved_path = Path(runner_script).resolve()
+        if not resolved_path.is_file():
+            raise FileNotFoundError(f"Runner script not found: {resolved_path}")
+
+        original_code = resolved_path.read_text(encoding="utf-8")
+
+        b64_str = bundle_b64 if bundle_b64 is not None else cls.create_bundle_b64()
+        header = f'BUNDLE_B64 = "{b64_str}"\n\n'
+
+        target_dir = Path(temp_dir) if temp_dir else (resolved_path.parent / ".temp_colab")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        temp_file = target_dir / f"run_{resolved_path.name}"
+
+        combined_code = header + original_code
+        temp_file.write_text(combined_code, encoding="utf-8")
+
+        try:
+            yield str(temp_file)
+        finally:
+            if temp_file.is_file():
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+
     def build_run_command(
         self,
         command_to_run: str,
@@ -174,14 +239,15 @@ class ColabRunner:
         runner_script: str = "deploy/colab_runner_job.py",
         dry_run: bool = False,
         retries: int = 1,
+        embed_bundle: bool = True,
     ) -> int:
         """Execute a training or tuning job on Google Colab Cloud GPU.
 
         Supports automatic account rotation if quota limits are encountered.
         """
-        cmd = self.build_run_command(task_command, runner_script)
-
         if dry_run:
+            cmd = self.build_run_command(task_command, runner_script)
+            print(f"[Dry-run] Colab Run command: {' '.join(cmd)}")
             return 0
 
         if not self.is_colab_cli_available():
@@ -193,39 +259,56 @@ class ColabRunner:
         env = self._get_execution_env()
 
         for attempt in range(retries + 1):
-            process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=env,
-            )
+            accumulated_output: List[str] = []
+            if embed_bundle:
+                script_ctx = self.create_injected_run_script(runner_script)
+            else:
+                script_ctx = contextlib.nullcontext(runner_script)
 
-            # Print stdout and stderr to console
-            if process.stdout:
-                sys.stdout.write(process.stdout)
-            if process.stderr:
-                sys.stderr.write(process.stderr)
+            with script_ctx as target_script:
+                cmd = self.build_run_command(task_command, target_script)
 
-            if process.returncode == 0:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                    env=env,
+                )
+
+                if process.stdout:
+                    for line in iter(process.stdout.readline, ""):
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                        accumulated_output.append(line)
+                    process.stdout.close()
+
+                returncode = process.wait()
+
+            if returncode == 0:
                 return 0
 
             # Check for quota errors
-            combined_output = (process.stdout or "") + (process.stderr or "")
-            if self.auto_switch_on_quota and self.is_quota_error(combined_output) and attempt < retries:
-                print("\n[ColabRunner] Colab GPU Quota limit exceeded! Attempting account rotation...")
+            full_log = "".join(accumulated_output)
+            if self.auto_switch_on_quota and self.is_quota_error(full_log) and attempt < retries:
+                print(
+                    "\n[ColabRunner] Colab GPU Quota limit exceeded! Attempting account rotation...",
+                    flush=True,
+                )
                 next_account = self.account_manager.rotate_to_next_account()
                 if next_account:
-                    print(f"[ColabRunner] Rotated to account '{next_account}'. Retrying job...")
+                    print(f"[ColabRunner] Rotated to account '{next_account}'. Retrying job...", flush=True)
                     continue
                 else:
-                    print("[ColabRunner] No alternate saved accounts available for rotation.")
+                    print("[ColabRunner] No alternate saved accounts available for rotation.", flush=True)
                     break
             else:
-                return process.returncode
+                return returncode
 
-        return process.returncode
+        return returncode
 
     def run_remote_exec(
         self,

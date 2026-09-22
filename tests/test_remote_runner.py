@@ -103,3 +103,27 @@ def test_generate_colab_notebook(tmp_path):
     export_notebook_file(out_file, run_command="tdc-studio train")
     assert os.path.exists(out_file)
     assert os.path.getsize(out_file) > 100
+
+
+def test_colab_runner_create_bundle():
+    b64 = ColabRunner.create_bundle_b64()
+    assert isinstance(b64, str)
+    assert len(b64) > 1000  # Should be at least tens of KB
+
+
+def test_colab_runner_injected_run_script(tmp_path):
+    dummy_runner = tmp_path / "dummy_job.py"
+    dummy_runner.write_text("print('Dummy runner')", encoding="utf-8")
+    temp_dir = tmp_path / "temp_run"
+
+    with ColabRunner.create_injected_run_script(
+        str(dummy_runner), bundle_b64="test_b64_content", temp_dir=str(temp_dir)
+    ) as injected_file:
+        p = Path(injected_file)
+        assert p.is_file()
+        content = p.read_text(encoding="utf-8")
+        assert 'BUNDLE_B64 = "test_b64_content"' in content
+        assert "print('Dummy runner')" in content
+
+    assert not Path(injected_file).exists()
+

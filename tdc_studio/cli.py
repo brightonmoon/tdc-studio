@@ -647,6 +647,7 @@ def ensemble(
                 model.eval()
                 v_preds_list = []
                 v_labels_list = []
+                v_masks_list = []
                 with torch.no_grad():
                     for batch in val_loader:
                         dev_batch = _batch_to_device(batch, device)
@@ -654,9 +655,15 @@ def ensemble(
                         if task_type == "multi_task":
                             v_preds_list.append(preds[:, primary_idx].detach().cpu())
                             v_labels_list.append(dev_batch["labels"][:, primary_idx].detach().cpu())
+                            if "mask" in dev_batch and dev_batch["mask"] is not None:
+                                v_masks_list.append(
+                                    dev_batch["mask"][:, primary_idx].detach().cpu()
+                                )
                         else:
                             v_preds_list.append(preds.squeeze(-1).detach().cpu())
                             v_labels_list.append(dev_batch["labels"].detach().cpu())
+                            if "mask" in dev_batch and dev_batch["mask"] is not None:
+                                v_masks_list.append(dev_batch["mask"].squeeze(-1).detach().cpu())
                         if dry_run:
                             break
 
@@ -664,6 +671,7 @@ def ensemble(
                 v_labels_cat = (
                     torch.cat(v_labels_list, dim=0) if v_labels_list else torch.tensor([])
                 )
+                v_masks_cat = torch.cat(v_masks_list, dim=0) if v_masks_list else torch.tensor([])
 
                 if (
                     getattr(data_module, "standardize_target", False)
@@ -684,7 +692,11 @@ def ensemble(
                     eval_p = v_preds_cat
                     eval_y = v_labels_cat
 
-                val_mask = ~torch.isnan(eval_y) & ~torch.isnan(eval_p)
+                if v_masks_cat.numel() > 0:
+                    val_mask = v_masks_cat.bool() & ~torch.isnan(eval_y) & ~torch.isnan(eval_p)
+                else:
+                    val_mask = ~torch.isnan(eval_y) & ~torch.isnan(eval_p)
+
                 if val_mask.sum() > 0:
                     val_metric = evaluator.compute(
                         eval_p[val_mask], eval_y[val_mask], target_metric
@@ -721,6 +733,7 @@ def ensemble(
             model.eval()
             t_preds_list = []
             t_labels_list = []
+            t_masks_list = []
             with torch.no_grad():
                 for batch in test_loader:
                     dev_batch = _batch_to_device(batch, device)
@@ -728,14 +741,19 @@ def ensemble(
                     if task_type == "multi_task":
                         t_preds_list.append(preds[:, primary_idx].detach().cpu())
                         t_labels_list.append(dev_batch["labels"][:, primary_idx].detach().cpu())
+                        if "mask" in dev_batch and dev_batch["mask"] is not None:
+                            t_masks_list.append(dev_batch["mask"][:, primary_idx].detach().cpu())
                     else:
                         t_preds_list.append(preds.squeeze(-1).detach().cpu())
                         t_labels_list.append(dev_batch["labels"].detach().cpu())
+                        if "mask" in dev_batch and dev_batch["mask"] is not None:
+                            t_masks_list.append(dev_batch["mask"].squeeze(-1).detach().cpu())
                     if dry_run:
                         break
 
             t_preds_cat = torch.cat(t_preds_list, dim=0) if t_preds_list else torch.tensor([])
             t_labels_cat = torch.cat(t_labels_list, dim=0) if t_labels_list else torch.tensor([])
+            t_masks_cat = torch.cat(t_masks_list, dim=0) if t_masks_list else torch.tensor([])
 
             if getattr(data_module, "standardize_target", False) and eval_task_type == "regression":
                 if task_type == "multi_task":
@@ -757,19 +775,23 @@ def ensemble(
                 real_v_p = v_preds_cat
                 real_v_y = v_labels_cat
 
-            test_labels_real = real_t_y
-            val_labels_real = real_v_y
-
-            all_test_preds.append(real_t_p)
-            all_val_preds.append(real_v_p)
-
-            t_valid = ~torch.isnan(real_t_y) & ~torch.isnan(real_t_p)
-            if t_valid.sum() > 0:
-                m_metrics = evaluator.compute_all(
-                    real_t_p[t_valid], real_t_y[t_valid], eval_task_type
-                )
+            if t_masks_cat.numel() > 0:
+                t_valid = t_masks_cat.bool() & ~torch.isnan(real_t_y) & ~torch.isnan(real_t_p)
             else:
-                m_metrics = {}
+                t_valid = ~torch.isnan(real_t_y) & ~torch.isnan(real_t_p)
+
+            eval_t_p = real_t_p[t_valid]
+            eval_t_y = real_t_y[t_valid]
+            eval_v_p = real_v_p[val_mask]
+            eval_v_y = real_v_y[val_mask]
+
+            test_labels_real = eval_t_y
+            val_labels_real = eval_v_y
+
+            all_test_preds.append(eval_t_p)
+            all_val_preds.append(eval_v_p)
+
+            m_metrics = evaluator.compute_all(eval_t_p, eval_t_y, eval_task_type)
             model_metrics_list.append(m_metrics)
             console.print(
                 f"  Model #{idx + 1} Test Results ({eval_task_type}): R2={m_metrics.get('r2', 0):.4f} | "
@@ -788,24 +810,12 @@ def ensemble(
         # 2. Ensemble Averaging
         if all_test_preds and test_labels_real is not None:
             ens_test_preds = torch.stack(all_test_preds, dim=0).mean(dim=0)
-            t_valid = ~torch.isnan(test_labels_real) & ~torch.isnan(ens_test_preds)
-            ens_test_metrics = (
-                evaluator.compute_all(
-                    ens_test_preds[t_valid], test_labels_real[t_valid], eval_task_type
-                )
-                if t_valid.sum() > 0
-                else {}
+            ens_test_metrics = evaluator.compute_all(
+                ens_test_preds, test_labels_real, eval_task_type
             )
 
             ens_val_preds = torch.stack(all_val_preds, dim=0).mean(dim=0)
-            v_valid = ~torch.isnan(val_labels_real) & ~torch.isnan(ens_val_preds)
-            ens_val_metrics = (
-                evaluator.compute_all(
-                    ens_val_preds[v_valid], val_labels_real[v_valid], eval_task_type
-                )
-                if v_valid.sum() > 0
-                else {}
-            )
+            ens_val_metrics = evaluator.compute_all(ens_val_preds, val_labels_real, eval_task_type)
 
             table = Table(
                 title=f"★ Ensemble Benchmark Results: {dataset_name.upper()} (N={len(seed_list)} Models)"

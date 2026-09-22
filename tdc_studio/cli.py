@@ -96,13 +96,18 @@ def train(
     )
 
     task_type = data_module.task_type
+    primary_task = (
+        getattr(data_module, "primary_task", None)
+        or data_cfg.get("primary_task")
+        or (data_module.task_names[0] if getattr(data_module, "task_names", None) else None)
+    )
     target_metric = (
         eval_metric
         or data_cfg.get("metric_name")
         or getattr(data_module, "metric_name", None)
         or ("val_loss" if task_type == "multi_task" else ("mae" if task_type == "regression" else "roc_auc"))
     )
-    higher_is_better = is_metric_higher_better(target_metric) if task_type != "multi_task" else False
+    higher_is_better = is_metric_higher_better(target_metric) if target_metric != "val_loss" else False
     evaluator = TherapeuticsEvaluator(default_metric=target_metric, task_type=task_type)
 
     # 2. Build Model & Device
@@ -207,10 +212,25 @@ def train(
                         if int(t_valid.sum().item()) > 0:
                             t_p = val_preds_cat[t_valid, t_idx]
                             t_y = val_labels_cat[t_valid, t_idx]
+                            if getattr(data_module, "standardize_target", False) and t_type == "regression":
+                                stat = getattr(data_module, "task_stats", {}).get(t_name, {"mean": 0.0, "std": 1.0})
+                                t_p = t_p * stat["std"] + stat["mean"]
+                                t_y = t_y * stat["std"] + stat["mean"]
+
                             t_metric_name = "mae" if t_type == "regression" else "roc_auc"
                             all_val_metrics[f"{t_name}_{t_metric_name}"] = evaluator.compute(
                                 t_p, t_y, t_metric_name
                             )
+                            if t_type == "regression":
+                                all_val_metrics[f"{t_name}_r2"] = evaluator.compute(t_p, t_y, "r2")
+                                all_val_metrics[f"{t_name}_rmse"] = evaluator.compute(t_p, t_y, "rmse")
+                                all_val_metrics[f"{t_name}_pearson"] = evaluator.compute(t_p, t_y, "pearson")
+                                all_val_metrics[f"{t_name}_composite"] = evaluator.compute(t_p, t_y, "composite")
+
+                if primary_task and f"{primary_task}_{target_metric}" in all_val_metrics:
+                    current_val_metric = all_val_metrics[f"{primary_task}_{target_metric}"]
+                elif target_metric in all_val_metrics:
+                    current_val_metric = all_val_metrics[target_metric]
             else:
                 eval_p = val_preds_cat.squeeze(-1) if val_preds_cat.ndim > 1 else val_preds_cat
                 eval_y = val_labels_cat.squeeze(-1) if val_labels_cat.ndim > 1 else val_labels_cat
@@ -309,12 +329,15 @@ def train(
             eval_model.eval()
             test_preds_list = []
             test_labels_list = []
+            test_masks_list = []
             with torch.no_grad():
                 for batch in test_loader:
                     dev_batch = _batch_to_device(batch, device)
                     preds = eval_model(dev_batch)
-                    test_preds_list.append(preds.squeeze(-1).detach().cpu())
+                    test_preds_list.append(preds.detach().cpu())
                     test_labels_list.append(dev_batch["labels"].detach().cpu())
+                    if "mask" in dev_batch:
+                        test_masks_list.append(dev_batch["mask"].detach().cpu())
 
             test_preds_cat = (
                 torch.cat(test_preds_list, dim=0) if test_preds_list else torch.tensor([])
@@ -323,23 +346,87 @@ def train(
                 torch.cat(test_labels_list, dim=0) if test_labels_list else torch.tensor([])
             )
 
-            if getattr(data_module, "standardize_target", False) and task_type == "regression":
-                mean = getattr(data_module, "target_mean", 0.0)
-                std = getattr(data_module, "target_std", 1.0)
-                test_preds_eval = test_preds_cat * std + mean
-                test_labels_eval = test_labels_cat * std + mean
+            if task_type == "multi_task":
+                all_test_metrics = {}
+                test_masks_cat = (
+                    torch.cat(test_masks_list, dim=0) if test_masks_list else torch.tensor([])
+                )
+                for t_idx, t_name in enumerate(data_module.task_names):
+                    t_type = data_module.task_types[t_idx]
+                    if test_masks_cat.numel() > 0:
+                        t_valid = test_masks_cat[:, t_idx]
+                    else:
+                        t_valid = ~torch.isnan(test_labels_cat[:, t_idx])
+                    if int(t_valid.sum().item()) > 0:
+                        t_p = test_preds_cat[t_valid, t_idx]
+                        t_y = test_labels_cat[t_valid, t_idx]
+                        if getattr(data_module, "standardize_target", False) and t_type == "regression":
+                            stat = getattr(data_module, "task_stats", {}).get(t_name, {"mean": 0.0, "std": 1.0})
+                            t_p = t_p * stat["std"] + stat["mean"]
+                            t_y = t_y * stat["std"] + stat["mean"]
+
+                        if t_type == "regression":
+                            all_test_metrics[f"{t_name}_r2"] = evaluator.compute(t_p, t_y, "r2")
+                            all_test_metrics[f"{t_name}_rmse"] = evaluator.compute(t_p, t_y, "rmse")
+                            all_test_metrics[f"{t_name}_mae"] = evaluator.compute(t_p, t_y, "mae")
+                            all_test_metrics[f"{t_name}_pearson"] = evaluator.compute(t_p, t_y, "pearson")
+                            all_test_metrics[f"{t_name}_spearman"] = evaluator.compute(t_p, t_y, "spearman")
+                        else:
+                            all_test_metrics[f"{t_name}_roc_auc"] = evaluator.compute(t_p, t_y, "roc_auc")
+
+                target_key = f"{primary_task}_{target_metric}" if primary_task and f"{primary_task}_{target_metric}" in all_test_metrics else target_metric
+                test_metric_val = all_test_metrics.get(target_key, 0.0)
+
+                console.print(
+                    f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"
+                )
+                console.print(f"Detailed Test Metrics: {all_test_metrics}")
+
+                if primary_task == "caco2_wang":
+                    from rich.table import Table
+
+                    c_r2 = all_test_metrics.get("caco2_wang_r2", 0.0)
+                    c_rmse = all_test_metrics.get("caco2_wang_rmse", 0.0)
+                    c_mae = all_test_metrics.get("caco2_wang_mae", 0.0)
+                    c_pr = all_test_metrics.get("caco2_wang_pearson", 0.0)
+                    c_sp = all_test_metrics.get("caco2_wang_spearman", 0.0)
+
+                    table = Table(title="★ Multi-Task Benchmark Results: CACO2_WANG")
+                    table.add_column("Metric", style="bold")
+                    table.add_column("Phase 4 MTL (Test)", style="bold cyan")
+                    table.add_column("Literature SOTA", style="bold green")
+                    table.add_row("R²", f"{c_r2:.4f}", "0.743±0.018")
+                    table.add_row("RMSE", f"{c_rmse:.4f}", "0.325±0.013")
+                    table.add_row("MAE", f"{c_mae:.4f}", "0.242±0.011")
+                    table.add_row("Pearson (r)", f"{c_pr:.4f}", "~0.86")
+                    table.add_row("Spearman (ρ)", f"{c_sp:.4f}", "~0.83")
+                    console.print(table)
+
+                tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
             else:
-                test_preds_eval = test_preds_cat
-                test_labels_eval = test_labels_cat
+                test_preds_cat = (
+                    test_preds_cat.squeeze(-1) if test_preds_cat.ndim > 1 else test_preds_cat
+                )
+                test_labels_cat = (
+                    test_labels_cat.squeeze(-1) if test_labels_cat.ndim > 1 else test_labels_cat
+                )
+                if getattr(data_module, "standardize_target", False) and task_type == "regression":
+                    mean = getattr(data_module, "target_mean", 0.0)
+                    std = getattr(data_module, "target_std", 1.0)
+                    test_preds_eval = test_preds_cat * std + mean
+                    test_labels_eval = test_labels_cat * std + mean
+                else:
+                    test_preds_eval = test_preds_cat
+                    test_labels_eval = test_labels_cat
 
-            test_metric_val = evaluator.compute(test_preds_eval, test_labels_eval, target_metric)
-            all_test_metrics = evaluator.compute_all(test_preds_eval, test_labels_eval, task_type)
+                test_metric_val = evaluator.compute(test_preds_eval, test_labels_eval, target_metric)
+                all_test_metrics = evaluator.compute_all(test_preds_eval, test_labels_eval, task_type)
 
-            console.print(
-                f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"
-            )
-            console.print(f"Detailed Test Metrics: {all_test_metrics}")
-            tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
+                console.print(
+                    f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"
+                )
+                console.print(f"Detailed Test Metrics: {all_test_metrics}")
+                tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
 
     finally:
         tracker.finish()
@@ -413,7 +500,7 @@ def ensemble(
     from rich.table import Table
 
     from tdc_studio.core.registry import DATASETS, MODELS
-    from tdc_studio.evaluation.evaluator import TherapeuticsEvaluator
+    from tdc_studio.evaluation.evaluator import TherapeuticsEvaluator, is_metric_higher_better
     from tdc_studio.tracking.wandb_tracker import WandBTracker
 
     cfg = load_yaml(config)
@@ -440,12 +527,28 @@ def ensemble(
     batch_size = data_cfg.get("batch_size", 32)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     task_type = data_module.task_type
+    primary_task = (
+        getattr(data_module, "primary_task", None)
+        or data_cfg.get("primary_task")
+        or (data_module.task_names[0] if getattr(data_module, "task_names", None) else None)
+    )
+    primary_idx = (
+        data_module.task_names.index(primary_task)
+        if (primary_task and hasattr(data_module, "task_names"))
+        else 0
+    )
+    eval_task_type = (
+        data_module.task_types[primary_idx]
+        if hasattr(data_module, "task_types")
+        else ("regression" if task_type == "regression" else "binary_classification")
+    )
     target_metric = (
         data_cfg.get("metric_name")
         or getattr(data_module, "metric_name", None)
-        or ("composite" if task_type == "regression" else "roc_auc")
+        or ("composite" if eval_task_type == "regression" else "roc_auc")
     )
-    evaluator = TherapeuticsEvaluator(default_metric=target_metric, task_type=task_type)
+    higher_is_better = is_metric_higher_better(target_metric)
+    evaluator = TherapeuticsEvaluator(default_metric=target_metric, task_type=eval_task_type)
 
     tracking_cfg = cfg.get("tracking", {})
     tracker = WandBTracker(tracking_cfg)
@@ -486,7 +589,7 @@ def ensemble(
                 optimizer, T_max=max(1, max_epochs), eta_min=1e-6
             )
 
-            best_metric = float("inf")
+            best_metric = -float("inf") if higher_is_better else float("inf")
             best_epoch = 0
             patience_counter = 0
             best_state_dict = None
@@ -515,8 +618,12 @@ def ensemble(
                     for batch in val_loader:
                         dev_batch = _batch_to_device(batch, device)
                         preds = model(dev_batch)
-                        v_preds_list.append(preds.squeeze(-1).detach().cpu())
-                        v_labels_list.append(dev_batch["labels"].detach().cpu())
+                        if task_type == "multi_task":
+                            v_preds_list.append(preds[:, primary_idx].detach().cpu())
+                            v_labels_list.append(dev_batch["labels"][:, primary_idx].detach().cpu())
+                        else:
+                            v_preds_list.append(preds.squeeze(-1).detach().cpu())
+                            v_labels_list.append(dev_batch["labels"].detach().cpu())
                         if dry_run:
                             break
 
@@ -529,10 +636,17 @@ def ensemble(
 
                 if (
                     getattr(data_module, "standardize_target", False)
-                    and task_type == "regression"
+                    and eval_task_type == "regression"
                 ):
-                    mean = getattr(data_module, "target_mean", 0.0)
-                    std = getattr(data_module, "target_std", 1.0)
+                    if task_type == "multi_task":
+                        stat = getattr(data_module, "task_stats", {}).get(
+                            primary_task, {"mean": 0.0, "std": 1.0}
+                        )
+                        mean = stat["mean"]
+                        std = stat["std"]
+                    else:
+                        mean = getattr(data_module, "target_mean", 0.0)
+                        std = getattr(data_module, "target_std", 1.0)
                     eval_p = v_preds_cat * std + mean
                     eval_y = v_labels_cat * std + mean
                 else:
@@ -542,7 +656,10 @@ def ensemble(
                 val_metric = evaluator.compute(eval_p, eval_y, target_metric)
                 scheduler.step()
 
-                if val_metric < best_metric:
+                improved = (
+                    val_metric > best_metric if higher_is_better else val_metric < best_metric
+                )
+                if improved:
                     best_metric = val_metric
                     best_epoch = epoch + 1
                     patience_counter = 0
@@ -573,8 +690,12 @@ def ensemble(
                 for batch in test_loader:
                     dev_batch = _batch_to_device(batch, device)
                     preds = model(dev_batch)
-                    t_preds_list.append(preds.squeeze(-1).detach().cpu())
-                    t_labels_list.append(dev_batch["labels"].detach().cpu())
+                    if task_type == "multi_task":
+                        t_preds_list.append(preds[:, primary_idx].detach().cpu())
+                        t_labels_list.append(dev_batch["labels"][:, primary_idx].detach().cpu())
+                    else:
+                        t_preds_list.append(preds.squeeze(-1).detach().cpu())
+                        t_labels_list.append(dev_batch["labels"].detach().cpu())
                     if dry_run:
                         break
 
@@ -587,10 +708,17 @@ def ensemble(
 
             if (
                 getattr(data_module, "standardize_target", False)
-                and task_type == "regression"
+                and eval_task_type == "regression"
             ):
-                mean = getattr(data_module, "target_mean", 0.0)
-                std = getattr(data_module, "target_std", 1.0)
+                if task_type == "multi_task":
+                    stat = getattr(data_module, "task_stats", {}).get(
+                        primary_task, {"mean": 0.0, "std": 1.0}
+                    )
+                    mean = stat["mean"]
+                    std = stat["std"]
+                else:
+                    mean = getattr(data_module, "target_mean", 0.0)
+                    std = getattr(data_module, "target_std", 1.0)
                 real_t_p = t_preds_cat * std + mean
                 real_t_y = t_labels_cat * std + mean
                 real_v_p = v_preds_cat * std + mean
@@ -607,11 +735,11 @@ def ensemble(
             all_test_preds.append(real_t_p)
             all_val_preds.append(real_v_p)
 
-            m_metrics = evaluator.compute_all(real_t_p, real_t_y, task_type)
+            m_metrics = evaluator.compute_all(real_t_p, real_t_y, eval_task_type)
             model_metrics_list.append(m_metrics)
             console.print(
-                f"  Model #{idx + 1} Test Metrics: R2={m_metrics.get('r2', 0):.4f}, "
-                f"MAE={m_metrics.get('mae', 0):.4f}, RMSE={m_metrics.get('rmse', 0):.4f}, "
+                f"  Model #{idx + 1} Test Results ({eval_task_type}): R2={m_metrics.get('r2', 0):.4f} | "
+                f"RMSE={m_metrics.get('rmse', 0):.4f} | MAE={m_metrics.get('mae', 0):.4f} | "
                 f"Pearson={m_metrics.get('pearson', 0):.4f}"
             )
 
@@ -627,12 +755,12 @@ def ensemble(
         if all_test_preds and test_labels_real is not None:
             ens_test_preds = torch.stack(all_test_preds, dim=0).mean(dim=0)
             ens_test_metrics = evaluator.compute_all(
-                ens_test_preds, test_labels_real, task_type
+                ens_test_preds, test_labels_real, eval_task_type
             )
 
             ens_val_preds = torch.stack(all_val_preds, dim=0).mean(dim=0)
             ens_val_metrics = evaluator.compute_all(
-                ens_val_preds, val_labels_real, task_type
+                ens_val_preds, val_labels_real, eval_task_type
             )
 
             table = Table(

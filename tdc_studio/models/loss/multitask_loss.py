@@ -15,12 +15,14 @@ class MaskedMultiTaskLoss(nn.Module):
         task_names: List[str],
         task_types: List[str],
         use_uncertainty: bool = True,
+        task_weights: Optional[Dict[str, float]] = None,
     ):
         super().__init__()
         self.task_names = task_names
         self.task_types = [t.lower() for t in task_types]
         self.num_tasks = len(task_names)
         self.use_uncertainty = use_uncertainty
+        self.task_weights = task_weights or {}
 
         if len(self.task_types) != self.num_tasks:
             raise ValueError("task_names and task_types must have identical length.")
@@ -79,6 +81,7 @@ class MaskedMultiTaskLoss(nn.Module):
             task_losses[self.task_names[i]] = float(t_loss.item())
             valid_task_count += 1
 
+            w = self.task_weights.get(self.task_names[i], 1.0)
             if self.use_uncertainty and self.log_vars is not None:
                 log_var = self.log_vars[i]
                 precision = torch.exp(-log_var)
@@ -86,11 +89,16 @@ class MaskedMultiTaskLoss(nn.Module):
                     weighted_loss = 0.5 * precision * t_loss + 0.5 * log_var
                 else:
                     weighted_loss = precision * t_loss + 0.5 * log_var
-                total_loss = total_loss + weighted_loss
+                total_loss = total_loss + w * weighted_loss
             else:
-                total_loss = total_loss + t_loss
+                total_loss = total_loss + w * t_loss
 
         if valid_task_count > 0 and not self.use_uncertainty:
-            total_loss = total_loss / valid_task_count
+            denom = sum(
+                self.task_weights.get(self.task_names[i], 1.0)
+                for i in range(self.num_tasks)
+                if mask[:, i].any()
+            ) if self.task_weights else float(valid_task_count)
+            total_loss = total_loss / max(1e-6, denom)
 
         return total_loss, task_losses

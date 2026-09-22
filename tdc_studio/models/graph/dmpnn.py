@@ -1,6 +1,6 @@
 """Directed Message Passing Neural Network (D-MPNN) with optional 2D Descriptors."""
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -9,15 +9,18 @@ from torch_geometric.utils import scatter
 
 from tdc_studio.core.registry import MODELS
 from tdc_studio.models.base import BaseTherapeuticsModel
+from tdc_studio.models.loss.multitask_loss import MaskedMultiTaskLoss
 
 
 @MODELS.register("dmpnn")
 @MODELS.register("dmpnn_des")
+@MODELS.register("dmpnn_mtl")
 class DMPNNModel(BaseTherapeuticsModel):
     """Directed Message Passing Neural Network (Chemprop / Yang et al. 2019).
 
     Operates on directed bonds e_{vw} rather than atoms, eliminating backtracking loops.
     Optionally incorporates 210 RDKit 2D physico-chemical descriptors via a hybrid MLP branch.
+    Supports single-task regression/classification and multi-task learning with task-specific heads.
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -59,16 +62,50 @@ class DMPNNModel(BaseTherapeuticsModel):
         else:
             head_in_dim = pooled_dim
 
-        # Chemprop-style 2-layer FFN Head
-        self.head = nn.Sequential(
-            nn.Linear(head_in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, 1),
-        )
+        # Multi-task heads setup (if tasks specified in config)
+        raw_tasks = config.get("tasks", None)
+        if raw_tasks:
+            self.task_names = [t["name"] if isinstance(t, dict) else t for t in raw_tasks]
+            self.task_types = [
+                t.get("type", "regression") if isinstance(t, dict) else "regression"
+                for t in raw_tasks
+            ]
+            self.num_tasks = len(self.task_names)
+            self.task_heads = nn.ModuleDict(
+                {
+                    name: nn.Sequential(
+                        nn.Linear(head_in_dim, hidden_dim),
+                        nn.ReLU(),
+                        nn.Dropout(dropout),
+                        nn.Linear(hidden_dim, 1),
+                    )
+                    for name in self.task_names
+                }
+            )
+            use_uncertainty = config.get("use_uncertainty", False)
+            task_weights = config.get("task_weights", None)
+            self.loss_fn = MaskedMultiTaskLoss(
+                task_names=self.task_names,
+                task_types=self.task_types,
+                use_uncertainty=use_uncertainty,
+                task_weights=task_weights,
+            )
+            self.head = None
+        else:
+            self.task_names = []
+            self.num_tasks = 1
+            self.task_heads = None
+            self.loss_fn = None
+            # Standard Chemprop-style 2-layer FFN Head
+            self.head = nn.Sequential(
+                nn.Linear(head_in_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, 1),
+            )
 
-    def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
-        """Extract molecular representation via directed message passing."""
+    def _extract_graph_features(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Extract graph molecular representation via directed message passing."""
         graph = batch["drug_graph"]
         x, edge_index, batch_idx = graph.x, graph.edge_index, graph.batch
         num_nodes = x.size(0)
@@ -125,8 +162,9 @@ class DMPNNModel(BaseTherapeuticsModel):
         h_sum = global_add_pool(atom_rep, batch_idx)
         return torch.cat([h_mean, h_sum], dim=-1)
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
-        h_mol = self.extract_features(batch)
+    def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Extract combined molecular representation (Graph + optional Descriptors)."""
+        h_mol = self._extract_graph_features(batch)
 
         if (
             self.use_descriptors
@@ -139,7 +177,28 @@ class DMPNNModel(BaseTherapeuticsModel):
                 h_desc = self.desc_encoder[1:](desc)
             else:
                 h_desc = self.desc_encoder(desc)
-            h_joint = torch.cat([h_mol, h_desc], dim=-1)
-            return self.head(h_joint)
+            return torch.cat([h_mol, h_desc], dim=-1)
 
-        return self.head(h_mol)
+        return h_mol
+
+    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Forward pass generating predictions for single or multiple tasks."""
+        h = self.extract_features(batch)
+
+        if hasattr(self, "task_heads") and self.task_heads is not None:
+            preds = [self.task_heads[name](h).squeeze(-1) for name in self.task_names]
+            return torch.stack(preds, dim=-1)
+
+        return self.head(h)
+
+    def compute_loss(
+        self,
+        preds: torch.Tensor,
+        targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute training loss (masked multi-task loss or single-task loss)."""
+        if hasattr(self, "loss_fn") and self.loss_fn is not None:
+            loss, _ = self.loss_fn(preds, targets, mask=mask)
+            return loss
+        return super().compute_loss(preds, targets)

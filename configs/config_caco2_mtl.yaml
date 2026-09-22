@@ -1,0 +1,60 @@
+data:
+  type: bio_permeability_loader
+  dataset_name: caco2_bio_permeability_mtl
+  split_type: scaffold
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: caco2_wang
+  metric_name: r2
+  use_descriptors: true
+  standardize_target: true
+  tasks:
+    - name: caco2_wang
+      category: absorption
+      type: regression
+    - name: lipophilicity_astrazeneca
+      category: physicochemical
+      type: regression
+    - name: solubility_aqsoldb
+      category: physicochemical
+      type: regression
+    - name: hia_hou
+      category: absorption
+      type: binary_classification
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  num_layers: 3
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: caco2_wang
+      type: regression
+    - name: lipophilicity_astrazeneca
+      type: regression
+    - name: solubility_aqsoldb
+      type: regression
+    - name: hia_hou
+      type: binary_classification
+  task_weights:
+    caco2_wang: 2.0
+    lipophilicity_astrazeneca: 0.5
+    solubility_aqsoldb: 0.5
+    hia_hou: 0.5
+  use_uncertainty: false
+
+lr: 0.0008
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: r2
+
+tracking:
+  enabled: true
+  project: tdc-learning
+  entity: tdc-studio

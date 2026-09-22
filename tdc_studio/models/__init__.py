@@ -2,6 +2,7 @@
 
 from tdc_studio.models.base import BaseTherapeuticsModel
 from tdc_studio.models.fingerprint.mlp import MLPBaselineModel
+from tdc_studio.models.graph.dmpnn import DMPNNModel
 from tdc_studio.models.graph.gine import GINEModel
 from tdc_studio.models.graph.graph_transformer import (
     GraphTransformerDTAModel,
@@ -16,6 +17,7 @@ __all__ = [
     "GraphTransformerModel",
     "GraphTransformerDTAModel",
     "GINEModel",
+    "DMPNNModel",
     "SequenceTransformerModel",
     "MLPBaselineModel",
     "CategoricalMTLModel",

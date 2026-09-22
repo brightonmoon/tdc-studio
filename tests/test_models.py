@@ -96,3 +96,71 @@ def test_graph_transformer_with_descriptors():
     assert preds.shape == torch.Size([2, 1])
     assert not torch.isnan(preds).any()
 
+
+def test_dmpnn_forward_and_loss():
+    from tdc_studio.models.graph.dmpnn import DMPNNModel
+
+    transform = SmilesToGraphTransform()
+    g1 = transform("CC(=O)O")
+    g2 = transform("CCN")
+
+    batch = molecule_collate_fn(
+        [
+            {"drug_graph": g1, "label": 1.5},
+            {"drug_graph": g2, "label": 2.5},
+        ]
+    )
+
+    config = {
+        "in_dim": 14,
+        "edge_dim": 6,
+        "hidden_dim": 64,
+        "depth": 3,
+        "use_descriptors": False,
+        "task_type": "regression",
+    }
+    model = DMPNNModel(config)
+
+    preds = model(batch)
+    assert preds.shape == torch.Size([2, 1])
+
+    loss = model.compute_loss(preds, batch["labels"])
+    assert isinstance(loss, torch.Tensor)
+    assert not torch.isnan(loss)
+
+
+def test_dmpnn_with_descriptors():
+    from tdc_studio.data.transforms import RDKit2DDescriptorsTransform
+    from tdc_studio.models.graph.dmpnn import DMPNNModel
+
+    transform = SmilesToGraphTransform()
+    desc_trans = RDKit2DDescriptorsTransform()
+
+    g1 = transform("CC(=O)O")
+    g2 = transform("CCN")
+    d1 = desc_trans("CC(=O)O")
+    d2 = desc_trans("CCN")
+
+    batch = molecule_collate_fn(
+        [
+            {"drug_graph": g1, "descriptors": d1, "label": 1.5},
+            {"drug_graph": g2, "descriptors": d2, "label": 2.5},
+        ]
+    )
+
+    config = {
+        "in_dim": 14,
+        "edge_dim": 6,
+        "hidden_dim": 64,
+        "depth": 3,
+        "use_descriptors": True,
+        "descriptor_dim": d1.shape[0],
+        "task_type": "regression",
+    }
+    model = DMPNNModel(config)
+
+    preds = model(batch)
+    assert preds.shape == torch.Size([2, 1])
+    assert not torch.isnan(preds).any()
+
+

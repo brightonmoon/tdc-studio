@@ -1,0 +1,37 @@
+# Configuration for Caco-2 Wang (Phase 2: D-MPNN-Des Architecture)
+# Directed Message Passing on Bonds + 210 RDKit Descriptors + Target Standardization
+
+data:
+  type: "admet_loader"
+  dataset_name: "caco2_wang"
+  split_type: "scaffold"
+  batch_size: 32
+  max_epochs: 80
+  metric_name: "composite"
+  params:
+    dataset_name: "caco2_wang"
+    split_type: "scaffold"
+    task_type: "regression"
+    use_descriptors: true
+    standardize_target: true
+
+model:
+  type: "dmpnn"
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  depth: 3
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  loss_type: "smooth_l1"
+  huber_beta: 1.0
+
+lr: 0.001
+max_epochs: 80
+early_stopping: 20
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

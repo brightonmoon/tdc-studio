@@ -1,0 +1,104 @@
+# ==============================================================================
+# hERG Standalone Cardiotoxicity Training Configuration (Big Data MTL + Fine-Tuning)
+# ==============================================================================
+# Objective: Train a high-capacity standalone cardiotoxicity model on 306,893 drugs
+# from NIH NCATS hERG Central, using multi-concentration joint learning, followed by
+# transfer learning / fine-tuning on curated gold-standard benchmarks (Karim / Wang).
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Phase 1: Pre-training on hERG Central (306k drugs, 3-task joint learning)
+# ------------------------------------------------------------------------------
+phase1_pretraining:
+  data:
+    type: single_prediction
+    dataset_name: herg_central
+    split_type: scaffold
+    batch_size: 256
+    seed: 42
+    modality: graph
+    use_descriptors: true
+    standardize_target: true
+    tasks:
+      - name: herg_central_at_1um
+        category: tox
+        label_name: hERG_at_1uM
+        type: regression
+        description: "Percent inhibition at 1 uM concentration"
+      - name: herg_central_at_10um
+        category: tox
+        label_name: hERG_at_10uM
+        type: regression
+        description: "Percent inhibition at 10 uM concentration"
+      - name: herg_central_inhib
+        category: tox
+        label_name: hERG_inhib
+        type: binary_classification
+        description: "IC50 < 10 uM blocker classification (>50% at 10uM)"
+
+  model:
+    type: dmpnn_mtl
+    in_dim: 14
+    edge_dim: 6
+    hidden_dim: 512
+    num_layers: 5
+    dropout: 0.20
+    use_descriptors: true
+    descriptor_dim: 210
+    tasks:
+      - name: herg_central_at_1um
+        type: regression
+      - name: herg_central_at_10um
+        type: regression
+      - name: herg_central_inhib
+        type: binary_classification
+    task_weights:
+      herg_central_at_1um: 1.0
+      herg_central_at_10um: 1.0
+      herg_central_inhib: 2.0
+    use_uncertainty: true  # Kendall-Gal multi-task homoscedastic uncertainty loss
+
+  optimization:
+    lr: 0.001
+    weight_decay: 1.0e-5
+    warmup_epochs: 3
+    max_epochs: 40
+    early_stopping: 8
+    gradient_clip_val: 1.0
+    eval_metric: val_loss
+
+# ------------------------------------------------------------------------------
+# Phase 2: Transfer Learning & Fine-tuning on Benchmark Targets
+# ------------------------------------------------------------------------------
+phase2_finetuning:
+  # Target 1: Large-scale Literature Benchmark (Karim et al., 13,845 drugs)
+  target_karim:
+    dataset_name: hERG_Karim
+    category: tox
+    split_type: scaffold
+    batch_size: 64
+    lr: 0.0001  # Lower LR for fine-tuning
+    max_epochs: 25
+    early_stopping: 10
+    freeze_backbone_epochs: 3
+    target_metric: roc_auc
+    sota_target: 0.940
+
+  # Target 2: Standard Precision Benchmark (Wang et al., 648 drugs)
+  target_wang:
+    dataset_name: hERG
+    category: tox
+    split_type: scaffold
+    batch_size: 32
+    lr: 0.00005  # Gentle fine-tuning to prevent overfitting on 648 samples
+    max_epochs: 30
+    early_stopping: 12
+    freeze_backbone_epochs: 5
+    target_metric: roc_auc
+    sota_target: 0.895
+
+tracking:
+  enabled: true
+  project: tdc-learning
+  entity: tdc-studio
+  tags: ["herg_standalone", "cardiotoxicity", "306k_pretrain", "scaffold_split"]

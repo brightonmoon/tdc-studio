@@ -105,17 +105,35 @@ flowchart TD
 
 ---
 
-### [CLUSTER 5] Cardiac Safety & Broad Toxicity (심장 안전성 및 독성 프로파일링)
+### [CLUSTER 5] Cardiac Safety & Broad Toxicity (일반 심장 및 광범위 독성 프로파일링)
 
-*hERG 칼륨 채널 차단, 간독성(DILI), 발암성 및 12대 Tox21 핵수용체 다중 학습*
+*hERG 칼륨 채널 차단, 급성 경구 독성(LD50), 간독성(DILI), 발암성 및 Ames 돌연변이성*
 
-1. **아키텍처 및 손실 함수:**
-   - **Cardiac/Organ Targets:** `herg` (이진분류, 648개), `dili` (이진분류, 475개), `ames` (이진분류, 7,255개)
-   - **Broad Tox21 Panel:** 12개 핵수용체/스트레스 반응(NR-AR, NR-AhR, SR-MMP, SR-p53 등 7,831개 화합물)을 Auxiliary Masked BCE Head로 연결.
+1. **아키텍처 및 태스크 구성 (균형 규모 데이터셋 중심):**
+   - **Primary Targets:** `herg` (Wang et al., 648개), `ld50_zhu` (급성 독성, 7,385개), `dili` (간독성, 475개), `ames` (돌연변이, 7,255개)
+   - **Auxiliary Targets:** `skin_reaction` (404개), `carcinogens_lagunin` (280개), `clintox` (1,484개)
    - 독성 데이터는 심한 불균형(Imbalanced Data, 활성 화합물 $< 10\%$)을 가지므로 **Focal Loss** 또는 **Class-Weighted BCE Loss** 적용:
      $$\text{FL}(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t) \quad (\gamma = 2.0)$$
-2. **목표 성능치 (ADMETlab 3.0 SOTA 기준):**
-   - **`herg` (심장독성):** $\text{ROC-AUC} \ge 0.937 \pm 0.006$, $\text{ACC} \ge 0.828 \pm 0.017$, $\text{MCC} \ge 0.680$
+2. **목표 성능치 (TDC Scaffold & ADMETlab 3.0 SOTA):**
+   - **`herg` (Wang et al.):** $\text{ROC-AUC} \ge 0.887 \pm 0.013$, $\text{ACC} \ge 0.825$, $\text{MCC} \ge 0.610$
+   - **`ld50_zhu`:** $\text{MAE} \le 0.584 \pm 0.012$, $R^2 \ge 0.624 \pm 0.021$
    - **`dili` (간독성):** $\text{ROC-AUC} \ge 0.860 \pm 0.052$, $\text{ACC} \ge 0.787 \pm 0.075$
    - **`ames` (돌연변이):** $\text{ROC-AUC} \ge 0.882 \pm 0.007$, $\text{ACC} \ge 0.785 \pm 0.015$
-   - **`tox21` (핵수용체 전반):** 평균 $\text{ROC-AUC} \ge 0.89 \sim 0.95$
+
+---
+
+### [SPECIALIZED PIPELINE] Standalone Cardiotoxicity (hERG Central 306k 빅데이터 파이프라인)
+
+*306,893개 대규모 분자의 농도별 저해율 다중과제 사전학습 및 고정밀 벤치마크 전이학습*
+
+1. **일반 독성 MTL과 분리하는 핵심 근거:**
+   - **그래디언트 압도 방지:** 306,893개 분자를 400~7,000개 수준의 일반 독성 데이터와 섞으면 650:1의 심각한 불균형으로 역전파 그래디언트가 독식되어 타 태스크의 표상이 붕괴됨.
+   - **자체 3중 농도-반응 MTL 완성도:** 동일 30.7만 개 화합물에 대해 `hERG_at_1uM` (회귀), `hERG_at_10uM` (회귀), `hERG_inhib` (10µM 50% 차단 이진분류)가 모두 존재하여, 외인성 보조 태스크 없이도 내부 Hill 방정식 기반 상호 정규화가 완벽히 동작함.
+2. **2단계 학습 전략 (Two-Stage Execution Protocol):**
+   - **Stage 1 (306k Pre-training):** `herg_central`의 3개 어세이를 동시 학습하여 hERG 채널 결합 공동(Pore Cavity) 상호작용 특징을 고용량 백본(DMPNN Hidden 512, 5-layer)에 사전 각인 (`config_herg_standalone.yaml`).
+   - **Stage 2 (Target Fine-tuning):** 사전 학습된 백본을 바탕으로 `hERG_Karim` (13,845개) 및 `hERG` (648개)에 미세조정을 수행하여 Scaffold Split 일반화 성능 극대화.
+3. **목표 성능치:**
+   - **`hERG_Karim` Fine-tuned:** $\text{ROC-AUC} \ge 0.940 \pm 0.005$, $\text{ACC} \ge 0.835$, $\text{MCC} \ge 0.685$
+   - **`hERG` (Wang) Fine-tuned:** $\text{ROC-AUC} \ge 0.895 \pm 0.010$, $\text{ACC} \ge 0.830$
+   - **`herg_central (hERG_inhib)`:** $\text{ROC-AUC} \ge 0.885 \pm 0.015$
+

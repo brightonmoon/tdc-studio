@@ -13,10 +13,6 @@ data:
     - name: herg
       category: tox
       type: binary_classification
-    - name: herg_central
-      category: tox
-      label_name: hERG_inhib
-      type: binary_classification
     - name: ld50_zhu
       category: tox
       type: regression
@@ -48,8 +44,6 @@ model:
   tasks:
     - name: herg
       type: binary_classification
-    - name: herg_central
-      type: binary_classification
     - name: ld50_zhu
       type: regression
     - name: dili
@@ -64,7 +58,6 @@ model:
       type: binary_classification
   task_weights:
     herg: 2.0
-    herg_central: 1.5
     ld50_zhu: 1.0
     dili: 2.0
     ames: 1.0

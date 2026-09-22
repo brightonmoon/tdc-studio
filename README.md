@@ -83,6 +83,7 @@ TDC-Studio는 실험의 재현성과 개발 속도를 보장하기 위해 다음
 
 | 문서 | 설명 |
 | :--- | :--- |
+| **[📋 학습 파이프라인 실행 체크리스트 & TODOLIST](docs/roadmaps/training_pipeline_todolist.md)** | **내일 즉시 시작 가능한 클러스터별 1-Epoch Smoke Test 및 실측 학습 로드맵** |
 | **[🎯 ADMETlab 3.0 기반 TDC 목표 성능 규격서](docs/benchmarks/admetlab3_tdc_target_performance.md)** | **NAR 2024 부록 기준 22+ TDC 전 태스크별 목표 성능 수치(R², RMSE, MAE, AUC, ACC)** |
 | **[📐 ADMET 5대 클러스터 모델 설계 청사진](docs/guides/admet_cluster_architectures.md)** | **Caco-2를 벤치마킹한 Lipo, PPBR/BBB/VDss, CYP450, Clearance, Tox 전용 모델 설계안** |
 | **[🏆 ADMET SOTA 엔지니어링 레시피 & 클러스터 맵](docs/guides/admet_sota_recipe.md)** | **5대 황금률, TDC 22+ 태스크 클러스터링 맵, 다중학습 및 앙상블 가이드** |

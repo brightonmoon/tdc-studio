@@ -14,6 +14,91 @@ from tdc_studio.data.transforms import (
     SmilesTokenizer,
 )
 
+_TDC_DATAVERSE_MAP = {
+    "caco2_wang": 4259569,
+    "lipophilicity_astrazeneca": 4259575,
+    "solubility_aqsoldb": 4259576,
+    "hia_hou": 4259574,
+    "herg": 4259581,
+    "ames": 4259565,
+    "bbb_martins": 4259566,
+}
+
+
+def _scaffold_split(
+    df: pd.DataFrame, smiles_col: str = "Drug", seed: int = 42
+) -> Dict[str, pd.DataFrame]:
+    from collections import defaultdict
+
+    from rdkit import Chem
+    from rdkit.Chem.Scaffolds import MurckoScaffold
+
+    scaffolds = defaultdict(list)
+    for idx, row in df.iterrows():
+        s = str(row[smiles_col])
+        mol = Chem.MolFromSmiles(s)
+        scaff = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False) if mol else ""
+        scaffolds[scaff].append(idx)
+
+    sorted_scaffolds = sorted(scaffolds.values(), key=len, reverse=True)
+    train_indices, val_indices, test_indices = [], [], []
+    n_total = len(df)
+    n_train_target = int(n_total * 0.7)
+    n_val_target = int(n_total * 0.1)
+
+    for group in sorted_scaffolds:
+        if len(train_indices) + len(group) <= n_train_target:
+            train_indices.extend(group)
+        elif len(val_indices) + len(group) <= n_val_target:
+            val_indices.extend(group)
+        else:
+            test_indices.extend(group)
+
+    return {
+        "train": df.loc[train_indices].reset_index(drop=True),
+        "valid": df.loc[val_indices].reset_index(drop=True),
+        "test": df.loc[test_indices].reset_index(drop=True),
+    }
+
+
+def _load_tdc_fallback(
+    dataset_name: str, split_type: str = "scaffold", seed: int = 42
+) -> Dict[str, pd.DataFrame]:
+    import io
+    from pathlib import Path
+
+    import requests
+
+    cache_dir = Path("./data/cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{dataset_name}.tsv"
+
+    if cache_file.exists():
+        df = pd.read_csv(cache_file, sep="\t")
+    else:
+        file_id = _TDC_DATAVERSE_MAP.get(dataset_name.lower())
+        if not file_id:
+            raise RuntimeError(f"Unknown dataset '{dataset_name}' for fallback download.")
+        url = f"https://dataverse.harvard.edu/api/access/datafile/{file_id}"
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        df = pd.read_csv(io.StringIO(resp.text), sep="\t")
+        df.to_csv(cache_file, sep="\t", index=False)
+
+    smiles_col = "Drug" if "Drug" in df.columns else ("smiles" if "smiles" in df.columns else df.columns[1])
+    if split_type == "scaffold":
+        return _scaffold_split(df, smiles_col=smiles_col, seed=seed)
+    else:
+        shuffled = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+        n = len(shuffled)
+        n_train = int(n * 0.7)
+        n_val = int(n * 0.1)
+        return {
+            "train": shuffled.iloc[:n_train],
+            "valid": shuffled.iloc[n_train : n_train + n_val],
+            "test": shuffled.iloc[n_train + n_val :],
+        }
+
 
 @DATASETS.register("admet_loader")
 class ADMETDataModule(BaseTDCDataModule):
@@ -44,7 +129,7 @@ class ADMETDataModule(BaseTDCDataModule):
         self.fingerprint_transform = MorganFingerprintTransform()
 
     def prepare_data(self) -> None:
-        """Load dataset from synthetic data or TDC library."""
+        """Load dataset from synthetic data or TDC library with Dataverse fallback."""
         if self.synthetic_df is not None:
             df = self.synthetic_df
             n = len(df)
@@ -61,10 +146,12 @@ class ADMETDataModule(BaseTDCDataModule):
 
                 data = ADME(name=self.dataset_name)
                 self.splits = data.get_split(method=self.split_type, seed=self.seed)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load TDC dataset '{self.dataset_name}'. "
-                    f"Ensure PyTDC is installed and network is available, or provide synthetic_df. Error: {e}"
+            except Exception:
+                # Direct Dataverse download & scaffold split fallback
+                self.splits = _load_tdc_fallback(
+                    dataset_name=self.dataset_name,
+                    split_type=self.split_type,
+                    seed=self.seed,
                 )
         self.is_prepared = True
 

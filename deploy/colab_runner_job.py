@@ -36,6 +36,7 @@ def main():
     # 3. Sync dependencies using Python 3.11
     print("Syncing Python 3.11 dependencies with uv...")
     subprocess.run(["uv", "sync", "--extra", "tdc"], check=True)
+    subprocess.run(["uv", "pip", "install", "setuptools<72"], check=False)
 
     # 4. Run the requested task command
     print(f"Executing payload: uv run {task_command}")

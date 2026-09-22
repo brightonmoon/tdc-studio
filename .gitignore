@@ -23,8 +23,13 @@ models/checkpoint/
 *.pth
 *.onnx
 
+# Data caches
+data/
+
 # Temporary logs & notebooks
 *.log
 tdc_colab*.ipynb
 .DS_Store
 Thumbs.db
+data/cache/
+.temp_colab/

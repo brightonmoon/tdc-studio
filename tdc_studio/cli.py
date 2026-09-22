@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import typer
 import yaml
@@ -401,18 +401,116 @@ def serve(
     uvicorn.run("tdc_studio.serving.app:app", host=host, port=port, workers=workers)
 
 
+switch_app = typer.Typer(help="Manage and switch Colab CLI accounts (tokens)")
+remote_app.add_typer(switch_app, name="switch")
+
+
+@remote_app.command("accounts")
+@switch_app.command("list")
+def list_accounts():
+    """List all registered Colab accounts and display the active one."""
+    from rich.table import Table
+
+    from tdc_studio.remote.colab_account import ColabAccountManager
+
+    mgr = ColabAccountManager()
+    active = mgr.get_active_account()
+    accounts = mgr.list_accounts()
+
+    table = Table(title="Google Colab CLI Accounts")
+    table.add_column("Status", style="bold")
+    table.add_column("Account Name", style="cyan")
+    table.add_column("Token Path", style="dim")
+
+    for acc in accounts:
+        if acc["is_active"]:
+            status = "[bold green]★ ACTIVE[/bold green]"
+            name = f"[bold green]{acc['name']}[/bold green]"
+        else:
+            status = "  Standby"
+            name = acc["name"]
+        table.add_row(status, name, acc["path"])
+
+    console.print(table)
+    console.print(f"\nCurrently active account: [bold green]{active or 'None'}[/bold green]")
+
+
+@switch_app.command("use")
+def switch_account(account: str = typer.Argument(..., help="Account name to activate")):
+    """Switch active Colab credentials to the specified account."""
+    from tdc_studio.remote.colab_account import ColabAccountManager
+
+    mgr = ColabAccountManager()
+    try:
+        mgr.use_account(account)
+        console.print(f"[bold green]Successfully switched active Colab account to:[/bold green] [cyan]{account}[/cyan]")
+    except Exception as e:
+        console.print(f"[bold red]Failed to switch account:[/bold red] {e}")
+        raise typer.Exit(1)
+
+
+@switch_app.command("save")
+def save_account(account: str = typer.Argument(..., help="Name to save current active credentials as")):
+    """Save currently active credentials as a named account."""
+    from tdc_studio.remote.colab_account import ColabAccountManager
+
+    mgr = ColabAccountManager()
+    try:
+        path = mgr.save_account(account)
+        console.print(f"[bold green]Saved current Colab credentials as:[/bold green] [cyan]{account}[/cyan] ({path})")
+    except Exception as e:
+        console.print(f"[bold red]Failed to save account:[/bold red] {e}")
+        raise typer.Exit(1)
+
+
+@switch_app.command("new")
+def new_account(account: str = typer.Argument(..., help="Name for the newly authenticated account")):
+    """Authenticate a new Google account via OAuth browser flow and save credentials."""
+    from tdc_studio.remote.colab_account import ColabAccountManager
+
+    mgr = ColabAccountManager()
+    try:
+        success = mgr.new_account(account)
+        if success:
+            console.print(f"[bold green]Successfully created and registered account:[/bold green] [cyan]{account}[/cyan]")
+        else:
+            console.print("[bold yellow]Authentication flow was aborted or failed.[/bold yellow]")
+            raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Error during account creation:[/bold red] {e}")
+        raise typer.Exit(1)
+
+
+@switch_app.command("delete")
+def delete_account(account: str = typer.Argument(..., help="Account name to delete")):
+    """Delete saved credentials for an account."""
+    from tdc_studio.remote.colab_account import ColabAccountManager
+
+    mgr = ColabAccountManager()
+    try:
+        mgr.delete_account(account)
+        console.print(f"[bold green]Deleted credentials for account:[/bold green] [cyan]{account}[/cyan]")
+    except Exception as e:
+        console.print(f"[bold red]Failed to delete account:[/bold red] {e}")
+        raise typer.Exit(1)
+
+
 @remote_app.command("run")
 def remote_run(
     command: str = typer.Option(
         "tdc-studio train --config configs/config.yaml", help="Command to run on Colab"
     ),
     gpu: str = typer.Option("t4", help="GPU tier: t4, l4, a100, v100"),
+    account: Optional[str] = typer.Option(None, help="Colab account to use for this execution"),
+    auto_switch: bool = typer.Option(
+        True, "--auto-switch/--no-auto-switch", help="Auto-switch account if GPU quota is exceeded"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
 ):
     """Dispatch training or HPO job to Google Colab Cloud GPU via google-colab-cli."""
     from tdc_studio.remote.colab_runner import ColabRunner
 
-    runner = ColabRunner(gpu_type=gpu)
+    runner = ColabRunner(gpu_type=gpu, account=account, auto_switch_on_quota=auto_switch)
     console.print(f"[bold cyan]Dispatching remote job to Google Colab (GPU: {gpu})[/bold cyan]...")
     cmd = runner.build_run_command(command)
     console.print(f"Generated Colab CLI Command: [yellow]{' '.join(cmd)}[/yellow]")
@@ -424,6 +522,40 @@ def remote_run(
         )
     else:
         console.print(f"[bold red]Remote Colab Job failed with code {returncode}.[/bold red]")
+
+
+@remote_app.command("exec")
+def remote_exec(
+    command: Optional[str] = typer.Option(
+        None, help="Command payload for deploy/colab_runner_job.py"
+    ),
+    session: Optional[str] = typer.Option(None, "-s", "--session", help="Active Colab session ID"),
+    script: Optional[str] = typer.Option(None, "-f", "--script", help="Local python script to execute"),
+    script_args: Optional[List[str]] = typer.Option(
+        None, "--arg", help="Arguments to inject and pass to the script"
+    ),
+    account: Optional[str] = typer.Option(None, help="Colab account to use"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+):
+    """Execute code or a local script directly on an active Google Colab instance via `colab exec`."""
+    from tdc_studio.remote.colab_runner import ColabRunner
+
+    runner = ColabRunner(account=account)
+    console.print("[bold cyan]Executing remote job on Colab instance via `colab exec`[/bold cyan]...")
+
+    returncode = runner.run_remote_exec(
+        command_to_run=command or "tdc-studio train --config configs/config.yaml",
+        session=session,
+        script_file=script,
+        script_args=script_args,
+        dry_run=dry_run,
+    )
+    if returncode == 0:
+        console.print(
+            "[bold green]Remote Colab Exec completed successfully (or dry-run passed).[/bold green]"
+        )
+    else:
+        console.print(f"[bold red]Remote Colab Exec failed with code {returncode}.[/bold red]")
 
 
 @remote_app.command("export-notebook")
@@ -445,3 +577,4 @@ def export_notebook(
 
 if __name__ == "__main__":
     app()
+

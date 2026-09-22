@@ -1,0 +1,6 @@
+# Best hyperparameters identified from Optuna HPO Study (Trial #4) on Google Colab T4 GPU
+# Target Metric: MAE = 0.5855 (Caco2 Wang)
+
+lr: 0.002441751696153142
+hidden_dim: 256
+dropout: 0.0754589884825096

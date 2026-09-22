@@ -1,0 +1,28 @@
+# Optimized Configuration for Caco-2 Wang (Post-HPO Optuna Tuning)
+# Tuned on NVIDIA T4 GPU via Colab CLI (Trial #4, Best Val MAE: 0.5855)
+
+data:
+  type: "admet_loader"
+  dataset_name: "caco2_wang"
+  split_type: "scaffold"
+  batch_size: 32
+  max_epochs: 15
+  params:
+    dataset_name: "caco2_wang"
+    split_type: "scaffold"
+    task_type: "regression"
+
+model:
+  type: "graph_transformer"
+  in_dim: 14
+  hidden_dim: 256
+  num_layers: 3
+  dropout: 0.0754589884825096
+
+lr: 0.002441751696153142
+max_epochs: 15
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

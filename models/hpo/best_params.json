@@ -1,0 +1,14 @@
+{
+  "best_value": 0.5855189470144418,
+  "best_params": {
+    "lr": 0.002441751696153142,
+    "hidden_dim": 256,
+    "dropout": 0.0754589884825096
+  },
+  "best_trial_number": 4,
+  "n_trials": 10,
+  "target_metric": "mae",
+  "dataset": "caco2_wang",
+  "accelerator": "NVIDIA T4 GPU",
+  "wandb_group": "caco2_wang_optuna"
+}

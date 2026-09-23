@@ -83,7 +83,8 @@ def main():
     print(f"Executing payload: {' '.join(cmd_parts)}", flush=True)
     retcode = run_command_streaming(cmd_parts)
     print("=== [Colab Cloud VM] Task Finished with code:", retcode, flush=True)
-    sys.exit(retcode)
+    if retcode != 0:
+        sys.exit(retcode)
 
 
 if __name__ == "__main__":

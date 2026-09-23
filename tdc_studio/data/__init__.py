@@ -1,5 +1,6 @@
 """Data module exposing TDC data abstractions, transforms, and collators."""
 
+from tdc_studio.data.admet_cluster import ADMETClusterDataModule
 from tdc_studio.data.base import BaseTDCDataModule, MolecularDataset
 from tdc_studio.data.bio_permeability import BioPermeabilityDataModule
 from tdc_studio.data.collate import molecule_collate_fn
@@ -30,5 +31,6 @@ __all__ = [
     "DTADataModule",
     "MultiTaskDataModule",
     "BioPermeabilityDataModule",
+    "ADMETClusterDataModule",
 ]
 

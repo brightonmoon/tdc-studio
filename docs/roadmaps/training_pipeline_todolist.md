@@ -30,24 +30,24 @@
 ### [Phase 1] 1-Epoch 초고속 Smoke Test (데이터 로딩 및 입출력 Shape 무결성 검증)
 *실제 GPU 장시간 학습 전, 1 에폭 및 미니 배치를 통해 파이프라인 충돌 유무를 검증합니다.*
 
-- [ ] **Task 1-A: Cluster 1 (Lipophilicity MTL: Lipo + Sol + FreeSolv + Caco2) Smoke Test**
+- [x] **Task 1-A: Cluster 1 (Lipophilicity MTL: Lipo + Sol + FreeSolv + Caco2) Smoke Test**
   - 설정 파일: `configs/config_lipophilicity_mtl.yaml`
-  - 확인 사항: 회귀 4개 타깃(Lipophilicity, AqSolDB, FreeSolv, Caco2) 동시 역전파 및 Z-Score 정규화
-- [ ] **Task 1-B: Cluster 2 (Distribution MTL: PPBR + BBB + VDss) Smoke Test**
+  - 검증 완료: 4개 타깃 동시 역전파 및 Z-Score 정규화 (W&B Run: [`0802sz7x`](https://wandb.ai/tdc-studio/tdc-learning/runs/0802sz7x))
+- [x] **Task 1-B: Cluster 2 (Distribution MTL: PPBR + BBB + VDss) Smoke Test**
   - 설정 파일: `configs/config_distribution_mtl.yaml`
-  - 확인 사항: 혼합형(회귀: PPBR, VDss / 분류: BBB) 입출력 및 Kendall-Gal $\sigma$ 가중치 학습
-- [ ] **Task 1-C: Cluster 3 (CYP450 Matrix: 5-Inhib + 3-Substrate) Smoke Test**
+  - 검증 완료: 혼합형(회귀: PPBR, VDss / 분류: BBB) 및 Kendall-Gal $\sigma$ 가중치 학습 (W&B Run: [`1ps5hiat`](https://wandb.ai/tdc-studio/tdc-learning/runs/1ps5hiat))
+- [x] **Task 1-C: Cluster 3 (CYP450 Matrix: 5-Inhib + 3-Substrate) Smoke Test**
   - 설정 파일: `configs/config_cyp450_mtl.yaml`
-  - 확인 사항: 8-Head 다중 분류 출력 및 Masked Loss (데이터셋별 샘플 누락 처리)
-- [ ] **Task 1-D: Cluster 4 (Clearance & Half-Life) Smoke Test**
+  - 검증 완료: 8-Head 다중 분류 출력 및 Masked Loss (데이터셋별 샘플 누락 처리) (W&B Run: [`pcyuwgfh`](https://wandb.ai/tdc-studio/tdc-learning/runs/pcyuwgfh))
+- [x] **Task 1-D: Cluster 4 (Clearance & Half-Life) Smoke Test**
   - 설정 파일: `configs/config_clearance_mtl.yaml`
-  - 확인 사항: 간세포(Hepatocyte) & 마이크로솜(Microsome) $CL_{\text{int}}$ Spearman $\rho$ 연산
-- [ ] **Task 1-E: Cluster 5 (Toxicity Balanced MTL) Smoke Test**
+  - 검증 완료: 간세포(Hepatocyte) & 마이크로솜(Microsome) $CL_{\text{int}}$ Spearman $\rho$ 연산 (W&B Run: [`7icc0eye`](https://wandb.ai/tdc-studio/tdc-learning/runs/7icc0eye))
+- [x] **Task 1-E: Cluster 5 (Toxicity Balanced MTL) Smoke Test**
   - 설정 파일: `configs/config_toxicity_mtl.yaml`
-  - 확인 사항: hERG(648), LD50(7.4k), DILI(475), AMES(7.2k) 균형 학습 및 Focal Loss 수렴
-- [ ] **Task 1-F: Standalone Cardiotoxicity (hERG Central 306k) Batch Shape Test**
+  - 검증 완료: hERG(648), LD50(7.4k), DILI(475), AMES(7.2k) 균형 학습 및 Focal Loss 수렴 (W&B Run: [`kqhdqf3o`](https://wandb.ai/tdc-studio/tdc-learning/runs/kqhdqf3o))
+- [x] **Task 1-F: Standalone Cardiotoxicity (hERG Central 306k) Batch Shape Test**
   - 설정 파일: `configs/config_herg_standalone.yaml`
-  - 확인 사항: `hERG_at_1uM`, `hERG_at_10uM`, `hERG_inhib` 3-Head 출력 및 대용량 배치(256) 메모리 할당
+  - 검증 완료: `hERG_at_1uM`, `hERG_at_10uM`, `hERG_inhib` 3-Head 출력 및 대용량 배치 메모리 할당 (W&B Run: [`j108jp0n`](https://wandb.ai/tdc-studio/tdc-learning/runs/j108jp0n))
 
 ---
 

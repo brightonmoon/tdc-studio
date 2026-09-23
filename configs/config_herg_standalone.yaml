@@ -11,7 +11,7 @@
 # ------------------------------------------------------------------------------
 phase1_pretraining:
   data:
-    type: single_prediction
+    type: admet_cluster_loader
     dataset_name: herg_central
     split_type: scaffold
     batch_size: 256

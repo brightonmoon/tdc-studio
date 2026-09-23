@@ -1,5 +1,5 @@
 data:
-  type: bio_permeability_loader
+  type: admet_cluster_loader
   dataset_name: lipophilicity_mtl
   split_type: scaffold
   batch_size: 64
@@ -16,12 +16,12 @@ data:
     - name: solubility_aqsoldb
       category: physicochemical
       type: regression
+    - name: hydrationfreeenergy_freesolv
+      category: physicochemical
+      type: regression
     - name: caco2_wang
       category: absorption
       type: regression
-    - name: hia_hou
-      category: absorption
-      type: binary_classification
 
 model:
   type: dmpnn_mtl
@@ -37,15 +37,15 @@ model:
       type: regression
     - name: solubility_aqsoldb
       type: regression
+    - name: hydrationfreeenergy_freesolv
+      type: regression
     - name: caco2_wang
       type: regression
-    - name: hia_hou
-      type: binary_classification
   task_weights:
     lipophilicity_astrazeneca: 2.0
     solubility_aqsoldb: 0.5
+    hydrationfreeenergy_freesolv: 0.3
     caco2_wang: 0.5
-    hia_hou: 0.3
   use_uncertainty: false
 
 lr: 0.0008

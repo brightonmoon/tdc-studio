@@ -75,6 +75,13 @@ def train(
     from tdc_studio.tracking.wandb_tracker import WandBTracker
 
     cfg = load_yaml(config)
+    # Support staged/hierarchical configs (e.g. hERG standalone phase1_pretraining)
+    if "phase1_pretraining" in cfg:
+        tracking_cfg = cfg.get("tracking", {})
+        cfg = dict(cfg["phase1_pretraining"])
+        if "tracking" not in cfg:
+            cfg["tracking"] = tracking_cfg
+
     console.print(f"[bold green]Starting Training Pipeline[/bold green] with config: {config}")
 
     data_cfg = cfg.get("data", {})
@@ -88,6 +95,8 @@ def train(
         data_params = dict(data_cfg["params"])
     else:
         data_params = {k: v for k, v in data_cfg.items() if k not in ("type", "name", "batch_size")}
+    if dry_run and "max_samples" not in data_params:
+        data_params["max_samples"] = 40
     data_module = data_cls(**data_params)
 
     data_module.prepare_data()
@@ -211,11 +220,13 @@ def train(
                     )
                     for t_idx, t_name in enumerate(data_module.task_names):
                         t_type = data_module.task_types[t_idx]
-                        if val_masks_cat.numel() > 0:
+                        if val_masks_cat.numel() > 0 and val_masks_cat.ndim >= 2 and val_masks_cat.size(1) > t_idx:
                             t_valid = val_masks_cat[:, t_idx]
-                        else:
+                        elif val_labels_cat.numel() > 0 and val_labels_cat.ndim >= 2 and val_labels_cat.size(1) > t_idx:
                             t_valid = ~torch.isnan(val_labels_cat[:, t_idx])
-                        if int(t_valid.sum().item()) > 0:
+                        else:
+                            t_valid = torch.tensor([], dtype=torch.bool)
+                        if int(t_valid.sum().item()) > 0 and val_preds_cat.ndim >= 2 and val_labels_cat.ndim >= 2:
                             t_p = val_preds_cat[t_valid, t_idx]
                             t_y = val_labels_cat[t_valid, t_idx]
                             if (
@@ -239,6 +250,9 @@ def train(
                                 )
                                 all_val_metrics[f"{t_name}_pearson"] = evaluator.compute(
                                     t_p, t_y, "pearson"
+                                )
+                                all_val_metrics[f"{t_name}_spearman"] = evaluator.compute(
+                                    t_p, t_y, "spearman"
                                 )
                                 all_val_metrics[f"{t_name}_composite"] = evaluator.compute(
                                     t_p, t_y, "composite"

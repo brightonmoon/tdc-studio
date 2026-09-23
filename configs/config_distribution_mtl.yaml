@@ -1,5 +1,5 @@
 data:
-  type: single_prediction
+  type: admet_cluster_loader
   dataset_name: distribution_mtl
   split_type: scaffold
   batch_size: 64

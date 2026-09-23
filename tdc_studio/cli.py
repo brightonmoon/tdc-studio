@@ -781,6 +781,19 @@ def ensemble(
                     eval_p = v_preds_cat
                     eval_y = v_labels_cat
 
+                is_logit = False
+                if task_type == "multi_task":
+                    is_logit = getattr(data_module, "task_transforms", {}).get(primary_task) == "logit"
+                else:
+                    is_logit = getattr(data_module, "target_transform", None) == "logit"
+
+                if is_logit:
+                    eval_p = 100.0 * torch.sigmoid(eval_p)
+                    eval_y = 100.0 * torch.sigmoid(eval_y)
+                elif "ppbr" in str(primary_task or dataset_name).lower():
+                    eval_p = torch.clamp(eval_p, min=0.0, max=100.0)
+                    eval_y = torch.clamp(eval_y, min=0.0, max=100.0)
+
                 if v_masks_cat.numel() > 0:
                     val_mask = v_masks_cat.bool() & ~torch.isnan(eval_y) & ~torch.isnan(eval_p)
                 else:
@@ -818,8 +831,33 @@ def ensemble(
             if best_state_dict is not None:
                 model.load_state_dict({k: v.to(device) for k, v in best_state_dict.items()})
 
-            # Evaluate Model on Test Set
+            # Evaluate Model on Validation Set (with best checkpoint)
             model.eval()
+            best_v_preds_list = []
+            best_v_labels_list = []
+            best_v_masks_list = []
+            with torch.no_grad():
+                for batch in val_loader:
+                    dev_batch = _batch_to_device(batch, device)
+                    preds = model(dev_batch)
+                    if task_type == "multi_task":
+                        best_v_preds_list.append(preds[:, primary_idx].detach().cpu())
+                        best_v_labels_list.append(dev_batch["labels"][:, primary_idx].detach().cpu())
+                        if "mask" in dev_batch and dev_batch["mask"] is not None:
+                            best_v_masks_list.append(dev_batch["mask"][:, primary_idx].detach().cpu())
+                    else:
+                        best_v_preds_list.append(preds.squeeze(-1).detach().cpu())
+                        best_v_labels_list.append(dev_batch["labels"].detach().cpu())
+                        if "mask" in dev_batch and dev_batch["mask"] is not None:
+                            best_v_masks_list.append(dev_batch["mask"].squeeze(-1).detach().cpu())
+                    if dry_run:
+                        break
+
+            v_preds_cat = torch.cat(best_v_preds_list, dim=0) if best_v_preds_list else torch.tensor([])
+            v_labels_cat = torch.cat(best_v_labels_list, dim=0) if best_v_labels_list else torch.tensor([])
+            v_masks_cat = torch.cat(best_v_masks_list, dim=0) if best_v_masks_list else torch.tensor([])
+
+            # Evaluate Model on Test Set (with best checkpoint)
             t_preds_list = []
             t_labels_list = []
             t_masks_list = []
@@ -864,18 +902,12 @@ def ensemble(
                 real_v_p = v_preds_cat
                 real_v_y = v_labels_cat
 
-            is_logit = False
-            if task_type == "multi_task":
-                is_logit = getattr(data_module, "task_transforms", {}).get(primary_task) == "logit"
-            else:
-                is_logit = getattr(data_module, "target_transform", None) == "logit"
-
             if is_logit:
                 real_t_p = 100.0 * torch.sigmoid(real_t_p)
                 real_t_y = 100.0 * torch.sigmoid(real_t_y)
                 real_v_p = 100.0 * torch.sigmoid(real_v_p)
                 real_v_y = 100.0 * torch.sigmoid(real_v_y)
-            elif "ppbr" in str(primary_task).lower():
+            elif "ppbr" in str(primary_task or dataset_name).lower():
                 real_t_p = torch.clamp(real_t_p, min=0.0, max=100.0)
                 real_t_y = torch.clamp(real_t_y, min=0.0, max=100.0)
                 real_v_p = torch.clamp(real_v_p, min=0.0, max=100.0)
@@ -886,10 +918,15 @@ def ensemble(
             else:
                 t_valid = ~torch.isnan(real_t_y) & ~torch.isnan(real_t_p)
 
+            if v_masks_cat.numel() > 0:
+                v_valid = v_masks_cat.bool() & ~torch.isnan(real_v_y) & ~torch.isnan(real_v_p)
+            else:
+                v_valid = ~torch.isnan(real_v_y) & ~torch.isnan(real_v_p)
+
             eval_t_p = real_t_p[t_valid]
             eval_t_y = real_t_y[t_valid]
-            eval_v_p = real_v_p[val_mask]
-            eval_v_y = real_v_y[val_mask]
+            eval_v_p = real_v_p[v_valid]
+            eval_v_y = real_v_y[v_valid]
 
             test_labels_real = eval_t_y
             val_labels_real = eval_v_y

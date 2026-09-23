@@ -230,9 +230,13 @@ class ADMETDataModule(BaseTDCDataModule):
         self, batch_size: int = 32, num_workers: int = 0
     ) -> Tuple[DataLoader, DataLoader, DataLoader]:
         self.check_prepared()
-        train_ds = self._build_dataset(self.splits["train"])
-        val_ds = self._build_dataset(self.splits["valid"])
-        test_ds = self._build_dataset(self.splits["test"])
+        if not hasattr(self, "_cached_datasets") or self._cached_datasets is None:
+            train_ds = self._build_dataset(self.splits["train"])
+            val_ds = self._build_dataset(self.splits["valid"])
+            test_ds = self._build_dataset(self.splits["test"])
+            self._cached_datasets = (train_ds, val_ds, test_ds)
+        else:
+            train_ds, val_ds, test_ds = self._cached_datasets
 
         return (
             DataLoader(
@@ -343,9 +347,13 @@ class ToxDataModule(BaseTDCDataModule):
         self, batch_size: int = 32, num_workers: int = 0
     ) -> Tuple[DataLoader, DataLoader, DataLoader]:
         self.check_prepared()
-        train_ds = self._build_dataset(self.splits["train"])
-        val_ds = self._build_dataset(self.splits["valid"])
-        test_ds = self._build_dataset(self.splits["test"])
+        if not hasattr(self, "_cached_datasets") or self._cached_datasets is None:
+            train_ds = self._build_dataset(self.splits["train"])
+            val_ds = self._build_dataset(self.splits["valid"])
+            test_ds = self._build_dataset(self.splits["test"])
+            self._cached_datasets = (train_ds, val_ds, test_ds)
+        else:
+            train_ds, val_ds, test_ds = self._cached_datasets
 
         return (
             DataLoader(

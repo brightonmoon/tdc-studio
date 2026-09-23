@@ -94,6 +94,12 @@ class TherapeuticsEvaluator:
                 f"Predictions length ({len(y_pred)}) does not match targets length ({len(y_true)})."
             )
 
+        # Defensively filter out NaN or Inf values
+        valid = np.isfinite(y_pred) & np.isfinite(y_true)
+        if not np.all(valid):
+            y_pred = y_pred[valid]
+            y_true = y_true[valid]
+
         if len(y_pred) == 0:
             return 0.0
 

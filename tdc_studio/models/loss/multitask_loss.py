@@ -83,7 +83,7 @@ class MaskedMultiTaskLoss(nn.Module):
 
             w = self.task_weights.get(self.task_names[i], 1.0)
             if self.use_uncertainty and self.log_vars is not None:
-                log_var = self.log_vars[i]
+                log_var = torch.clamp(self.log_vars[i], min=-4.0, max=4.0)
                 precision = torch.exp(-log_var)
                 if t_type == "regression":
                     weighted_loss = 0.5 * precision * t_loss + 0.5 * log_var

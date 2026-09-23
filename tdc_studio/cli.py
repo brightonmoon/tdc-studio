@@ -170,6 +170,7 @@ def train(
                 else:
                     loss = model.compute_loss(preds, dev_batch["labels"])
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
                 train_loss_sum += float(loss.item())
@@ -229,6 +230,13 @@ def train(
                         if int(t_valid.sum().item()) > 0 and val_preds_cat.ndim >= 2 and val_labels_cat.ndim >= 2:
                             t_p = val_preds_cat[t_valid, t_idx]
                             t_y = val_labels_cat[t_valid, t_idx]
+                            finite_mask = torch.isfinite(t_p) & torch.isfinite(t_y)
+                            if not finite_mask.all():
+                                t_p = t_p[finite_mask]
+                                t_y = t_y[finite_mask]
+                            if t_p.numel() == 0:
+                                continue
+
                             if (
                                 getattr(data_module, "standardize_target", False)
                                 and t_type == "regression"

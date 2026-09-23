@@ -1143,8 +1143,9 @@ def blend(
 
     for seed, chk_path in found_ckpts:
         console.print(f"Evaluating DMPNN Checkpoint (Seed {seed}): [yellow]{chk_path}[/yellow]")
-        model = model_cls(**{k: v for k, v in model_cfg.items() if k not in ("type", "name")}).to(device)
         ckpt = torch.load(chk_path, map_location=device, weights_only=False)
+        loaded_cfg = ckpt.get("config", model_cfg)
+        model = model_cls(loaded_cfg).to(device)
         state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
         model.load_state_dict(state_dict)
         model.eval()

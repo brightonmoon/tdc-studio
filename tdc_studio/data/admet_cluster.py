@@ -143,11 +143,13 @@ class ADMETClusterDataModule(BaseTDCDataModule):
                         "label_name": t.get("label_name", t["name"]),
                         "category": t.get("category", "other"),
                         "type": t.get("type", "regression"),
+                        "transform": t.get("transform", None),
                     }
                 )
 
         self.task_names = [t["name"] for t in self.task_configs]
         self.task_types = [t["type"] for t in self.task_configs]
+        self.task_transforms = {t["name"]: t.get("transform", None) for t in self.task_configs}
         self.num_tasks = len(self.task_configs)
         self.task_stats: Dict[str, Dict[str, float]] = {}
 
@@ -191,8 +193,11 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         train_df = self.splits["train"]
         for t_name, t_type in zip(self.task_names, self.task_types):
             if t_type == "regression" and self.standardize_target and t_name in train_df.columns:
-                valid_vals = train_df[t_name].dropna().values
+                valid_vals = train_df[t_name].dropna().values.astype(float)
                 if len(valid_vals) > 0:
+                    if self.task_transforms.get(t_name) == "logit":
+                        fb = np.clip(valid_vals / 100.0, 1e-4, 1.0 - 1e-4)
+                        valid_vals = np.log(fb / (1.0 - fb))
                     mean_val = float(np.mean(valid_vals))
                     std_val = float(np.std(valid_vals))
                     if std_val < 1e-6:
@@ -343,6 +348,9 @@ class ADMETClusterDataModule(BaseTDCDataModule):
             for t_name, t_type in zip(self.task_names, self.task_types):
                 if t_name in row and pd.notna(row[t_name]):
                     val = float(row[t_name])
+                    if self.task_transforms.get(t_name) == "logit":
+                        fb = np.clip(val / 100.0, 1e-4, 1.0 - 1e-4)
+                        val = float(np.log(fb / (1.0 - fb)))
                     if self.standardize_target and t_type == "regression":
                         stat = self.task_stats.get(t_name, {"mean": 0.0, "std": 1.0})
                         val = (val - stat["mean"]) / stat["std"]
@@ -386,7 +394,7 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         if self.synthetic_df is None and self.max_samples is None:
             import hashlib
             from pathlib import Path
-            task_str = "_".join(sorted(self.task_names))
+            task_str = "_".join(sorted(self.task_names)) + "_" + "_".join(f"{k}:{v}" for k, v in sorted(self.task_transforms.items()) if v)
             cache_name = f"{self.dataset_name}_{self.primary_task}_{self.split_type}_{self.seed}_{self.modality}_{self.use_descriptors}_{self.standardize_target}_{hashlib.md5(task_str.encode()).hexdigest()[:8]}.pt"
             cache_dir = Path("data/cache")
             cache_dir.mkdir(parents=True, exist_ok=True)

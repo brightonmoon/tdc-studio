@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
 
@@ -127,6 +128,7 @@ class ADMETDataModule(BaseTDCDataModule):
         self.modality = modality.lower()
         self.use_descriptors = kwargs.get("use_descriptors", True)
         self.standardize_target = kwargs.get("standardize_target", True)
+        self.target_transform = kwargs.get("target_transform", None)
         self.target_mean = 0.0
         self.target_std = 1.0
         self.graph_transform = SmilesToGraphTransform()
@@ -166,8 +168,12 @@ class ADMETDataModule(BaseTDCDataModule):
             train_df = self.splits["train"]
             label_col = "Y" if "Y" in train_df.columns else "label"
             if label_col in train_df.columns:
-                self.target_mean = float(train_df[label_col].mean())
-                self.target_std = float(train_df[label_col].std())
+                vals = train_df[label_col].astype(float).values
+                if self.target_transform == "logit":
+                    fb = np.clip(vals / 100.0, 1e-4, 1.0 - 1e-4)
+                    vals = np.log(fb / (1.0 - fb))
+                self.target_mean = float(np.nanmean(vals))
+                self.target_std = float(np.nanstd(vals))
                 if self.target_std < 1e-6:
                     self.target_std = 1.0
 
@@ -179,6 +185,10 @@ class ADMETDataModule(BaseTDCDataModule):
         for _, row in df.iterrows():
             s = str(row[smiles_col])
             lbl = float(row[label_col]) if label_col in row else 0.0
+            if self.target_transform == "logit":
+                fb = np.clip(lbl / 100.0, 1e-4, 1.0 - 1e-4)
+                lbl = float(np.log(fb / (1.0 - fb)))
+
             norm_lbl = (
                 (lbl - self.target_mean) / self.target_std
                 if (self.standardize_target and self.task_type == "regression")

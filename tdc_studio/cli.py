@@ -257,7 +257,11 @@ def train(
                                 t_p = t_p * stat["std"] + stat["mean"]
                                 t_y = t_y * stat["std"] + stat["mean"]
 
-                            if "ppbr" in str(t_name).lower():
+                            t_trans = getattr(data_module, "task_transforms", {}).get(t_name, None)
+                            if t_trans == "logit":
+                                t_p = 100.0 * torch.sigmoid(t_p)
+                                t_y = 100.0 * torch.sigmoid(t_y)
+                            elif "ppbr" in str(t_name).lower():
                                 t_p = torch.clamp(t_p, min=0.0, max=100.0)
                                 t_y = torch.clamp(t_y, min=0.0, max=100.0)
 
@@ -293,7 +297,10 @@ def train(
                     eval_p = eval_p * std + mean
                     eval_y = eval_y * std + mean
 
-                if "ppbr" in str(dataset_name).lower() or "ppbr" in str(target_metric).lower():
+                if getattr(data_module, "target_transform", None) == "logit":
+                    eval_p = 100.0 * torch.sigmoid(eval_p)
+                    eval_y = 100.0 * torch.sigmoid(eval_y)
+                elif "ppbr" in str(dataset_name).lower() or "ppbr" in str(target_metric).lower():
                     eval_p = torch.clamp(eval_p, min=0.0, max=100.0)
                     eval_y = torch.clamp(eval_y, min=0.0, max=100.0)
 
@@ -431,7 +438,11 @@ def train(
                             t_p = t_p * stat["std"] + stat["mean"]
                             t_y = t_y * stat["std"] + stat["mean"]
 
-                        if "ppbr" in str(t_name).lower():
+                        t_trans = getattr(data_module, "task_transforms", {}).get(t_name, None)
+                        if t_trans == "logit":
+                            t_p = 100.0 * torch.sigmoid(t_p)
+                            t_y = 100.0 * torch.sigmoid(t_y)
+                        elif "ppbr" in str(t_name).lower():
                             t_p = torch.clamp(t_p, min=0.0, max=100.0)
                             t_y = torch.clamp(t_y, min=0.0, max=100.0)
 
@@ -521,7 +532,10 @@ def train(
                     test_preds_eval = test_preds_cat
                     test_labels_eval = test_labels_cat
 
-                if "ppbr" in str(dataset_name).lower() or "ppbr" in str(target_metric).lower():
+                if getattr(data_module, "target_transform", None) == "logit":
+                    test_preds_eval = 100.0 * torch.sigmoid(test_preds_eval)
+                    test_labels_eval = 100.0 * torch.sigmoid(test_labels_eval)
+                elif "ppbr" in str(dataset_name).lower() or "ppbr" in str(target_metric).lower():
                     test_preds_eval = torch.clamp(test_preds_eval, min=0.0, max=100.0)
                     test_labels_eval = torch.clamp(test_labels_eval, min=0.0, max=100.0)
 
@@ -849,6 +863,23 @@ def ensemble(
                 real_t_y = t_labels_cat
                 real_v_p = v_preds_cat
                 real_v_y = v_labels_cat
+
+            is_logit = False
+            if task_type == "multi_task":
+                is_logit = getattr(data_module, "task_transforms", {}).get(primary_task) == "logit"
+            else:
+                is_logit = getattr(data_module, "target_transform", None) == "logit"
+
+            if is_logit:
+                real_t_p = 100.0 * torch.sigmoid(real_t_p)
+                real_t_y = 100.0 * torch.sigmoid(real_t_y)
+                real_v_p = 100.0 * torch.sigmoid(real_v_p)
+                real_v_y = 100.0 * torch.sigmoid(real_v_y)
+            elif "ppbr" in str(primary_task).lower():
+                real_t_p = torch.clamp(real_t_p, min=0.0, max=100.0)
+                real_t_y = torch.clamp(real_t_y, min=0.0, max=100.0)
+                real_v_p = torch.clamp(real_v_p, min=0.0, max=100.0)
+                real_v_y = torch.clamp(real_v_y, min=0.0, max=100.0)
 
             if t_masks_cat.numel() > 0:
                 t_valid = t_masks_cat.bool() & ~torch.isnan(real_t_y) & ~torch.isnan(real_t_p)

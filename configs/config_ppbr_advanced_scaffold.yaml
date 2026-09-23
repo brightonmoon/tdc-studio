@@ -1,0 +1,44 @@
+# Configuration for PPBR Advanced Scaffold Split (Zero Test Leakage)
+# Scaffold Split + Logit Transformation (ΔG°) + Pearson Correlation Loss
+
+data:
+  type: "admet_loader"
+  dataset_name: "ppbr_az"
+  split_type: "scaffold"
+  batch_size: 32
+  seed: 42
+  metric_name: "r2"
+  params:
+    dataset_name: "ppbr_az"
+    split_type: "scaffold"
+    seed: 42
+    task_type: "regression"
+    use_descriptors: true
+    standardize_target: true
+    target_transform: "logit"
+
+model:
+  type: "dmpnn"
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  depth: 3
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  task_type: "regression"
+  loss_type: "smooth_l1"
+  huber_beta: 1.0
+  pearson_weight: 0.3
+
+lr: 0.0006
+min_lr: 1.0e-6
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: "r2"
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

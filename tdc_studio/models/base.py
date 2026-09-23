@@ -32,8 +32,7 @@ class BaseTherapeuticsModel(nn.Module, ABC):
             self.criterion = nn.BCEWithLogitsLoss()
         elif self.task_type == "multiclass_classification":
             self.criterion = nn.CrossEntropyLoss()
-        else:
-            self.criterion = nn.MSELoss()
+        self.pearson_weight = float(config.get("pearson_weight", 0.0))
 
     @abstractmethod
     def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
@@ -44,4 +43,15 @@ class BaseTherapeuticsModel(nn.Module, ABC):
         """Compute task-appropriate loss between predictions and targets."""
         preds_flat = preds.squeeze(-1) if preds.ndim > 1 else preds
         targets_flat = targets.squeeze(-1) if targets.ndim > 1 else targets
-        return self.criterion(preds_flat, targets_flat)
+        base_loss = self.criterion(preds_flat, targets_flat)
+
+        if self.task_type == "regression" and self.pearson_weight > 0 and preds_flat.numel() > 2:
+            vx = preds_flat - torch.mean(preds_flat)
+            vy = targets_flat - torch.mean(targets_flat)
+            std_x = torch.sqrt(torch.sum(vx ** 2) + 1e-6)
+            std_y = torch.sqrt(torch.sum(vy ** 2) + 1e-6)
+            r = torch.sum(vx * vy) / (std_x * std_y)
+            p_loss = 1.0 - torch.clamp(r, -1.0, 1.0)
+            return base_loss + self.pearson_weight * p_loss
+
+        return base_loss

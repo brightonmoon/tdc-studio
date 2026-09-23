@@ -1293,7 +1293,9 @@ def blend(
     console.print(table)
 
     # 10. Save Summary
-    summary_path = os.path.join(checkpoint_dir, output_summary)
+    save_dir = dir_list[0] if "dir_list" in locals() and dir_list else checkpoint_dir
+    os.makedirs(save_dir, exist_ok=True)
+    summary_path = os.path.join(save_dir, output_summary)
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(test_results, f, indent=2)
     console.print(f"[bold green]Saved Hybrid Benchmark Summary to: {summary_path}[/bold green]")

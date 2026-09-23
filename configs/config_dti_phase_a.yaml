@@ -1,0 +1,82 @@
+# ============================================================
+# TDC Studio — DTI Phase A Config (Drug Cold Split Baseline)
+# ============================================================
+# Evaluation target: Cold Drug CI on BindingDB_Kd
+# Expected performance: CI ~0.70~0.72 (Phase A baseline)
+#
+# Phase B upgrade path:
+#   drug_encoder.type: chembert_encoder  (DeepChem/ChemBERTa-77M-MTR)
+#   target_encoder.type: esm2_encoder    (facebook/esm2_t12_35M_UR50D)
+# Only these two lines need to change — DataModule and Fusion untouched.
+# ============================================================
+
+task: dti
+
+# ── Dataset ──────────────────────────────────────────────
+dataset:
+  name: BindingDB_Kd        # 52K pairs, 10K+ unique drugs — best for cold split
+  split: cold_drug          # DEFAULT: test drugs never seen in train
+  seed: 42
+  frac: [0.7, 0.1, 0.2]
+  log_transform: true       # log1p(Kd) to handle 6-decade dynamic range
+  aa_max_length: 1000       # protein sequences truncated/padded to 1000 AA
+
+# ── Model ─────────────────────────────────────────────────
+model:
+  type: graph_dta           # @MODELS.register("graph_dta")
+
+  drug_encoder:
+    type: gine              # GINEConv — reused from ADMET, no changes
+    in_dim: 14              # atom feature dim (DEFAULT_ATOM_LIST + 4 extras)
+    edge_dim: 6             # bond feature dim (bond type + conjugated + ring)
+    hidden_dim: 256
+    num_layers: 5           # deeper than ADMET (4→5) for DTI complexity
+    dropout: 0.2
+    pool: mean              # global_mean_pool (GINE dual pool: mean+sum → 512 dim)
+
+  target_encoder:
+    type: protein_cnn       # ProteinCNNEncoder — new, esm2_encoder-swappable
+    embed_dim: 128
+    num_filters: 256        # per Conv kernel; 3 kernels → 768 before FC
+    out_dim: 256
+    dropout: 0.1
+
+  fusion:
+    type: bilinear_fusion   # BilinearAttentionFusion — DrugBAN-style
+    hidden_dim: 512         # nn.Bilinear output dim
+    dropout: 0.2
+
+  use_domain_adaptation: false   # Phase C: set to true + add domain_head
+
+# ── Training ──────────────────────────────────────────────
+training:
+  batch_size: 64
+  max_epochs: 100
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-5
+  optimizer: adam
+  scheduler: cosine
+  warmup_epochs: 5
+  gradient_clip_val: 1.0
+  early_stopping_patience: 15
+  early_stopping_metric: val_ci   # monitor Cold Drug val CI
+
+# ── Evaluation ────────────────────────────────────────────
+evaluation:
+  primary_metric: ci              # Concordance Index on COLD DRUG test split
+  secondary_metrics: [mse, rmse, pearson]
+  reference_split: cold_drug      # the split that defines "real" performance
+  also_eval_random: true          # evaluate random split too (for comparison only)
+
+# ── Tracking ──────────────────────────────────────────────
+tracking:
+  project: tdc-studio-dti
+  run_name: phase_a_gine_proteincnn_bilinear
+  tags: [dti, cold_drug, phase_a, bindingdb_kd]
+  log_every_n_steps: 10
+
+# ── Export ────────────────────────────────────────────────
+export:
+  save_dir: models/dti/phase_a
+  formats: [pytorch, onnx]
+  inference_pipeline: DTIInferencePipeline

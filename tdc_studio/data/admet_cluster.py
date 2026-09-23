@@ -362,7 +362,7 @@ class ADMETClusterDataModule(BaseTDCDataModule):
 
             labels_t = torch.tensor(labels, dtype=torch.float32)
             mask_t = torch.tensor(mask, dtype=torch.bool)
-            sample: Dict[str, Any] = {"labels": labels_t, "mask": mask_t}
+            sample: Dict[str, Any] = {"labels": labels_t, "mask": mask_t, "drug_smiles_str": s}
 
             if self.modality == "graph":
                 g = self.graph_transform(s)

@@ -84,4 +84,12 @@ def molecule_collate_fn(batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
         ]
         batch["descriptors"] = torch.stack(descs, dim=0)
 
+    # 8. Collate string fields as plain lists (for HuggingFace encoders in Phase B)
+    #    drug_smiles_str: raw SMILES passed directly to ChemBERTa tokenizer
+    #    drug_id, target_id: metadata for split auditing
+    for str_key in ("drug_smiles_str", "drug_id", "target_id"):
+        if str_key in valid_items[0]:
+            batch[str_key] = [item[str_key] for item in valid_items]
+
     return batch
+

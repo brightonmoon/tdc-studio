@@ -1033,6 +1033,292 @@ def ensemble(
 
 
 @app.command()
+def blend(
+    config: str = typer.Option("configs/config_distribution_mtl_random.yaml", help="Path to main YAML config"),
+    checkpoint_dir: str = typer.Option(
+        "./models/checkpoint/ensemble", help="Directory containing trained model checkpoints"
+    ),
+    seeds: str = typer.Option("42,101,202,303,404", "--seeds", help="Comma-separated seeds for ensemble models"),
+    gbdt_iter: int = typer.Option(300, help="Max iterations for GBDT"),
+    gbdt_lr: float = typer.Option(0.05, help="Learning rate for GBDT"),
+    gbdt_l2: float = typer.Option(2.0, help="L2 regularization for GBDT"),
+    output_summary: str = typer.Option("hybrid_blend_summary.json", help="Summary filename to save in checkpoint_dir"),
+):
+    """Multi-Modal Hybrid Stacking (DMPNN Graph + GBDT Molecular Descriptors) with Parametric Calibration."""
+    import glob
+    import json
+    import os
+    from pathlib import Path
+
+    import numpy as np
+    import torch
+    from rich.table import Table
+
+    from tdc_studio.core.registry import DATASETS, MODELS
+    from tdc_studio.models.hybrid.gbdt_blend import GBDTDMPNNBlender, extract_molecular_features
+    from tdc_studio.tracking.wandb_tracker import WandBTracker
+
+    cfg = load_yaml(config)
+    console.print(f"[bold green]Starting Hybrid Stacking & Calibration Pipeline[/bold green] (Config: {config})")
+
+    data_cfg = cfg.get("data", {})
+    model_cfg = cfg.get("model", {})
+
+    # 1. Setup Data
+    data_type = data_cfg.get("type", "admet_cluster_loader")
+    data_cls = DATASETS.get(data_type)
+    if "params" in data_cfg and isinstance(data_cfg["params"], dict):
+        data_params = dict(data_cfg["params"])
+    else:
+        data_params = {k: v for k, v in data_cfg.items() if k not in ("type", "name", "batch_size")}
+
+    data_module = data_cls(**data_params)
+    data_module.prepare_data()
+    data_module.setup()
+    batch_size = data_cfg.get("batch_size", 64)
+    train_loader, val_loader, test_loader = data_module.setup_loaders(batch_size=batch_size)
+
+    primary_task = getattr(data_module, "primary_task", "ppbr_az")
+    task_names = getattr(data_module, "task_names", [primary_task])
+    primary_idx = task_names.index(primary_task) if primary_task in task_names else 0
+    is_logit = getattr(data_module, "task_transforms", {}).get(primary_task) == "logit"
+
+    stat = getattr(data_module, "task_stats", {}).get(primary_task, {"mean": 0.0, "std": 1.0})
+    mean = stat["mean"]
+    std = stat["std"]
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    console.print(f"Device: [cyan]{device}[/cyan] | Primary Task: [bold cyan]{primary_task}[/bold cyan] | Logit Space: [yellow]{is_logit}[/yellow]")
+
+    # 2. Extract Training Features and Fit GBDT
+    train_df = data_module.splits["train"]
+    primary_train = train_df.dropna(subset=[primary_task])
+    smiles_train = primary_train["Canon_SMILES"].tolist()
+    y_train_raw = primary_train[primary_task].values.astype(float)
+
+    console.print(f"[bold cyan]Extracting molecular features (1024-bit Morgan FP + 210 RDKit Descriptors) for {len(smiles_train)} training compounds...[/bold cyan]")
+    X_train, y_train_logit, _ = extract_molecular_features(
+        smiles_train, y_train_raw, n_bits=1024, transform="logit" if is_logit else None
+    )
+
+    blender = GBDTDMPNNBlender(
+        max_iter=gbdt_iter,
+        learning_rate=gbdt_lr,
+        l2_regularization=gbdt_l2,
+    )
+    console.print("[bold cyan]Fitting GBDT in thermodynamic Gibbs logit space...[/bold cyan]")
+    blender.fit_gbdt(X_train, y_train_logit)
+
+    # 3. Locate DMPNN Checkpoints
+    seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    found_ckpts = []
+    for s in seed_list:
+        p = os.path.join(checkpoint_dir, f"model_seed_{s}.pt")
+        if os.path.exists(p):
+            found_ckpts.append((s, p))
+
+    if not found_ckpts:
+        # Fallback to best_model.pt
+        for candidate in [
+            os.path.join(checkpoint_dir, "best_model.pt"),
+            "./models/checkpoint/best_model.pt",
+        ]:
+            if os.path.exists(candidate):
+                found_ckpts.append((0, candidate))
+                break
+
+    if not found_ckpts:
+        raise FileNotFoundError(f"No model checkpoints found in '{checkpoint_dir}' or standard paths.")
+
+    console.print(f"[bold green]Found {len(found_ckpts)} DMPNN checkpoints for evaluation.[/bold green]")
+
+    # 4. Run DMPNN Forward Passes on Validation and Test Sets
+    all_dmpnn_v_logits = []
+    all_dmpnn_t_logits = []
+    v_labels_real = None
+    t_labels_real = None
+    v_smiles_list = []
+    t_smiles_list = []
+
+    model_cls = MODELS.get(model_cfg.get("type", "dmpnn_mtl"))
+
+    for seed, chk_path in found_ckpts:
+        console.print(f"Evaluating DMPNN Checkpoint (Seed {seed}): [yellow]{chk_path}[/yellow]")
+        model = model_cls(**{k: v for k, v in model_cfg.items() if k not in ("type", "name")}).to(device)
+        ckpt = torch.load(chk_path, map_location=device, weights_only=False)
+        state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
+        model.load_state_dict(state_dict)
+        model.eval()
+
+        # Validation forward
+        v_preds, v_labels, curr_v_smiles = [], [], []
+        with torch.no_grad():
+            for batch in val_loader:
+                dev_batch = _batch_to_device(batch, device)
+                preds = model(dev_batch)
+                if "mask" in dev_batch and dev_batch["mask"] is not None:
+                    mask = dev_batch["mask"][:, primary_idx].bool()
+                else:
+                    mask = torch.ones(preds.shape[0], dtype=torch.bool, device=preds.device)
+
+                if mask.any():
+                    p = preds[mask, primary_idx].detach().cpu()
+                    y = dev_batch["labels"][mask, primary_idx].detach().cpu()
+                    v_preds.append(p)
+                    v_labels.append(y)
+                    if "drug_smiles_str" in batch:
+                        curr_v_smiles.extend([batch["drug_smiles_str"][i] for i in range(len(batch["drug_smiles_str"])) if mask[i].item()])
+
+        v_p_cat = torch.cat(v_preds, dim=0).numpy()
+        v_y_cat = torch.cat(v_labels, dim=0).numpy()
+        # Unstandardize to get Gibbs logit space
+        v_z = v_p_cat * std + mean
+        all_dmpnn_v_logits.append(v_z)
+
+        if v_labels_real is None:
+            if is_logit:
+                v_labels_real = 100.0 / (1.0 + np.exp(-np.clip(v_y_cat * std + mean, -40.0, 40.0)))
+            else:
+                v_labels_real = np.clip(v_y_cat * std + mean, 0.0, 100.0)
+            if curr_v_smiles:
+                v_smiles_list = curr_v_smiles
+            else:
+                val_df = data_module.splits["valid"]
+                v_smiles_list = val_df.dropna(subset=[primary_task])["Canon_SMILES"].tolist()[:len(v_z)]
+
+        # Test forward
+        t_preds, t_labels, curr_t_smiles = [], [], []
+        with torch.no_grad():
+            for batch in test_loader:
+                dev_batch = _batch_to_device(batch, device)
+                preds = model(dev_batch)
+                if "mask" in dev_batch and dev_batch["mask"] is not None:
+                    mask = dev_batch["mask"][:, primary_idx].bool()
+                else:
+                    mask = torch.ones(preds.shape[0], dtype=torch.bool, device=preds.device)
+
+                if mask.any():
+                    p = preds[mask, primary_idx].detach().cpu()
+                    y = dev_batch["labels"][mask, primary_idx].detach().cpu()
+                    t_preds.append(p)
+                    t_labels.append(y)
+                    if "drug_smiles_str" in batch:
+                        curr_t_smiles.extend([batch["drug_smiles_str"][i] for i in range(len(batch["drug_smiles_str"])) if mask[i].item()])
+
+        t_p_cat = torch.cat(t_preds, dim=0).numpy()
+        t_y_cat = torch.cat(t_labels, dim=0).numpy()
+        t_z = t_p_cat * std + mean
+        all_dmpnn_t_logits.append(t_z)
+
+        if t_labels_real is None:
+            if is_logit:
+                t_labels_real = 100.0 / (1.0 + np.exp(-np.clip(t_y_cat * std + mean, -40.0, 40.0)))
+            else:
+                t_labels_real = np.clip(t_y_cat * std + mean, 0.0, 100.0)
+            if curr_t_smiles:
+                t_smiles_list = curr_t_smiles
+            else:
+                test_df = data_module.splits["test"]
+                t_smiles_list = test_df.dropna(subset=[primary_task])["Canon_SMILES"].tolist()[:len(t_z)]
+
+    # 5. Average Ensemble DMPNN Logits
+    z_dmpnn_val = np.mean(all_dmpnn_v_logits, axis=0)
+    z_dmpnn_test = np.mean(all_dmpnn_t_logits, axis=0)
+
+    # 6. Extract GBDT Features for Val and Test and Predict Logits
+    console.print(f"[bold cyan]Extracting validation molecular features ({len(v_smiles_list)} samples)...[/bold cyan]")
+    X_val, _, _ = extract_molecular_features(
+        v_smiles_list, None, n_bits=1024, transform="logit" if is_logit else None
+    )
+    z_gbdt_val = blender.predict_gbdt(X_val)
+
+    console.print(f"[bold cyan]Extracting test molecular features ({len(t_smiles_list)} samples)...[/bold cyan]")
+    X_test, _, _ = extract_molecular_features(
+        t_smiles_list, None, n_bits=1024, transform="logit" if is_logit else None
+    )
+    z_gbdt_test = blender.predict_gbdt(X_test)
+
+    # 7. Fit Calibration and Blending on Validation Set
+    console.print("[bold yellow]Optimizing Blending Weight (w) and Calibration Parameters (alpha, beta) on Validation Set...[/bold yellow]")
+    calib_res = blender.fit_calibration_and_blend(z_dmpnn_val, z_gbdt_val, v_labels_real)
+    console.print(
+        f"[bold green]Optimal Validation Parameters:[/bold green] "
+        f"w_dmpnn={calib_res['optimal_w_dmpnn']:.3f}, w_gbdt={calib_res['optimal_w_gbdt']:.3f}, "
+        f"alpha={calib_res['optimal_alpha']:.3f}, beta={calib_res['optimal_beta']:.3f} | "
+        f"Val R²={calib_res['val_r2']:.4f}, Val MAE={calib_res['val_mae']:.2f}%"
+    )
+
+    # 8. Evaluate on Test Set
+    console.print("[bold green]Evaluating Standalone vs. Hybrid Models on Test Set...[/bold green]")
+    test_results = blender.evaluate_test(
+        z_dmpnn_test,
+        z_gbdt_test,
+        t_labels_real,
+        z_dmpnn_val=z_dmpnn_val,
+        z_gbdt_val=z_gbdt_val,
+        y_val_real=v_labels_real,
+    )
+
+    # 9. Format Results Table
+    d_raw = test_results["dmpnn_raw_metrics"]
+    d_cal = test_results.get("dmpnn_calibrated_metrics", d_raw)
+    g_raw = test_results["gbdt_raw_metrics"]
+    g_cal = test_results.get("gbdt_calibrated_metrics", g_raw)
+    hyb = test_results["hybrid_metrics"]
+
+    table = Table(title="★ Multi-Modal Hybrid Stacking & Calibration Benchmark Results (PPBR AZ)")
+    table.add_column("Model Architecture", style="bold")
+    table.add_column("Test R²", justify="center", style="bold cyan")
+    table.add_column("Test MAE (%)", justify="center", style="green")
+    table.add_column("Test RMSE (%)", justify="center")
+    table.add_column("Pearson (r)", justify="center", style="yellow")
+    table.add_column("Spearman (ρ)", justify="center")
+
+    table.add_row("DMPNN Ensemble (Raw Sigmoid)", f"{d_raw['r2']:.4f}", f"{d_raw['mae']:.2f}%", f"{d_raw['rmse']:.2f}%", f"{d_raw['pearson']:.4f}", f"{d_raw['spearman']:.4f}")
+    table.add_row("DMPNN Ensemble (Calibrated)", f"{d_cal['r2']:.4f}", f"{d_cal['mae']:.2f}%", f"{d_cal['rmse']:.2f}%", f"{d_cal['pearson']:.4f}", f"{d_cal['spearman']:.4f}")
+    table.add_row("GBDT Descriptors (Raw Sigmoid)", f"{g_raw['r2']:.4f}", f"{g_raw['mae']:.2f}%", f"{g_raw['rmse']:.2f}%", f"{g_raw['pearson']:.4f}", f"{g_raw['spearman']:.4f}")
+    table.add_row("GBDT Descriptors (Calibrated)", f"{g_cal['r2']:.4f}", f"{g_cal['mae']:.2f}%", f"{g_cal['rmse']:.2f}%", f"{g_cal['pearson']:.4f}", f"{g_cal['spearman']:.4f}")
+    table.add_row("★ Hybrid Stacker (DMPNN + GBDT + Calibrated)", f"[bold green]{hyb['r2']:.4f}[/bold green]", f"[bold green]{hyb['mae']:.2f}%[/bold green]", f"[bold green]{hyb['rmse']:.2f}%[/bold green]", f"[bold green]{hyb['pearson']:.4f}[/bold green]", f"[bold green]{hyb['spearman']:.4f}[/bold green]")
+    table.add_row("Literature / ADMETlab Benchmark", "0.60 ~ 0.73", "7.4% ~ 8.6%", "11% ~ 13%", "~0.75", "~0.73")
+    console.print(table)
+
+    # 10. Save Summary
+    summary_path = os.path.join(checkpoint_dir, output_summary)
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(test_results, f, indent=2)
+    console.print(f"[bold green]Saved Hybrid Benchmark Summary to: {summary_path}[/bold green]")
+
+    # 11. Log to W&B
+    tracking_cfg = cfg.get("tracking", {})
+    if tracking_cfg.get("enabled", False):
+        tracker = WandBTracker(
+            project=tracking_cfg.get("project", "tdc-learning"),
+            entity=tracking_cfg.get("entity", "tdc-studio"),
+            run_name="ppbr_hybrid_blend_calibration",
+            config=cfg,
+            tags=["hybrid", "gbdt", "dmpnn", "calibration", "ppbr_az"],
+        )
+        try:
+            tracker.log_metrics({
+                "test_hybrid_r2": hyb["r2"],
+                "test_hybrid_mae": hyb["mae"],
+                "test_hybrid_rmse": hyb["rmse"],
+                "test_hybrid_pearson": hyb["pearson"],
+                "test_hybrid_spearman": hyb["spearman"],
+                "test_dmpnn_raw_r2": d_raw["r2"],
+                "test_dmpnn_cal_r2": d_cal["r2"],
+                "test_gbdt_raw_r2": g_raw["r2"],
+                "test_gbdt_cal_r2": g_cal["r2"],
+                "optimal_w_dmpnn": blender.optimal_w,
+                "optimal_w_gbdt": 1.0 - blender.optimal_w,
+                "optimal_alpha": blender.optimal_alpha,
+                "optimal_beta": blender.optimal_beta,
+            })
+        finally:
+            tracker.finish()
+
+
+@app.command()
 def export(
     checkpoint_dir: str = typer.Option(
         "./models/checkpoint",

@@ -9,18 +9,21 @@ import torch.nn.functional as F
 
 def pearson_loss(preds: torch.Tensor, targets: torch.Tensor, eps: float = 1e-4) -> torch.Tensor:
     """Differentiable Pearson correlation loss: 1.0 - Pearson r."""
-    if preds.numel() <= 3:
+    if preds.numel() < 8:
         return torch.tensor(0.0, device=preds.device, dtype=preds.dtype)
     var_x = torch.var(preds, unbiased=False)
     var_y = torch.var(targets, unbiased=False)
-    if var_x < 1e-4 or var_y < 1e-4:
+    if var_x < 1e-3 or var_y < 1e-3:
         return torch.tensor(0.0, device=preds.device, dtype=preds.dtype)
     vx = preds - torch.mean(preds)
     vy = targets - torch.mean(targets)
     std_x = torch.sqrt(var_x * preds.numel() + eps)
     std_y = torch.sqrt(var_y * targets.numel() + eps)
     cost = torch.sum(vx * vy) / (std_x * std_y)
-    return 1.0 - torch.clamp(cost, -0.999, 0.999)
+    p_loss = 1.0 - torch.clamp(cost, -0.999, 0.999)
+    if not torch.isfinite(p_loss):
+        return torch.tensor(0.0, device=preds.device, dtype=preds.dtype)
+    return p_loss
 
 
 class MaskedMultiTaskLoss(nn.Module):
@@ -93,16 +96,10 @@ class MaskedMultiTaskLoss(nn.Module):
 
             if t_type == "regression":
                 t_loss = F.smooth_l1_loss(t_preds, t_targets, beta=1.0)
-                if self.pearson_weight > 0 and n_valid > 3:
+                if self.pearson_weight > 0 and n_valid >= 8:
                     p_loss = pearson_loss(t_preds, t_targets)
-                    if torch.isfinite(p_loss):
+                    if torch.isfinite(p_loss) and float(p_loss.item()) > 0.0:
                         t_loss = t_loss + self.pearson_weight * p_loss
-                if self.r2_weight > 0 and n_valid > 3:
-                    var_y = torch.var(t_targets, unbiased=False)
-                    if var_y >= 1e-4:
-                        r2_pen = torch.mean((t_preds - t_targets) ** 2) / (var_y + 1e-4)
-                        if torch.isfinite(r2_pen):
-                            t_loss = t_loss + self.r2_weight * torch.clamp(r2_pen, 0.0, 5.0)
             elif t_type in ("binary_classification", "classification"):
                 t_preds_clamped = torch.clamp(t_preds, min=-15.0, max=15.0)
                 t_loss = F.binary_cross_entropy_with_logits(t_preds_clamped, t_targets)

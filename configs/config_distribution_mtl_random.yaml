@@ -52,7 +52,6 @@ model:
     lipophilicity_astrazeneca: 0.5
   use_uncertainty: true
   pearson_weight: 0.25
-  r2_weight: 0.25
 
 lr: 0.0006
 min_lr: 1.0e-6

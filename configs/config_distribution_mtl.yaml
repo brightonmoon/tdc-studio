@@ -6,13 +6,14 @@ data:
   seed: 42
   modality: graph
   primary_task: ppbr_az
-  metric_name: mae
+  metric_name: r2
   use_descriptors: true
   standardize_target: true
   tasks:
     - name: ppbr_az
       category: distribution
       type: regression
+      transform: logit
     - name: bbb_martins
       category: distribution
       type: binary_classification
@@ -47,13 +48,14 @@ model:
     vdss_lombardo: 1.0
     lipophilicity_astrazeneca: 0.3
   use_uncertainty: true
+  pearson_weight: 0.2
 
 lr: 0.0006
 min_lr: 1.0e-6
 weight_decay: 1.0e-5
 max_epochs: 70
 early_stopping: 25
-eval_metric: mae
+eval_metric: r2
 
 tracking:
   enabled: true

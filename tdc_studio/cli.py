@@ -523,6 +523,14 @@ def train(
                     table.add_row("BBB Martins", "ROC-AUC", f"{b_auc:.4f}", "0.908±0.012")
                     table.add_row("VDss Lombardo", "R² (Pearson r)", f"{v_r2:.4f} (r={v_pr:.4f})", "0.760 (r~0.88)")
                     table.add_row("Lipophilicity", "R² (Pearson r)", f"{l_r2:.4f} (r={l_pr:.4f})", "0.650 (r~0.80)")
+                    if "solubility_aqsoldb_r2" in all_test_metrics:
+                        s_r2 = all_test_metrics["solubility_aqsoldb_r2"]
+                        s_pr = all_test_metrics.get("solubility_aqsoldb_pearson", 0.0)
+                        table.add_row("Solubility (AqSolDB)", "R² (Pearson r)", f"{s_r2:.4f} (r={s_pr:.4f})", "SOTA: ~0.78")
+                    if "caco2_wang_r2" in all_test_metrics:
+                        c_r2 = all_test_metrics["caco2_wang_r2"]
+                        c_pr = all_test_metrics.get("caco2_wang_pearson", 0.0)
+                        table.add_row("Caco-2 (Wang)", "R² (Pearson r)", f"{c_r2:.4f} (r={c_pr:.4f})", "SOTA: ~0.74")
                     console.print(table)
 
                 tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})

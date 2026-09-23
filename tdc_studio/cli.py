@@ -1089,6 +1089,7 @@ def remote_exec(
         None, "--arg", help="Arguments to inject and pass to the script"
     ),
     account: Optional[str] = typer.Option(None, help="Colab account to use"),
+    timeout: float = typer.Option(7200.0, "--timeout", help="Execution timeout in seconds"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
 ):
     """Execute code or a local script directly on an active Google Colab instance via `colab exec`."""
@@ -1104,6 +1105,7 @@ def remote_exec(
         session=session,
         script_file=script,
         script_args=script_args,
+        timeout=timeout,
         dry_run=dry_run,
     )
     if returncode == 0:

@@ -76,8 +76,11 @@ def main():
     run_command_streaming(["uv", "pip", "install", "setuptools<72"])
 
     # 4. Run the requested task command with live streaming output
-    print(f"Executing payload: uv run {task_command}", flush=True)
-    cmd_parts = ["uv", "run"] + task_command.split()
+    if task_command.startswith("uv run "):
+        cmd_parts = task_command.split()
+    else:
+        cmd_parts = ["uv", "run"] + task_command.split()
+    print(f"Executing payload: {' '.join(cmd_parts)}", flush=True)
     retcode = run_command_streaming(cmd_parts)
     print("=== [Colab Cloud VM] Task Finished with code:", retcode, flush=True)
     sys.exit(retcode)

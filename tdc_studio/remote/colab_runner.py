@@ -125,13 +125,13 @@ class ColabRunner:
 
     @classmethod
     def create_bundle_b64(cls, workspace_root: Optional[Path] = None) -> str:
-        """Pack core project code (tdc_studio, configs, pyproject.toml, README.md) into base64 zip."""
+        """Pack core project code and benchmark data into base64 zip."""
         import base64
         import io
         import zipfile
 
         root = (workspace_root or Path.cwd()).resolve()
-        targets = ["tdc_studio", "configs", "pyproject.toml", "README.md"]
+        targets = ["tdc_studio", "configs", "data", "pyproject.toml", "README.md"]
         buf = io.BytesIO()
 
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -149,6 +149,9 @@ class ColabRunner:
                         ):
                             continue
                         if item.is_file():
+                            # Skip excessively large datasets (e.g. herg_central.tab > 10MB)
+                            if item.stat().st_size > 10 * 1024 * 1024:
+                                continue
                             rel_path = item.relative_to(root)
                             zf.write(item, arcname=str(rel_path).replace("\\", "/"))
 

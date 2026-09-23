@@ -72,11 +72,12 @@ class MaskedMultiTaskLoss(nn.Module):
             t_type = self.task_types[i]
 
             if t_type == "regression":
-                t_loss = F.mse_loss(t_preds, t_targets)
+                t_loss = F.smooth_l1_loss(t_preds, t_targets, beta=1.0)
             elif t_type in ("binary_classification", "classification"):
-                t_loss = F.binary_cross_entropy_with_logits(t_preds, t_targets)
+                t_preds_clamped = torch.clamp(t_preds, min=-15.0, max=15.0)
+                t_loss = F.binary_cross_entropy_with_logits(t_preds_clamped, t_targets)
             else:
-                t_loss = F.mse_loss(t_preds, t_targets)
+                t_loss = F.smooth_l1_loss(t_preds, t_targets, beta=1.0)
 
             task_losses[self.task_names[i]] = float(t_loss.item())
             valid_task_count += 1

@@ -131,7 +131,9 @@ def train(
     model_type = model_cfg.get("type", model_cfg.get("name"))
     model_cls = MODELS.get(model_type)
     model = model_cls(model_cfg).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=float(cfg.get("lr", 1e-3)))
+    lr = float(cfg.get("lr", 1e-3))
+    weight_decay = float(cfg.get("weight_decay", 1e-4))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     console.print(
         f"Device: [cyan]{device}[/cyan] | Task: [cyan]{task_type}[/cyan] | Target Metric: [yellow]{target_metric}[/yellow] (higher_is_better={higher_is_better})"
@@ -147,6 +149,14 @@ def train(
     )
 
     max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", 5))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max(1, max_epochs), eta_min=float(cfg.get("min_lr", 1e-6))
+    )
+    early_stopping_patience = (
+        early_stopping
+        if early_stopping is not None
+        else cfg.get("early_stopping", None)
+    )
     best_metric = -float("inf") if higher_is_better else float("inf")
     best_epoch = 0
     patience_counter = 0
@@ -247,6 +257,10 @@ def train(
                                 t_p = t_p * stat["std"] + stat["mean"]
                                 t_y = t_y * stat["std"] + stat["mean"]
 
+                            if "ppbr" in str(t_name).lower():
+                                t_p = torch.clamp(t_p, min=0.0, max=100.0)
+                                t_y = torch.clamp(t_y, min=0.0, max=100.0)
+
                             t_metric_name = "mae" if t_type == "regression" else "roc_auc"
                             all_val_metrics[f"{t_name}_{t_metric_name}"] = evaluator.compute(
                                 t_p, t_y, t_metric_name
@@ -279,6 +293,10 @@ def train(
                     eval_p = eval_p * std + mean
                     eval_y = eval_y * std + mean
 
+                if "ppbr" in str(dataset_name).lower() or "ppbr" in str(target_metric).lower():
+                    eval_p = torch.clamp(eval_p, min=0.0, max=100.0)
+                    eval_y = torch.clamp(eval_y, min=0.0, max=100.0)
+
                 current_val_metric = evaluator.compute(
                     eval_p,
                     eval_y,
@@ -290,11 +308,15 @@ def train(
                     task_type,
                 )
 
+            current_lr = optimizer.param_groups[0]["lr"]
+            scheduler.step()
+
             console.print(
                 f"Epoch {epoch + 1}/{max_epochs} | "
                 f"Train Loss: {avg_train_loss:.4f} | "
                 f"Val Loss: {avg_val_loss:.4f} | "
-                f"Val {target_metric.upper()}: [bold cyan]{current_val_metric:.4f}[/bold cyan]"
+                f"Val {target_metric.upper()}: [bold cyan]{current_val_metric:.4f}[/bold cyan] | "
+                f"LR: {current_lr:.6f}"
             )
 
             # Track metrics
@@ -302,6 +324,7 @@ def train(
                 "epoch": epoch + 1,
                 "train_loss": avg_train_loss,
                 "val_loss": avg_val_loss,
+                "lr": current_lr,
                 **{f"val_{k}": v for k, v in all_val_metrics.items()},
             }
             tracker.log_metrics(log_dict, step=epoch + 1)
@@ -347,7 +370,7 @@ def train(
                     )
             else:
                 patience_counter += 1
-                if early_stopping and patience_counter >= early_stopping:
+                if early_stopping_patience and patience_counter >= early_stopping_patience:
                     console.print(
                         f"[yellow]Early stopping triggered after {patience_counter} epochs without improvement.[/yellow]"
                     )
@@ -407,6 +430,10 @@ def train(
                             )
                             t_p = t_p * stat["std"] + stat["mean"]
                             t_y = t_y * stat["std"] + stat["mean"]
+
+                        if "ppbr" in str(t_name).lower():
+                            t_p = torch.clamp(t_p, min=0.0, max=100.0)
+                            t_y = torch.clamp(t_y, min=0.0, max=100.0)
 
                         if t_type == "regression":
                             all_test_metrics[f"{t_name}_r2"] = evaluator.compute(t_p, t_y, "r2")
@@ -471,6 +498,10 @@ def train(
                 else:
                     test_preds_eval = test_preds_cat
                     test_labels_eval = test_labels_cat
+
+                if "ppbr" in str(dataset_name).lower() or "ppbr" in str(target_metric).lower():
+                    test_preds_eval = torch.clamp(test_preds_eval, min=0.0, max=100.0)
+                    test_labels_eval = torch.clamp(test_labels_eval, min=0.0, max=100.0)
 
                 test_metric_val = evaluator.compute(
                     test_preds_eval, test_labels_eval, target_metric

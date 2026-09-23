@@ -482,6 +482,28 @@ def train(
                     table.add_row("Spearman (ρ)", f"{c_sp:.4f}", "~0.83")
                     console.print(table)
 
+                if primary_task == "ppbr_az" or dataset_name == "distribution_mtl":
+                    from rich.table import Table
+
+                    p_mae = all_test_metrics.get("ppbr_az_mae", 0.0)
+                    p_rmse = all_test_metrics.get("ppbr_az_rmse", 0.0)
+                    b_auc = all_test_metrics.get("bbb_martins_roc_auc", 0.0)
+                    v_r2 = all_test_metrics.get("vdss_lombardo_r2", 0.0)
+                    v_pr = all_test_metrics.get("vdss_lombardo_pearson", 0.0)
+                    l_r2 = all_test_metrics.get("lipophilicity_astrazeneca_r2", 0.0)
+                    l_pr = all_test_metrics.get("lipophilicity_astrazeneca_pearson", 0.0)
+
+                    table = Table(title="★ Cluster 2 (Plasma Distribution) Multi-Task Benchmark Results")
+                    table.add_column("Task Endpoint", style="bold")
+                    table.add_column("Metric", style="bold cyan")
+                    table.add_column("Our Model (Test)", style="bold green")
+                    table.add_column("TDC Benchmark / SOTA", style="yellow")
+                    table.add_row("PPBR (AZ)", "MAE (%)", f"{p_mae:.2f}%", "7.4% ~ 8.6%")
+                    table.add_row("BBB Martins", "ROC-AUC", f"{b_auc:.4f}", "0.908±0.012")
+                    table.add_row("VDss Lombardo", "R² (Pearson r)", f"{v_r2:.4f} (r={v_pr:.4f})", "0.760 (r~0.88)")
+                    table.add_row("Lipophilicity", "R² (Pearson r)", f"{l_r2:.4f} (r={l_pr:.4f})", "0.650 (r~0.80)")
+                    console.print(table)
+
                 tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
             else:
                 test_preds_cat = (

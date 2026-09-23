@@ -6,7 +6,7 @@ data:
   seed: 42
   modality: graph
   primary_task: ppbr_az
-  metric_name: r2
+  metric_name: mae
   use_descriptors: true
   standardize_target: true
   tasks:
@@ -49,10 +49,11 @@ model:
   use_uncertainty: true
 
 lr: 0.0006
+min_lr: 1.0e-6
 weight_decay: 1.0e-5
 max_epochs: 70
 early_stopping: 25
-eval_metric: r2
+eval_metric: mae
 
 tracking:
   enabled: true

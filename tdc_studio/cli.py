@@ -1289,15 +1289,11 @@ def blend(
     console.print(f"[bold green]Saved Hybrid Benchmark Summary to: {summary_path}[/bold green]")
 
     # 11. Log to W&B
-    tracking_cfg = cfg.get("tracking", {})
+    tracking_cfg = dict(cfg.get("tracking", {}))
     if tracking_cfg.get("enabled", False):
-        tracker = WandBTracker(
-            project=tracking_cfg.get("project", "tdc-learning"),
-            entity=tracking_cfg.get("entity", "tdc-studio"),
-            run_name="ppbr_hybrid_blend_calibration",
-            config=cfg,
-            tags=["hybrid", "gbdt", "dmpnn", "calibration", "ppbr_az"],
-        )
+        tracking_cfg["run_name"] = "ppbr_hybrid_blend_calibration"
+        tracking_cfg["config"] = cfg
+        tracker = WandBTracker(tracking_cfg)
         try:
             tracker.log_metrics({
                 "test_hybrid_r2": hyb["r2"],

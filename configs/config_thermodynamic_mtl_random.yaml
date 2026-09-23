@@ -57,20 +57,20 @@ model:
     - name: caco2_wang
       type: regression
   task_weights:
-    ppbr_az: 1.5
-    lipophilicity_astrazeneca: 0.6
-    solubility_aqsoldb: 0.5
-    bbb_martins: 0.5
-    vdss_lombardo: 0.5
-    caco2_wang: 0.5
+    ppbr_az: 2.0
+    lipophilicity_astrazeneca: 0.7
+    solubility_aqsoldb: 0.6
+    bbb_martins: 0.3
+    vdss_lombardo: 0.2
+    caco2_wang: 0.1
   use_uncertainty: true
-  pearson_weight: 0.25
+  pearson_weight: 0.30
 
 lr: 0.0006
 min_lr: 1.0e-6
 weight_decay: 1.0e-5
-max_epochs: 70
-early_stopping: 25
+max_epochs: 45
+early_stopping: 18
 eval_metric: r2
 
 tracking:

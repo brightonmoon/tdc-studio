@@ -380,9 +380,37 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         self, batch_size: int = 32, num_workers: int = 0
     ) -> Tuple[DataLoader, DataLoader, DataLoader]:
         self.check_prepared()
-        train_ds = self._build_dataset(self.splits["train"])
-        val_ds = self._build_dataset(self.splits["valid"])
-        test_ds = self._build_dataset(self.splits["test"])
+
+        # Transparent disk caching for precomputed graph & descriptor datasets
+        cache_path = None
+        if self.synthetic_df is None and self.max_samples is None:
+            import hashlib
+            from pathlib import Path
+            task_str = "_".join(sorted(self.task_names))
+            cache_name = f"{self.dataset_name}_{self.primary_task}_{self.split_type}_{self.seed}_{self.modality}_{self.use_descriptors}_{self.standardize_target}_{hashlib.md5(task_str.encode()).hexdigest()[:8]}.pt"
+            cache_dir = Path("data/cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_path = cache_dir / cache_name
+
+        train_ds, val_ds, test_ds = None, None, None
+        if cache_path and cache_path.exists():
+            try:
+                loaded = torch.load(cache_path, weights_only=False)
+                train_ds = loaded.get("train")
+                val_ds = loaded.get("val")
+                test_ds = loaded.get("test")
+            except Exception:
+                train_ds, val_ds, test_ds = None, None, None
+
+        if train_ds is None:
+            train_ds = self._build_dataset(self.splits["train"])
+            val_ds = self._build_dataset(self.splits["valid"])
+            test_ds = self._build_dataset(self.splits["test"])
+            if cache_path:
+                try:
+                    torch.save({"train": train_ds, "val": val_ds, "test": test_ds}, cache_path)
+                except Exception:
+                    pass
 
         return (
             DataLoader(

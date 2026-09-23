@@ -177,6 +177,8 @@ class DMPNNModel(BaseTherapeuticsModel):
             and batch["descriptors"] is not None
         ):
             desc = batch["descriptors"]
+            desc = torch.nan_to_num(desc, nan=0.0, posinf=50.0, neginf=-50.0)
+            desc = torch.clamp(desc, min=-100.0, max=100.0)
             if desc.size(0) == 1 and self.desc_encoder[0].training:
                 h_desc = self.desc_encoder[1:](desc)
             else:

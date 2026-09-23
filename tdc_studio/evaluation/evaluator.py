@@ -40,10 +40,61 @@ HIGHER_IS_BETTER_METRICS = {
     "spearmanr",
     "r2",
     "r2_score",
+    "ci",
+    "concordance_index",
+    "c_index",
 }
 
 
+
+def _concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Compute Concordance Index (CI) for Drug-Target Affinity prediction.
+
+    CI measures the probability that two randomly chosen drug-target pairs
+    are ranked correctly relative to each other by the model.
+
+    Formula: CI = #{(i,j): y_true[i] > y_true[j] and y_pred[i] > y_pred[j]} / #{(i,j): y_true[i] != y_true[j]}
+
+    Args:
+        y_true: Ground-truth affinity values (e.g. pKd, Kd).
+        y_pred: Predicted affinity values.
+
+    Returns:
+        CI score in [0, 1]. 0.5 = random baseline, 1.0 = perfect ranking.
+    """
+    n = len(y_true)
+    concordant = 0
+    discordant = 0
+    tied = 0
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if y_true[i] == y_true[j]:
+                tied += 1
+                continue
+            if y_true[i] > y_true[j]:
+                if y_pred[i] > y_pred[j]:
+                    concordant += 1
+                elif y_pred[i] < y_pred[j]:
+                    discordant += 1
+                else:
+                    tied += 1
+            else:
+                if y_pred[i] < y_pred[j]:
+                    concordant += 1
+                elif y_pred[i] > y_pred[j]:
+                    discordant += 1
+                else:
+                    tied += 1
+
+    total_pairs = concordant + discordant + tied
+    if total_pairs == 0:
+        return 0.5
+    return float(concordant / (concordant + discordant)) if (concordant + discordant) > 0 else 0.5
+
+
 def _to_numpy(data: Union[torch.Tensor, np.ndarray, Sequence[float]]) -> np.ndarray:
+
     """Convert input to a 1D float numpy array."""
     if isinstance(data, torch.Tensor):
         arr = data.detach().cpu().numpy()
@@ -117,6 +168,15 @@ class TherapeuticsEvaluator:
             if len(y_true) < 2 or np.all(y_true == y_true[0]):
                 return 0.0
             return float(r2_score(y_true, y_pred))
+
+        if metric in ("ci", "concordance_index", "c_index"):
+            # For large datasets, subsample to keep O(n^2) tractable (max 2000 pairs).
+            if len(y_true) > 2000:
+                rng = np.random.default_rng(seed=0)
+                idx = rng.choice(len(y_true), size=2000, replace=False)
+                return _concordance_index(y_true[idx], y_pred[idx])
+            return _concordance_index(y_true, y_pred)
+
 
         if metric in ("composite", "composite_score", "balanced", "balanced_regression"):
             mae_val = float(mean_absolute_error(y_true, y_pred))
@@ -206,6 +266,12 @@ class TherapeuticsEvaluator:
             metrics["spearman"] = self.compute(preds, targets, "spearman")
             metrics["r2"] = self.compute(preds, targets, "r2")
             metrics["composite"] = self.compute(preds, targets, "composite")
+        elif task in ("dta", "drug_target_affinity"):
+            # Primary metrics for Drug Cold Split evaluation
+            metrics["ci"] = self.compute(preds, targets, "ci")         # 1순위: Cold Drug CI
+            metrics["mse"] = self.compute(preds, targets, "mse")       # 1순위: Cold Drug MSE
+            metrics["rmse"] = self.compute(preds, targets, "rmse")     # 보조
+            metrics["pearson"] = self.compute(preds, targets, "pearson")
         elif task in ("binary_classification", "classification"):
             metrics["roc_auc"] = self.compute(preds, targets, "roc_auc")
             metrics["pr_auc"] = self.compute(preds, targets, "pr_auc")
@@ -215,6 +281,7 @@ class TherapeuticsEvaluator:
             metrics["accuracy"] = self.compute(preds, targets, "accuracy")
 
         return metrics
+
 
 
 def evaluate_predictions(

@@ -2,9 +2,11 @@
 
 import importlib
 import pkgutil
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from tdc_studio.core.exceptions import RegistryKeyError
+
 
 
 class Registry:
@@ -58,6 +60,34 @@ MODELS = Registry("models")
 DATASETS = Registry("datasets")
 TRANSFORMS = Registry("transforms")
 EVALUATORS = Registry("evaluators")
+PIPELINES = Registry("pipelines")
+
+
+class TaskType(str, Enum):
+    """Enumeration of supported TDC Studio task types.
+
+    Inherits from str so values can be used directly in YAML config comparison
+    (e.g. config["task"] == TaskType.DTI evaluates correctly with string "dti").
+    """
+
+    ADMET = "admet"               # Single-pred: ADME + Toxicity (Cluster 1~5)
+    DTI = "dti"                   # Multi-pred: Drug-Target Interaction / Affinity
+    DTA = "dta"                   # Alias for DTI regression (affinity prediction)
+    RETROSYN = "retrosyn"         # Generation: Retrosynthesis
+    HTS = "hts"                   # Single-pred: High-Throughput Screening (future)
+    QM = "qm"                     # Single-pred: Quantum Mechanics (future)
+
+    @classmethod
+    def from_str(cls, value: str) -> "TaskType":
+        """Parse a string to TaskType, case-insensitive."""
+        clean = value.lower().strip()
+        for member in cls:
+            if member.value == clean:
+                return member
+        raise ValueError(
+            f"Unknown task type '{value}'. Available: {[m.value for m in cls]}"
+        )
+
 
 
 def auto_import_modules(package_name: str) -> None:

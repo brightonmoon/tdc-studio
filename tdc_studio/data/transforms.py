@@ -330,6 +330,60 @@ class SequenceTokenizer:
         return torch.tensor(tokens, dtype=torch.long)
 
 
+@TRANSFORMS.register("amino_acid_tokenizer")
+class AminoAcidTokenizer:
+    """Character-level tokenizer dedicated to protein amino acid sequences for DTI.
+
+    Unlike SequenceTokenizer which shares vocab with SMILES processing,
+    this class uses a clean 25-token AA-only vocabulary to prevent cross-domain
+    embedding pollution in Drug-Target Interaction models.
+
+    Vocab (25 tokens):
+        0: <PAD>  1: <UNK>
+        2-21: 20 canonical amino acids (A,C,D,E,F,G,H,I,K,L,M,N,P,Q,R,S,T,V,W,Y)
+        22: B (Asx)  23: Z (Glx)  24: X (any)
+    """
+
+    AA_TOKENS = [
+        "<PAD>", "<UNK>",
+        "A", "C", "D", "E", "F", "G", "H", "I",
+        "K", "L", "M", "N", "P", "Q", "R", "S",
+        "T", "V", "W", "Y",
+        "B", "Z", "X",
+    ]
+    VOCAB_SIZE = len(AA_TOKENS)  # 25
+
+    def __init__(self, max_length: int = 1000):
+        self.vocab: Dict[str, int] = {tok: i for i, tok in enumerate(self.AA_TOKENS)}
+        self.pad_id: int = self.vocab["<PAD>"]
+        self.unk_id: int = self.vocab["<UNK>"]
+        self.max_length = max_length
+
+    def __call__(self, seq: str) -> torch.Tensor:
+        """Tokenize an amino acid sequence string to a padded LongTensor.
+
+        Args:
+            seq: Raw protein amino acid sequence string (e.g. 'MKTAYIAKQRQISFVK...')
+
+        Returns:
+            LongTensor of shape [max_length] with trailing <PAD> tokens.
+        """
+        ids = [self.vocab.get(aa.upper(), self.unk_id) for aa in seq[: self.max_length]]
+        pad_len = self.max_length - len(ids)
+        if pad_len > 0:
+            ids.extend([self.pad_id] * pad_len)
+        return torch.tensor(ids, dtype=torch.long)
+
+    def decode(self, tensor: torch.Tensor) -> str:
+        """Reverse mapping from token ids back to AA string (strips padding)."""
+        inv_vocab = {v: k for k, v in self.vocab.items()}
+        return "".join(
+            inv_vocab.get(int(i), "<UNK>")
+            for i in tensor.tolist()
+            if int(i) != self.pad_id
+        )
+
+
 @TRANSFORMS.register("canonical_smiles_normalizer")
 class CanonicalSmilesNormalizer:
     """Sanitize SMILES, strip counterions/salts (retain largest organic fragment), and canonicalize."""
@@ -391,7 +445,7 @@ class RDKit2DDescriptorsTransform:
                 else:
                     vals.append(float(v))
             t = torch.tensor(vals, dtype=torch.float32)
-            return torch.nan_to_num(t, nan=self.fill_na, posinf=1e5, neginf=-1e5)
+            return torch.nan_to_num(t, nan=self.fill_na, posinf=100.0, neginf=-100.0)
         except Exception:
             return None
 

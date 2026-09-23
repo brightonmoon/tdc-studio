@@ -1074,7 +1074,6 @@ def blend(
 
     data_module = data_cls(**data_params)
     data_module.prepare_data()
-    data_module.setup()
     batch_size = data_cfg.get("batch_size", 64)
     train_loader, val_loader, test_loader = data_module.setup_loaders(batch_size=batch_size)
 

@@ -85,12 +85,14 @@ class DMPNNModel(BaseTherapeuticsModel):
             use_uncertainty = config.get("use_uncertainty", False)
             task_weights = config.get("task_weights", None)
             pearson_weight = config.get("pearson_weight", 0.0)
+            r2_weight = config.get("r2_weight", 0.0)
             self.loss_fn = MaskedMultiTaskLoss(
                 task_names=self.task_names,
                 task_types=self.task_types,
                 use_uncertainty=use_uncertainty,
                 task_weights=task_weights,
                 pearson_weight=pearson_weight,
+                r2_weight=r2_weight,
             )
             self.head = None
         else:

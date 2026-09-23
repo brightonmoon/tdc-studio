@@ -29,7 +29,8 @@ model:
   task_type: "regression"
   loss_type: "smooth_l1"
   huber_beta: 1.0
-  pearson_weight: 0.3
+  pearson_weight: 0.25
+  r2_weight: 0.25
 
 lr: 0.0006
 min_lr: 1.0e-6

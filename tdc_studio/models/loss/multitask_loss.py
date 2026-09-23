@@ -33,6 +33,7 @@ class MaskedMultiTaskLoss(nn.Module):
         use_uncertainty: bool = True,
         task_weights: Optional[Dict[str, float]] = None,
         pearson_weight: float = 0.0,
+        r2_weight: float = 0.0,
     ):
         super().__init__()
         self.task_names = task_names
@@ -41,6 +42,7 @@ class MaskedMultiTaskLoss(nn.Module):
         self.use_uncertainty = use_uncertainty
         self.task_weights = task_weights or {}
         self.pearson_weight = float(pearson_weight)
+        self.r2_weight = float(r2_weight)
 
         if len(self.task_types) != self.num_tasks:
             raise ValueError("task_names and task_types must have identical length.")
@@ -95,6 +97,12 @@ class MaskedMultiTaskLoss(nn.Module):
                     p_loss = pearson_loss(t_preds, t_targets)
                     if torch.isfinite(p_loss):
                         t_loss = t_loss + self.pearson_weight * p_loss
+                if self.r2_weight > 0 and n_valid > 3:
+                    var_y = torch.var(t_targets, unbiased=False)
+                    if var_y >= 1e-4:
+                        r2_pen = torch.mean((t_preds - t_targets) ** 2) / (var_y + 1e-4)
+                        if torch.isfinite(r2_pen):
+                            t_loss = t_loss + self.r2_weight * torch.clamp(r2_pen, 0.0, 5.0)
             elif t_type in ("binary_classification", "classification"):
                 t_preds_clamped = torch.clamp(t_preds, min=-15.0, max=15.0)
                 t_loss = F.binary_cross_entropy_with_logits(t_preds_clamped, t_targets)

@@ -1,0 +1,67 @@
+# Configuration for Cluster 2 (Plasma Distribution) Multi-Task Learning on Random Split (8:1:1)
+# ADMETlab 3.0 Benchmark Standard with 6,000+ Cross-Task Molecules (Lipophilicity + BBB + VDss)
+
+data:
+  type: admet_cluster_loader
+  dataset_name: distribution_mtl
+  split_type: random
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: ppbr_az
+  metric_name: r2
+  use_descriptors: true
+  standardize_target: true
+  tasks:
+    - name: ppbr_az
+      category: distribution
+      type: regression
+      transform: logit
+    - name: bbb_martins
+      category: distribution
+      type: binary_classification
+    - name: vdss_lombardo
+      category: distribution
+      type: regression
+    - name: lipophilicity_astrazeneca
+      category: physicochemical
+      type: regression
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 450
+  num_layers: 4
+  dropout: 0.20
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: ppbr_az
+      type: regression
+    - name: bbb_martins
+      type: binary_classification
+    - name: vdss_lombardo
+      type: regression
+    - name: lipophilicity_astrazeneca
+      type: regression
+  task_weights:
+    ppbr_az: 1.5
+    bbb_martins: 0.8
+    vdss_lombardo: 0.8
+    lipophilicity_astrazeneca: 0.5
+  use_uncertainty: true
+  pearson_weight: 0.25
+  r2_weight: 0.25
+
+lr: 0.0006
+min_lr: 1.0e-6
+weight_decay: 1.0e-5
+max_epochs: 70
+early_stopping: 25
+eval_metric: r2
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

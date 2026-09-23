@@ -504,11 +504,16 @@ def train(
                     l_r2 = all_test_metrics.get("lipophilicity_astrazeneca_r2", 0.0)
                     l_pr = all_test_metrics.get("lipophilicity_astrazeneca_pearson", 0.0)
 
+                    p_r2 = all_test_metrics.get("ppbr_az_r2", 0.0)
+                    p_pr = all_test_metrics.get("ppbr_az_pearson", 0.0)
+                    p_sp = all_test_metrics.get("ppbr_az_spearman", 0.0)
+
                     table = Table(title="★ Cluster 2 (Plasma Distribution) Multi-Task Benchmark Results")
                     table.add_column("Task Endpoint", style="bold")
                     table.add_column("Metric", style="bold cyan")
                     table.add_column("Our Model (Test)", style="bold green")
                     table.add_column("TDC Benchmark / SOTA", style="yellow")
+                    table.add_row("PPBR (AZ)", "R² (Pearson r, Spearman ρ)", f"{p_r2:.4f} (r={p_pr:.4f}, ρ={p_sp:.4f})", "ADMETlab: 0.733")
                     table.add_row("PPBR (AZ)", "MAE (%)", f"{p_mae:.2f}%", "7.4% ~ 8.6%")
                     table.add_row("BBB Martins", "ROC-AUC", f"{b_auc:.4f}", "0.908±0.012")
                     table.add_row("VDss Lombardo", "R² (Pearson r)", f"{v_r2:.4f} (r={v_pr:.4f})", "0.760 (r~0.88)")

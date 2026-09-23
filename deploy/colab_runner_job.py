@@ -23,6 +23,7 @@ def run_command_streaming(cmd, shell: bool = False) -> int:
 
 
 def main():
+    os.environ["TDC_REMOTE_EXECUTION"] = "1"
     print("=== [Colab Cloud VM] Starting TDC-Studio Task ===", flush=True)
     task_command = sys.argv[1] if len(sys.argv) > 1 else "tdc-studio train --config configs/config.yaml"
     wandb_key = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "none" else None

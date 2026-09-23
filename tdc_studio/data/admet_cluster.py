@@ -60,7 +60,13 @@ def _canonicalize_smiles(s: Any) -> Optional[str]:
 
 
 def _fetch_tdc_dataset(name: str, split_type: str = "scaffold", seed: int = 42, get_split: bool = False) -> Any:
-    """Fetch TDC dataset from ADME or Tox with automated fallback."""
+    """Fetch TDC dataset from ADME or Tox with automated fallback or local external cache."""
+    from pathlib import Path
+    if name.lower() == "chembl_hsa":
+        p = Path("data/external/chembl_hsa_processed.csv")
+        if p.exists():
+            return pd.read_csv(p)
+
     from tdc.single_pred import ADME, Tox
 
     is_tox = name.lower() in KNOWN_TOX_DATASETS or "tox" in name.lower()

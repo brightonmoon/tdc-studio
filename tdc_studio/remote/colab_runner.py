@@ -104,7 +104,8 @@ class ColabRunner:
             "import os\n"
             "import sys\n"
             f"sys.argv = [{path_repr}] + {args_repr}\n"
-            'os.environ["FORCE_CLI_ARGS"] = "1"\n\n'
+            'os.environ["FORCE_CLI_ARGS"] = "1"\n'
+            'os.environ["TDC_REMOTE_EXECUTION"] = "1"\n\n'
         )
 
         target_dir = Path(temp_dir) if temp_dir else (resolved_path.parent / ".temp_colab")
@@ -131,7 +132,7 @@ class ColabRunner:
         import zipfile
 
         root = (workspace_root or Path.cwd()).resolve()
-        targets = ["tdc_studio", "configs", "data", "pyproject.toml", "README.md"]
+        targets = ["tdc_studio", "configs", "data/external/chembl_hsa_processed.csv", "pyproject.toml", "README.md"]
         buf = io.BytesIO()
 
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -146,11 +147,13 @@ class ColabRunner:
                             ".pt",
                             ".pth",
                             ".log",
+                            ".npz",
+                            ".tab",
                         ):
                             continue
                         if item.is_file():
-                            # Skip excessively large datasets (e.g. herg_central.tab > 10MB)
-                            if item.stat().st_size > 10 * 1024 * 1024:
+                            # Skip files larger than 1MB
+                            if item.stat().st_size > 1024 * 1024:
                                 continue
                             rel_path = item.relative_to(root)
                             zf.write(item, arcname=str(rel_path).replace("\\", "/"))

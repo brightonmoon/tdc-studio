@@ -65,8 +65,40 @@ def train(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Run 1 step for validation without training"
     ),
+    remote: bool = typer.Option(
+        True,
+        "--remote/--local",
+        help="Execute on remote Google Colab GPU (default: True, use --local for local CPU)",
+    ),
+    session: Optional[str] = typer.Option(
+        "tdc-studio", "-s", "--session", help="Colab session ID (default: tdc-studio)"
+    ),
 ):
     """Train a model with validation evaluation, checkpointing, and W&B tracking."""
+    if remote and os.environ.get("TDC_REMOTE_EXECUTION", "0") != "1":
+        console.print(
+            f"[bold cyan]Delegating training pipeline to Google Colab GPU session '{session}' via `remote exec`...[/bold cyan]"
+        )
+        from tdc_studio.remote.colab_runner import ColabRunner
+
+        runner = ColabRunner()
+        remote_cmd = f"tdc-studio train --local --config {config} --checkpoint-dir {checkpoint_dir}"
+        if epochs is not None:
+            remote_cmd += f" --epochs {epochs}"
+        if eval_metric is not None:
+            remote_cmd += f" --eval-metric {eval_metric}"
+        if early_stopping is not None:
+            remote_cmd += f" --early-stopping {early_stopping}"
+        if dry_run:
+            remote_cmd += " --dry-run"
+
+        retcode = runner.run_remote_exec(
+            command_to_run=remote_cmd, session=session
+        )
+        if retcode != 0:
+            raise typer.Exit(retcode)
+        return
+
     import torch
 
     from tdc_studio.core.registry import DATASETS, MODELS
@@ -632,8 +664,39 @@ def ensemble(
         "./models/checkpoint/ensemble", help="Dir to save ensemble checkpoints"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Dry run 1 step per model for testing"),
+    remote: bool = typer.Option(
+        True,
+        "--remote/--local",
+        help="Execute on remote Google Colab GPU (default: True, use --local for local CPU)",
+    ),
+    session: Optional[str] = typer.Option(
+        "tdc-studio", "-s", "--session", help="Colab session ID (default: tdc-studio)"
+    ),
 ):
     """Train an ensemble of models with multiple random seeds and compute consensus predictions."""
+    if remote and os.environ.get("TDC_REMOTE_EXECUTION", "0") != "1":
+        console.print(
+            f"[bold cyan]Delegating ensemble pipeline to Google Colab GPU session '{session}' via `remote exec`...[/bold cyan]"
+        )
+        from tdc_studio.remote.colab_runner import ColabRunner
+
+        runner = ColabRunner()
+        remote_cmd = (
+            f"tdc-studio ensemble --local --config {config} --n-models {n_models} --seeds {seeds}"
+            f" --checkpoint-dir {checkpoint_dir}"
+        )
+        if epochs is not None:
+            remote_cmd += f" --epochs {epochs}"
+        if dry_run:
+            remote_cmd += " --dry-run"
+
+        retcode = runner.run_remote_exec(
+            command_to_run=remote_cmd, session=session
+        )
+        if retcode != 0:
+            raise typer.Exit(retcode)
+        return
+
     import json
     import os
 

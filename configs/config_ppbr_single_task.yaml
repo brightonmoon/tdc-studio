@@ -1,0 +1,41 @@
+# Configuration for PPBR AstraZeneca (Single-Task D-MPNN-Des Baseline)
+# Directed Message Passing on Bonds + 210 RDKit Descriptors + Target Standardization + Smooth L1 Loss
+
+data:
+  type: "admet_loader"
+  dataset_name: "ppbr_az"
+  split_type: "scaffold"
+  batch_size: 32
+  seed: 42
+  metric_name: "mae"
+  params:
+    dataset_name: "ppbr_az"
+    split_type: "scaffold"
+    seed: 42
+    task_type: "regression"
+    use_descriptors: true
+    standardize_target: true
+
+model:
+  type: "dmpnn"
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  depth: 3
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  task_type: "regression"
+  loss_type: "smooth_l1"
+  huber_beta: 1.0
+
+lr: 0.0005
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: "mae"
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

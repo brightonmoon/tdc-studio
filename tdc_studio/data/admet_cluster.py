@@ -218,7 +218,6 @@ class ADMETClusterDataModule(BaseTDCDataModule):
 
     def _load_herg_central(self) -> None:
         """Load NIH NCATS hERG Central 306k multi-assay dataset."""
-        import os
         from pathlib import Path
 
         tab_path = Path("data/herg_central.tab")

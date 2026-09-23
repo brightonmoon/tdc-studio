@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, List, Optional
 from tdc_studio.core.exceptions import RegistryKeyError
 
 
-
 class Registry:
     """Dynamic component registry supporting auto-discovery and factory instantiation."""
 

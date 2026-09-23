@@ -18,18 +18,22 @@ venv/
 # Experiment tracking & Artifacts
 wandb/
 models/export/
-models/checkpoint/
+models/checkpoint*/
 *.pt
 *.pth
 *.onnx
 
 # Data caches
-/data/
+/data/*
+!data/external/
 
 # Temporary logs & notebooks
+scratch/*.json
+scratch/.temp_colab/
 *.log
 tdc_colab*.ipynb
 .DS_Store
 Thumbs.db
 data/cache/
 .temp_colab/
+

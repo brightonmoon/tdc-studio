@@ -75,7 +75,7 @@ def train(
     ),
 ):
     """Train a model with validation evaluation, checkpointing, and W&B tracking."""
-    if remote and os.environ.get("TDC_REMOTE_EXECUTION", "0") != "1":
+    if remote and not dry_run and os.environ.get("TDC_REMOTE_EXECUTION", "0") != "1":
         console.print(
             f"[bold cyan]Delegating training pipeline to Google Colab GPU session '{session}' via `remote exec`...[/bold cyan]"
         )
@@ -551,7 +551,7 @@ def train(
                     table.add_column("Our Model (Test)", style="bold green")
                     table.add_column("TDC Benchmark / SOTA", style="yellow")
                     table.add_row("PPBR (AZ)", "R² (Pearson r, Spearman ρ)", f"{p_r2:.4f} (r={p_pr:.4f}, ρ={p_sp:.4f})", "ADMETlab: 0.733")
-                    table.add_row("PPBR (AZ)", "MAE (%)", f"{p_mae:.2f}%", "7.4% ~ 8.6%")
+                    table.add_row("PPBR (AZ)", "MAE (%) [RMSE]", f"{p_mae:.2f}% [{p_rmse:.2f}%]", "7.4% ~ 8.6%")
                     table.add_row("BBB Martins", "ROC-AUC", f"{b_auc:.4f}", "0.908±0.012")
                     table.add_row("VDss Lombardo", "R² (Pearson r)", f"{v_r2:.4f} (r={v_pr:.4f})", "0.760 (r~0.88)")
                     table.add_row("Lipophilicity", "R² (Pearson r)", f"{l_r2:.4f} (r={l_pr:.4f})", "0.650 (r~0.80)")
@@ -674,7 +674,7 @@ def ensemble(
     ),
 ):
     """Train an ensemble of models with multiple random seeds and compute consensus predictions."""
-    if remote and os.environ.get("TDC_REMOTE_EXECUTION", "0") != "1":
+    if remote and not dry_run and os.environ.get("TDC_REMOTE_EXECUTION", "0") != "1":
         console.print(
             f"[bold cyan]Delegating ensemble pipeline to Google Colab GPU session '{session}' via `remote exec`...[/bold cyan]"
         )
@@ -698,7 +698,6 @@ def ensemble(
         return
 
     import json
-    import os
 
     import numpy as np
     import torch
@@ -1116,10 +1115,8 @@ def blend(
     output_summary: str = typer.Option("hybrid_blend_summary.json", help="Summary filename to save in checkpoint_dir"),
 ):
     """Multi-Modal Hybrid Stacking (DMPNN Graph + GBDT Molecular Descriptors) with Parametric Calibration."""
-    import glob
     import json
     import os
-    from pathlib import Path
 
     import numpy as np
     import torch

@@ -11,7 +11,6 @@ from tdc_studio.cli import app
 from tdc_studio.core.registry import DATASETS
 from tdc_studio.data.admet_cluster import ADMETClusterDataModule
 from tdc_studio.models.graph.dmpnn import DMPNNModel
-from tdc_studio.models.loss.multitask_loss import MaskedMultiTaskLoss
 
 
 @pytest.fixture

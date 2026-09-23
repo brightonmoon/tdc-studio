@@ -1,16 +1,15 @@
 """Multi-Modal Hybrid Stacking (DMPNN Graph + GBDT Descriptors) & Parametric Calibration."""
 
 from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
-import pandas as pd
+import torch
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 from scipy.optimize import minimize
 from scipy.stats import pearsonr, spearmanr
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import torch
-
 
 # Precompiled SMARTS patterns for biophysical pH 7.4 & HSA/AAG binding motifs
 _ACIDIC_SMARTS = {

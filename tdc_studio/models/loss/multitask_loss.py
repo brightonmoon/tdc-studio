@@ -7,16 +7,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def pearson_loss(preds: torch.Tensor, targets: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+def pearson_loss(preds: torch.Tensor, targets: torch.Tensor, eps: float = 1e-4) -> torch.Tensor:
     """Differentiable Pearson correlation loss: 1.0 - Pearson r."""
-    if preds.numel() <= 2:
+    if preds.numel() <= 3:
+        return torch.tensor(0.0, device=preds.device, dtype=preds.dtype)
+    var_x = torch.var(preds, unbiased=False)
+    var_y = torch.var(targets, unbiased=False)
+    if var_x < 1e-4 or var_y < 1e-4:
         return torch.tensor(0.0, device=preds.device, dtype=preds.dtype)
     vx = preds - torch.mean(preds)
     vy = targets - torch.mean(targets)
-    std_x = torch.sqrt(torch.sum(vx ** 2) + eps)
-    std_y = torch.sqrt(torch.sum(vy ** 2) + eps)
+    std_x = torch.sqrt(var_x * preds.numel() + eps)
+    std_y = torch.sqrt(var_y * targets.numel() + eps)
     cost = torch.sum(vx * vy) / (std_x * std_y)
-    return 1.0 - torch.clamp(cost, -1.0, 1.0)
+    return 1.0 - torch.clamp(cost, -0.999, 0.999)
 
 
 class MaskedMultiTaskLoss(nn.Module):
@@ -87,9 +91,10 @@ class MaskedMultiTaskLoss(nn.Module):
 
             if t_type == "regression":
                 t_loss = F.smooth_l1_loss(t_preds, t_targets, beta=1.0)
-                if self.pearson_weight > 0 and n_valid > 2:
+                if self.pearson_weight > 0 and n_valid > 3:
                     p_loss = pearson_loss(t_preds, t_targets)
-                    t_loss = t_loss + self.pearson_weight * p_loss
+                    if torch.isfinite(p_loss):
+                        t_loss = t_loss + self.pearson_weight * p_loss
             elif t_type in ("binary_classification", "classification"):
                 t_preds_clamped = torch.clamp(t_preds, min=-15.0, max=15.0)
                 t_loss = F.binary_cross_entropy_with_logits(t_preds_clamped, t_targets)

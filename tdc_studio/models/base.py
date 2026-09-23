@@ -45,13 +45,17 @@ class BaseTherapeuticsModel(nn.Module, ABC):
         targets_flat = targets.squeeze(-1) if targets.ndim > 1 else targets
         base_loss = self.criterion(preds_flat, targets_flat)
 
-        if self.task_type == "regression" and self.pearson_weight > 0 and preds_flat.numel() > 2:
-            vx = preds_flat - torch.mean(preds_flat)
-            vy = targets_flat - torch.mean(targets_flat)
-            std_x = torch.sqrt(torch.sum(vx ** 2) + 1e-6)
-            std_y = torch.sqrt(torch.sum(vy ** 2) + 1e-6)
-            r = torch.sum(vx * vy) / (std_x * std_y)
-            p_loss = 1.0 - torch.clamp(r, -1.0, 1.0)
-            return base_loss + self.pearson_weight * p_loss
+        if self.task_type == "regression" and self.pearson_weight > 0 and preds_flat.numel() > 3:
+            var_x = torch.var(preds_flat, unbiased=False)
+            var_y = torch.var(targets_flat, unbiased=False)
+            if var_x >= 1e-4 and var_y >= 1e-4:
+                vx = preds_flat - torch.mean(preds_flat)
+                vy = targets_flat - torch.mean(targets_flat)
+                std_x = torch.sqrt(var_x * preds_flat.numel() + 1e-4)
+                std_y = torch.sqrt(var_y * targets_flat.numel() + 1e-4)
+                r = torch.sum(vx * vy) / (std_x * std_y)
+                p_loss = 1.0 - torch.clamp(r, -0.999, 0.999)
+                if torch.isfinite(p_loss):
+                    return base_loss + self.pearson_weight * p_loss
 
         return base_loss

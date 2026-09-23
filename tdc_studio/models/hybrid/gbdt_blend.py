@@ -12,13 +12,132 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import torch
 
 
+# Precompiled SMARTS patterns for biophysical pH 7.4 & HSA/AAG binding motifs
+_ACIDIC_SMARTS = {
+    "cooh": Chem.MolFromSmarts("[CX3](=O)[OX2H1,OX1-]"),
+    "sulfonamide": Chem.MolFromSmarts("[#16X4](=[OX1])(=[OX1])([#7X3H1,H2;!$(NC=O)])"),
+    "tetrazole": Chem.MolFromSmarts("c1nnn[nH]1"),
+    "phenol": Chem.MolFromSmarts("[OX2H][cX3]"),
+    "phosphate": Chem.MolFromSmarts("[PX4](=O)([OX2H,OX1-])([OX2H,OX1-])"),
+}
+_BASIC_SMARTS = {
+    "aliphatic_amine": Chem.MolFromSmarts("[NX3;H2,H1,H0;!$(NC=O);!$(NS(=O)=O);!$(Nc)]"),
+    "aromatic_amine": Chem.MolFromSmarts("[NX3;H2,H1;$(Nc)]"),
+    "guanidine": Chem.MolFromSmarts("[NX3][CX3](=[NX2])"),
+    "pyridine": Chem.MolFromSmarts("[nX2;$(n1ccccc1)]"),
+    "piperazine": Chem.MolFromSmarts("[NX3]1CCNCC1"),
+}
+_CHEMBERTA_CACHE: Dict[str, np.ndarray] = {}
+
+
+def compute_biophysical_motifs(mol: Optional[Chem.Mol]) -> List[float]:
+    """Compute 14 physiological pH 7.4 ionization & HSA/AAG binding motifs."""
+    if mol is None:
+        return [0.0] * 14
+
+    n_cooh = len(mol.GetSubstructMatches(_ACIDIC_SMARTS["cooh"]))
+    n_sulfonamide = len(mol.GetSubstructMatches(_ACIDIC_SMARTS["sulfonamide"]))
+    n_tetrazole = len(mol.GetSubstructMatches(_ACIDIC_SMARTS["tetrazole"]))
+    n_phenol = len(mol.GetSubstructMatches(_ACIDIC_SMARTS["phenol"]))
+    n_phosphate = len(mol.GetSubstructMatches(_ACIDIC_SMARTS["phosphate"]))
+
+    f_anion = (
+        n_cooh * 0.999
+        + n_sulfonamide * 0.962
+        + n_tetrazole * 0.997
+        + n_phosphate * 1.99
+        + n_phenol * 0.004
+    )
+
+    n_aliphatic_amine = len(mol.GetSubstructMatches(_BASIC_SMARTS["aliphatic_amine"]))
+    n_aromatic_amine = len(mol.GetSubstructMatches(_BASIC_SMARTS["aromatic_amine"]))
+    n_guanidine = len(mol.GetSubstructMatches(_BASIC_SMARTS["guanidine"]))
+    n_pyridine = len(mol.GetSubstructMatches(_BASIC_SMARTS["pyridine"]))
+    n_piperazine = len(mol.GetSubstructMatches(_BASIC_SMARTS["piperazine"]))
+
+    f_cation = (
+        n_aliphatic_amine * 0.996
+        + n_guanidine * 0.9999
+        + n_piperazine * 0.863
+        + n_pyridine * 0.006
+        + n_aromatic_amine * 0.002
+    )
+
+    q_net_74 = f_cation - f_anion
+    is_anion_74 = 1.0 if f_anion >= 0.5 else 0.0
+    is_cation_74 = 1.0 if f_cation >= 0.5 else 0.0
+    is_neutral_74 = 1.0 if (f_anion < 0.5 and f_cation < 0.5) else 0.0
+    is_zwitterion_74 = 1.0 if (f_anion >= 0.5 and f_cation >= 0.5) else 0.0
+
+    n_aromatic_rings = Descriptors.NumAromaticRings(mol)
+    from rdkit.Chem import Crippen
+    logp = Crippen.MolLogP(mol)
+
+    sudlow_site_1 = 1.0 if (n_aromatic_rings >= 2 and (n_cooh + n_sulfonamide + n_tetrazole >= 1 or logp >= 3.0)) else 0.0
+    sudlow_site_2 = 1.0 if (n_cooh >= 1 and n_aromatic_rings >= 1 and logp >= 1.5) else 0.0
+    aag_motif = 1.0 if (f_cation >= 0.5 and logp >= 2.0) else 0.0
+
+    if is_anion_74:
+        logd_74 = logp - np.log10(1.0 + 10 ** (7.4 - 4.2))
+    elif is_cation_74:
+        logd_74 = logp - np.log10(1.0 + 10 ** (9.5 - 7.4))
+    else:
+        logd_74 = logp
+
+    return [
+        float(f_anion), float(f_cation), float(q_net_74), float(is_anion_74),
+        float(is_cation_74), float(is_neutral_74), float(is_zwitterion_74),
+        float(sudlow_site_1), float(sudlow_site_2), float(aag_motif), float(logd_74),
+        float(n_cooh), float(n_sulfonamide), float(n_aliphatic_amine)
+    ]
+
+
+def extract_chemberta_embeddings_batch(
+    smiles_list: List[str],
+    model_name: str = "DeepChem/ChemBERTa-77M-MTR",
+    batch_size: int = 64,
+) -> Optional[np.ndarray]:
+    """Extract 384-dimensional ChemBERTa-77M-MTR mean-pooled contextual embeddings with caching."""
+    try:
+        from transformers import AutoModel, AutoTokenizer
+    except ImportError:
+        return None
+
+    missing = [s for s in smiles_list if s and s not in _CHEMBERTA_CACHE]
+    if missing:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModel.from_pretrained(model_name).to(device)
+        model.eval()
+
+        for i in range(0, len(missing), batch_size):
+            chunk = [s if (s and isinstance(s, str)) else "C" for s in missing[i : i + batch_size]]
+            enc = tokenizer(chunk, padding=True, truncation=True, max_length=256, return_tensors="pt")
+            input_ids = enc["input_ids"].to(device)
+            mask = enc["attention_mask"].to(device)
+            with torch.no_grad():
+                out = model(input_ids=input_ids, attention_mask=mask)
+                tok_emb = out.last_hidden_state
+                mask_exp = mask.unsqueeze(-1).expand(tok_emb.size()).float()
+                sum_emb = torch.sum(tok_emb * mask_exp, 1)
+                sum_m = torch.clamp(mask_exp.sum(1), min=1e-9)
+                pooled = (sum_emb / sum_m).detach().cpu().numpy()
+            for s_key, vec in zip(missing[i : i + batch_size], pooled):
+                _CHEMBERTA_CACHE[s_key] = vec
+
+    vectors = [_CHEMBERTA_CACHE.get(s, np.zeros(384, dtype=np.float32)) for s in smiles_list]
+    return np.vstack(vectors).astype(np.float32)
+
+
 def extract_molecular_features(
     smiles_list: List[str],
     labels: Optional[List[float]] = None,
     n_bits: int = 1024,
     transform: Optional[str] = "logit",
+    use_biophysics: bool = True,
+    use_chemberta: bool = True,
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
-    """Extract Morgan Fingerprints (1024-bit) + 200+ RDKit 2D physico-chemical descriptors."""
+    """Extract Morgan Fingerprints (1024-bit) + 200+ RDKit Descriptors + 14 Biophysical Motifs + 384-dim ChemBERTa."""
     features = []
     y_logit = []
     y_real = []
@@ -29,7 +148,10 @@ def extract_molecular_features(
     for idx, s in enumerate(smiles_list):
         mol = Chem.MolFromSmiles(s) if (s and isinstance(s, str)) else None
         if mol is None:
-            features.append([0.0] * (n_bits + n_desc))
+            base_vec = [0.0] * (n_bits + n_desc)
+            if use_biophysics:
+                base_vec.extend([0.0] * 14)
+            features.append(base_vec)
         else:
             # 1. Morgan Fingerprint (radius 2, bit vector)
             fp = list(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=n_bits))
@@ -43,7 +165,14 @@ def extract_molecular_features(
                 else:
                     desc_vals.append(float(np.clip(v, -100.0, 100.0)))
 
-            features.append(fp + desc_vals)
+            mol_features = fp + desc_vals
+
+            # 3. Physiological pH 7.4 & HSA/AAG Binding Motifs (14 features)
+            if use_biophysics:
+                bio_vals = compute_biophysical_motifs(mol)
+                mol_features.extend(bio_vals)
+
+            features.append(mol_features)
 
         if labels is not None and idx < len(labels):
             raw_y = float(labels[idx])
@@ -54,7 +183,18 @@ def extract_molecular_features(
             else:
                 y_logit.append(raw_y)
 
-    X = np.array(features, dtype=np.float32)
+    X_base = np.array(features, dtype=np.float32)
+
+    # 4. ChemBERTa-77M-MTR 384-dimensional Embeddings (if enabled)
+    if use_chemberta:
+        chemberta_embs = extract_chemberta_embeddings_batch(smiles_list)
+        if chemberta_embs is not None and len(chemberta_embs) == len(X_base):
+            X = np.hstack([X_base, chemberta_embs])
+        else:
+            X = X_base
+    else:
+        X = X_base
+
     y_l = np.array(y_logit, dtype=np.float32) if labels is not None else None
     y_r = np.array(y_real, dtype=np.float32) if labels is not None else None
     return X, y_l, y_r

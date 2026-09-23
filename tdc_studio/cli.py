@@ -1116,28 +1116,30 @@ def blend(
     console.print("[bold cyan]Fitting GBDT in thermodynamic Gibbs logit space...[/bold cyan]")
     blender.fit_gbdt(X_train, y_train_logit)
 
-    # 3. Locate DMPNN Checkpoints
+    # 3. Locate DMPNN Checkpoints (support multiple comma-separated dirs)
+    dir_list = [d.strip() for d in checkpoint_dir.split(",") if d.strip()]
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
     found_ckpts = []
-    for s in seed_list:
-        p = os.path.join(checkpoint_dir, f"model_seed_{s}.pt")
-        if os.path.exists(p):
-            found_ckpts.append((s, p))
+    for c_dir in dir_list:
+        for s in seed_list:
+            p = os.path.join(c_dir, f"model_seed_{s}.pt")
+            if os.path.exists(p):
+                found_ckpts.append((s, p))
 
     if not found_ckpts:
-        # Fallback to best_model.pt
-        for candidate in [
-            os.path.join(checkpoint_dir, "best_model.pt"),
-            "./models/checkpoint/best_model.pt",
-        ]:
-            if os.path.exists(candidate):
-                found_ckpts.append((0, candidate))
-                break
+        for c_dir in dir_list:
+            for candidate in [
+                os.path.join(c_dir, "best_model.pt"),
+                "./models/checkpoint/best_model.pt",
+            ]:
+                if os.path.exists(candidate) and candidate not in [x[1] for x in found_ckpts]:
+                    found_ckpts.append((0, candidate))
+                    break
 
     if not found_ckpts:
         raise FileNotFoundError(f"No model checkpoints found in '{checkpoint_dir}' or standard paths.")
 
-    console.print(f"[bold green]Found {len(found_ckpts)} DMPNN checkpoints for evaluation.[/bold green]")
+    console.print(f"[bold green]Found {len(found_ckpts)} DMPNN checkpoints across {len(dir_list)} directory/directories for evaluation.[/bold green]")
 
     # 4. Run DMPNN Forward Passes on Validation and Test Sets
     all_dmpnn_v_logits = []

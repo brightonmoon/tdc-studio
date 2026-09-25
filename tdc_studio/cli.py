@@ -92,9 +92,7 @@ def train(
         if dry_run:
             remote_cmd += " --dry-run"
 
-        retcode = runner.run_remote_exec(
-            command_to_run=remote_cmd, session=session
-        )
+        retcode = runner.run_remote_exec(command_to_run=remote_cmd, session=session)
         if retcode != 0:
             raise typer.Exit(retcode)
         return
@@ -185,9 +183,7 @@ def train(
         optimizer, T_max=max(1, max_epochs), eta_min=float(cfg.get("min_lr", 1e-6))
     )
     early_stopping_patience = (
-        early_stopping
-        if early_stopping is not None
-        else cfg.get("early_stopping", None)
+        early_stopping if early_stopping is not None else cfg.get("early_stopping", None)
     )
     best_metric = -float("inf") if higher_is_better else float("inf")
     best_epoch = 0
@@ -268,13 +264,25 @@ def train(
                     )
                     for t_idx, t_name in enumerate(data_module.task_names):
                         t_type = data_module.task_types[t_idx]
-                        if val_masks_cat.numel() > 0 and val_masks_cat.ndim >= 2 and val_masks_cat.size(1) > t_idx:
+                        if (
+                            val_masks_cat.numel() > 0
+                            and val_masks_cat.ndim >= 2
+                            and val_masks_cat.size(1) > t_idx
+                        ):
                             t_valid = val_masks_cat[:, t_idx]
-                        elif val_labels_cat.numel() > 0 and val_labels_cat.ndim >= 2 and val_labels_cat.size(1) > t_idx:
+                        elif (
+                            val_labels_cat.numel() > 0
+                            and val_labels_cat.ndim >= 2
+                            and val_labels_cat.size(1) > t_idx
+                        ):
                             t_valid = ~torch.isnan(val_labels_cat[:, t_idx])
                         else:
                             t_valid = torch.tensor([], dtype=torch.bool)
-                        if int(t_valid.sum().item()) > 0 and val_preds_cat.ndim >= 2 and val_labels_cat.ndim >= 2:
+                        if (
+                            int(t_valid.sum().item()) > 0
+                            and val_preds_cat.ndim >= 2
+                            and val_labels_cat.ndim >= 2
+                        ):
                             t_p = val_preds_cat[t_valid, t_idx]
                             t_y = val_labels_cat[t_valid, t_idx]
                             finite_mask = torch.isfinite(t_p) & torch.isfinite(t_y)
@@ -545,24 +553,56 @@ def train(
                     p_pr = all_test_metrics.get("ppbr_az_pearson", 0.0)
                     p_sp = all_test_metrics.get("ppbr_az_spearman", 0.0)
 
-                    table = Table(title="★ Cluster 2 (Plasma Distribution) Multi-Task Benchmark Results")
+                    table = Table(
+                        title="★ Cluster 2 (Plasma Distribution) Multi-Task Benchmark Results"
+                    )
                     table.add_column("Task Endpoint", style="bold")
                     table.add_column("Metric", style="bold cyan")
                     table.add_column("Our Model (Test)", style="bold green")
                     table.add_column("TDC Benchmark / SOTA", style="yellow")
-                    table.add_row("PPBR (AZ)", "R² (Pearson r, Spearman ρ)", f"{p_r2:.4f} (r={p_pr:.4f}, ρ={p_sp:.4f})", "ADMETlab: 0.733")
-                    table.add_row("PPBR (AZ)", "MAE (%) [RMSE]", f"{p_mae:.2f}% [{p_rmse:.2f}%]", "7.4% ~ 8.6%")
+                    table.add_row(
+                        "PPBR (AZ)",
+                        "R² (Pearson r, Spearman ρ)",
+                        f"{p_r2:.4f} (r={p_pr:.4f}, ρ={p_sp:.4f})",
+                        "ADMETlab: 0.733",
+                    )
+                    table.add_row(
+                        "PPBR (AZ)",
+                        "MAE (%) [RMSE]",
+                        f"{p_mae:.2f}% [{p_rmse:.2f}%]",
+                        "7.4% ~ 8.6%",
+                    )
                     table.add_row("BBB Martins", "ROC-AUC", f"{b_auc:.4f}", "0.908±0.012")
-                    table.add_row("VDss Lombardo", "R² (Pearson r)", f"{v_r2:.4f} (r={v_pr:.4f})", "0.760 (r~0.88)")
-                    table.add_row("Lipophilicity", "R² (Pearson r)", f"{l_r2:.4f} (r={l_pr:.4f})", "0.650 (r~0.80)")
+                    table.add_row(
+                        "VDss Lombardo",
+                        "R² (Pearson r)",
+                        f"{v_r2:.4f} (r={v_pr:.4f})",
+                        "0.760 (r~0.88)",
+                    )
+                    table.add_row(
+                        "Lipophilicity",
+                        "R² (Pearson r)",
+                        f"{l_r2:.4f} (r={l_pr:.4f})",
+                        "0.650 (r~0.80)",
+                    )
                     if "solubility_aqsoldb_r2" in all_test_metrics:
                         s_r2 = all_test_metrics["solubility_aqsoldb_r2"]
                         s_pr = all_test_metrics.get("solubility_aqsoldb_pearson", 0.0)
-                        table.add_row("Solubility (AqSolDB)", "R² (Pearson r)", f"{s_r2:.4f} (r={s_pr:.4f})", "SOTA: ~0.78")
+                        table.add_row(
+                            "Solubility (AqSolDB)",
+                            "R² (Pearson r)",
+                            f"{s_r2:.4f} (r={s_pr:.4f})",
+                            "SOTA: ~0.78",
+                        )
                     if "caco2_wang_r2" in all_test_metrics:
                         c_r2 = all_test_metrics["caco2_wang_r2"]
                         c_pr = all_test_metrics.get("caco2_wang_pearson", 0.0)
-                        table.add_row("Caco-2 (Wang)", "R² (Pearson r)", f"{c_r2:.4f} (r={c_pr:.4f})", "SOTA: ~0.74")
+                        table.add_row(
+                            "Caco-2 (Wang)",
+                            "R² (Pearson r)",
+                            f"{c_r2:.4f} (r={c_pr:.4f})",
+                            "SOTA: ~0.74",
+                        )
                     console.print(table)
 
                 tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
@@ -690,9 +730,7 @@ def ensemble(
         if dry_run:
             remote_cmd += " --dry-run"
 
-        retcode = runner.run_remote_exec(
-            command_to_run=remote_cmd, session=session
-        )
+        retcode = runner.run_remote_exec(command_to_run=remote_cmd, session=session)
         if retcode != 0:
             raise typer.Exit(retcode)
         return
@@ -869,7 +907,9 @@ def ensemble(
 
                 is_logit = False
                 if task_type == "multi_task":
-                    is_logit = getattr(data_module, "task_transforms", {}).get(primary_task) == "logit"
+                    is_logit = (
+                        getattr(data_module, "task_transforms", {}).get(primary_task) == "logit"
+                    )
                 else:
                     is_logit = getattr(data_module, "target_transform", None) == "logit"
 
@@ -928,9 +968,13 @@ def ensemble(
                     preds = model(dev_batch)
                     if task_type == "multi_task":
                         best_v_preds_list.append(preds[:, primary_idx].detach().cpu())
-                        best_v_labels_list.append(dev_batch["labels"][:, primary_idx].detach().cpu())
+                        best_v_labels_list.append(
+                            dev_batch["labels"][:, primary_idx].detach().cpu()
+                        )
                         if "mask" in dev_batch and dev_batch["mask"] is not None:
-                            best_v_masks_list.append(dev_batch["mask"][:, primary_idx].detach().cpu())
+                            best_v_masks_list.append(
+                                dev_batch["mask"][:, primary_idx].detach().cpu()
+                            )
                     else:
                         best_v_preds_list.append(preds.squeeze(-1).detach().cpu())
                         best_v_labels_list.append(dev_batch["labels"].detach().cpu())
@@ -939,9 +983,15 @@ def ensemble(
                     if dry_run:
                         break
 
-            v_preds_cat = torch.cat(best_v_preds_list, dim=0) if best_v_preds_list else torch.tensor([])
-            v_labels_cat = torch.cat(best_v_labels_list, dim=0) if best_v_labels_list else torch.tensor([])
-            v_masks_cat = torch.cat(best_v_masks_list, dim=0) if best_v_masks_list else torch.tensor([])
+            v_preds_cat = (
+                torch.cat(best_v_preds_list, dim=0) if best_v_preds_list else torch.tensor([])
+            )
+            v_labels_cat = (
+                torch.cat(best_v_labels_list, dim=0) if best_v_labels_list else torch.tensor([])
+            )
+            v_masks_cat = (
+                torch.cat(best_v_masks_list, dim=0) if best_v_masks_list else torch.tensor([])
+            )
 
             # Evaluate Model on Test Set (with best checkpoint)
             t_preds_list = []
@@ -1104,15 +1154,21 @@ def ensemble(
 
 @app.command()
 def blend(
-    config: str = typer.Option("configs/config_distribution_mtl_random.yaml", help="Path to main YAML config"),
+    config: str = typer.Option(
+        "configs/config_distribution_mtl_random.yaml", help="Path to main YAML config"
+    ),
     checkpoint_dir: str = typer.Option(
         "./models/checkpoint/ensemble", help="Directory containing trained model checkpoints"
     ),
-    seeds: str = typer.Option("42,101,202,303,404", "--seeds", help="Comma-separated seeds for ensemble models"),
+    seeds: str = typer.Option(
+        "42,101,202,303,404", "--seeds", help="Comma-separated seeds for ensemble models"
+    ),
     gbdt_iter: int = typer.Option(300, help="Max iterations for GBDT"),
     gbdt_lr: float = typer.Option(0.05, help="Learning rate for GBDT"),
     gbdt_l2: float = typer.Option(2.0, help="L2 regularization for GBDT"),
-    output_summary: str = typer.Option("hybrid_blend_summary.json", help="Summary filename to save in checkpoint_dir"),
+    output_summary: str = typer.Option(
+        "hybrid_blend_summary.json", help="Summary filename to save in checkpoint_dir"
+    ),
 ):
     """Multi-Modal Hybrid Stacking (DMPNN Graph + GBDT Molecular Descriptors) with Parametric Calibration."""
     import json
@@ -1127,7 +1183,9 @@ def blend(
     from tdc_studio.tracking.wandb_tracker import WandBTracker
 
     cfg = load_yaml(config)
-    console.print(f"[bold green]Starting Hybrid Stacking & Calibration Pipeline[/bold green] (Config: {config})")
+    console.print(
+        f"[bold green]Starting Hybrid Stacking & Calibration Pipeline[/bold green] (Config: {config})"
+    )
 
     data_cfg = cfg.get("data", {})
     model_cfg = cfg.get("model", {})
@@ -1155,7 +1213,9 @@ def blend(
     std = stat["std"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    console.print(f"Device: [cyan]{device}[/cyan] | Primary Task: [bold cyan]{primary_task}[/bold cyan] | Logit Space: [yellow]{is_logit}[/yellow]")
+    console.print(
+        f"Device: [cyan]{device}[/cyan] | Primary Task: [bold cyan]{primary_task}[/bold cyan] | Logit Space: [yellow]{is_logit}[/yellow]"
+    )
 
     # 2. Extract Training Features and Fit GBDT
     train_df = data_module.splits["train"]
@@ -1163,7 +1223,9 @@ def blend(
     smiles_train = primary_train["Canon_SMILES"].tolist()
     y_train_raw = primary_train[primary_task].values.astype(float)
 
-    console.print(f"[bold cyan]Extracting molecular features (1024-bit Morgan FP + 210 RDKit Descriptors) for {len(smiles_train)} training compounds...[/bold cyan]")
+    console.print(
+        f"[bold cyan]Extracting molecular features (1024-bit Morgan FP + 210 RDKit Descriptors) for {len(smiles_train)} training compounds...[/bold cyan]"
+    )
     X_train, y_train_logit, _ = extract_molecular_features(
         smiles_train, y_train_raw, n_bits=1024, transform="logit" if is_logit else None
     )
@@ -1197,9 +1259,13 @@ def blend(
                     break
 
     if not found_ckpts:
-        raise FileNotFoundError(f"No model checkpoints found in '{checkpoint_dir}' or standard paths.")
+        raise FileNotFoundError(
+            f"No model checkpoints found in '{checkpoint_dir}' or standard paths."
+        )
 
-    console.print(f"[bold green]Found {len(found_ckpts)} DMPNN checkpoints across {len(dir_list)} directory/directories for evaluation.[/bold green]")
+    console.print(
+        f"[bold green]Found {len(found_ckpts)} DMPNN checkpoints across {len(dir_list)} directory/directories for evaluation.[/bold green]"
+    )
 
     # 4. Run DMPNN Forward Passes on Validation and Test Sets
     all_dmpnn_v_logits = []
@@ -1237,7 +1303,13 @@ def blend(
                     v_preds.append(p)
                     v_labels.append(y)
                     if "drug_smiles_str" in batch:
-                        curr_v_smiles.extend([batch["drug_smiles_str"][i] for i in range(len(batch["drug_smiles_str"])) if mask[i].item()])
+                        curr_v_smiles.extend(
+                            [
+                                batch["drug_smiles_str"][i]
+                                for i in range(len(batch["drug_smiles_str"]))
+                                if mask[i].item()
+                            ]
+                        )
 
         v_p_cat = torch.cat(v_preds, dim=0).numpy()
         v_y_cat = torch.cat(v_labels, dim=0).numpy()
@@ -1254,7 +1326,9 @@ def blend(
                 v_smiles_list = curr_v_smiles
             else:
                 val_df = data_module.splits["valid"]
-                v_smiles_list = val_df.dropna(subset=[primary_task])["Canon_SMILES"].tolist()[:len(v_z)]
+                v_smiles_list = val_df.dropna(subset=[primary_task])["Canon_SMILES"].tolist()[
+                    : len(v_z)
+                ]
 
         # Test forward
         t_preds, t_labels, curr_t_smiles = [], [], []
@@ -1273,7 +1347,13 @@ def blend(
                     t_preds.append(p)
                     t_labels.append(y)
                     if "drug_smiles_str" in batch:
-                        curr_t_smiles.extend([batch["drug_smiles_str"][i] for i in range(len(batch["drug_smiles_str"])) if mask[i].item()])
+                        curr_t_smiles.extend(
+                            [
+                                batch["drug_smiles_str"][i]
+                                for i in range(len(batch["drug_smiles_str"]))
+                                if mask[i].item()
+                            ]
+                        )
 
         t_p_cat = torch.cat(t_preds, dim=0).numpy()
         t_y_cat = torch.cat(t_labels, dim=0).numpy()
@@ -1289,27 +1369,35 @@ def blend(
                 t_smiles_list = curr_t_smiles
             else:
                 test_df = data_module.splits["test"]
-                t_smiles_list = test_df.dropna(subset=[primary_task])["Canon_SMILES"].tolist()[:len(t_z)]
+                t_smiles_list = test_df.dropna(subset=[primary_task])["Canon_SMILES"].tolist()[
+                    : len(t_z)
+                ]
 
     # 5. Average Ensemble DMPNN Logits
     z_dmpnn_val = np.mean(all_dmpnn_v_logits, axis=0)
     z_dmpnn_test = np.mean(all_dmpnn_t_logits, axis=0)
 
     # 6. Extract GBDT Features for Val and Test and Predict Logits
-    console.print(f"[bold cyan]Extracting validation molecular features ({len(v_smiles_list)} samples)...[/bold cyan]")
+    console.print(
+        f"[bold cyan]Extracting validation molecular features ({len(v_smiles_list)} samples)...[/bold cyan]"
+    )
     X_val, _, _ = extract_molecular_features(
         v_smiles_list, None, n_bits=1024, transform="logit" if is_logit else None
     )
     z_gbdt_val = blender.predict_gbdt(X_val)
 
-    console.print(f"[bold cyan]Extracting test molecular features ({len(t_smiles_list)} samples)...[/bold cyan]")
+    console.print(
+        f"[bold cyan]Extracting test molecular features ({len(t_smiles_list)} samples)...[/bold cyan]"
+    )
     X_test, _, _ = extract_molecular_features(
         t_smiles_list, None, n_bits=1024, transform="logit" if is_logit else None
     )
     z_gbdt_test = blender.predict_gbdt(X_test)
 
     # 7. Fit Calibration and Blending on Validation Set
-    console.print("[bold yellow]Optimizing Blending Weight (w) and Calibration Parameters (alpha, beta) on Validation Set...[/bold yellow]")
+    console.print(
+        "[bold yellow]Optimizing Blending Weight (w) and Calibration Parameters (alpha, beta) on Validation Set...[/bold yellow]"
+    )
     calib_res = blender.fit_calibration_and_blend(z_dmpnn_val, z_gbdt_val, v_labels_real)
     console.print(
         f"[bold green]Optimal Validation Parameters:[/bold green] "
@@ -1344,12 +1432,54 @@ def blend(
     table.add_column("Pearson (r)", justify="center", style="yellow")
     table.add_column("Spearman (ρ)", justify="center")
 
-    table.add_row("DMPNN Ensemble (Raw Sigmoid)", f"{d_raw['r2']:.4f}", f"{d_raw['mae']:.2f}%", f"{d_raw['rmse']:.2f}%", f"{d_raw['pearson']:.4f}", f"{d_raw['spearman']:.4f}")
-    table.add_row("DMPNN Ensemble (Calibrated)", f"{d_cal['r2']:.4f}", f"{d_cal['mae']:.2f}%", f"{d_cal['rmse']:.2f}%", f"{d_cal['pearson']:.4f}", f"{d_cal['spearman']:.4f}")
-    table.add_row("GBDT Descriptors (Raw Sigmoid)", f"{g_raw['r2']:.4f}", f"{g_raw['mae']:.2f}%", f"{g_raw['rmse']:.2f}%", f"{g_raw['pearson']:.4f}", f"{g_raw['spearman']:.4f}")
-    table.add_row("GBDT Descriptors (Calibrated)", f"{g_cal['r2']:.4f}", f"{g_cal['mae']:.2f}%", f"{g_cal['rmse']:.2f}%", f"{g_cal['pearson']:.4f}", f"{g_cal['spearman']:.4f}")
-    table.add_row("★ Hybrid Stacker (DMPNN + GBDT + Calibrated)", f"[bold green]{hyb['r2']:.4f}[/bold green]", f"[bold green]{hyb['mae']:.2f}%[/bold green]", f"[bold green]{hyb['rmse']:.2f}%[/bold green]", f"[bold green]{hyb['pearson']:.4f}[/bold green]", f"[bold green]{hyb['spearman']:.4f}[/bold green]")
-    table.add_row("Literature / ADMETlab Benchmark", "0.60 ~ 0.73", "7.4% ~ 8.6%", "11% ~ 13%", "~0.75", "~0.73")
+    table.add_row(
+        "DMPNN Ensemble (Raw Sigmoid)",
+        f"{d_raw['r2']:.4f}",
+        f"{d_raw['mae']:.2f}%",
+        f"{d_raw['rmse']:.2f}%",
+        f"{d_raw['pearson']:.4f}",
+        f"{d_raw['spearman']:.4f}",
+    )
+    table.add_row(
+        "DMPNN Ensemble (Calibrated)",
+        f"{d_cal['r2']:.4f}",
+        f"{d_cal['mae']:.2f}%",
+        f"{d_cal['rmse']:.2f}%",
+        f"{d_cal['pearson']:.4f}",
+        f"{d_cal['spearman']:.4f}",
+    )
+    table.add_row(
+        "GBDT Descriptors (Raw Sigmoid)",
+        f"{g_raw['r2']:.4f}",
+        f"{g_raw['mae']:.2f}%",
+        f"{g_raw['rmse']:.2f}%",
+        f"{g_raw['pearson']:.4f}",
+        f"{g_raw['spearman']:.4f}",
+    )
+    table.add_row(
+        "GBDT Descriptors (Calibrated)",
+        f"{g_cal['r2']:.4f}",
+        f"{g_cal['mae']:.2f}%",
+        f"{g_cal['rmse']:.2f}%",
+        f"{g_cal['pearson']:.4f}",
+        f"{g_cal['spearman']:.4f}",
+    )
+    table.add_row(
+        "★ Hybrid Stacker (DMPNN + GBDT + Calibrated)",
+        f"[bold green]{hyb['r2']:.4f}[/bold green]",
+        f"[bold green]{hyb['mae']:.2f}%[/bold green]",
+        f"[bold green]{hyb['rmse']:.2f}%[/bold green]",
+        f"[bold green]{hyb['pearson']:.4f}[/bold green]",
+        f"[bold green]{hyb['spearman']:.4f}[/bold green]",
+    )
+    table.add_row(
+        "Literature / ADMETlab Benchmark",
+        "0.60 ~ 0.73",
+        "7.4% ~ 8.6%",
+        "11% ~ 13%",
+        "~0.75",
+        "~0.73",
+    )
     console.print(table)
 
     # 10. Save Summary
@@ -1367,21 +1497,23 @@ def blend(
         tracking_cfg["config"] = cfg
         tracker = WandBTracker(tracking_cfg)
         try:
-            tracker.log_metrics({
-                "test_hybrid_r2": hyb["r2"],
-                "test_hybrid_mae": hyb["mae"],
-                "test_hybrid_rmse": hyb["rmse"],
-                "test_hybrid_pearson": hyb["pearson"],
-                "test_hybrid_spearman": hyb["spearman"],
-                "test_dmpnn_raw_r2": d_raw["r2"],
-                "test_dmpnn_cal_r2": d_cal["r2"],
-                "test_gbdt_raw_r2": g_raw["r2"],
-                "test_gbdt_cal_r2": g_cal["r2"],
-                "optimal_w_dmpnn": blender.optimal_w,
-                "optimal_w_gbdt": 1.0 - blender.optimal_w,
-                "optimal_alpha": blender.optimal_alpha,
-                "optimal_beta": blender.optimal_beta,
-            })
+            tracker.log_metrics(
+                {
+                    "test_hybrid_r2": hyb["r2"],
+                    "test_hybrid_mae": hyb["mae"],
+                    "test_hybrid_rmse": hyb["rmse"],
+                    "test_hybrid_pearson": hyb["pearson"],
+                    "test_hybrid_spearman": hyb["spearman"],
+                    "test_dmpnn_raw_r2": d_raw["r2"],
+                    "test_dmpnn_cal_r2": d_cal["r2"],
+                    "test_gbdt_raw_r2": g_raw["r2"],
+                    "test_gbdt_cal_r2": g_cal["r2"],
+                    "optimal_w_dmpnn": blender.optimal_w,
+                    "optimal_w_gbdt": 1.0 - blender.optimal_w,
+                    "optimal_alpha": blender.optimal_alpha,
+                    "optimal_beta": blender.optimal_beta,
+                }
+            )
         finally:
             tracker.finish()
 
@@ -1544,6 +1676,83 @@ def delete_account(account: str = typer.Argument(..., help="Account name to dele
     except Exception as e:
         console.print(f"[bold red]Failed to delete account:[/bold red] {e}")
         raise typer.Exit(1)
+
+
+@remote_app.command("status")
+def remote_status():
+    """Check Google Colab GPU session status, active accounts, and CLI connectivity."""
+    import shutil
+    import subprocess
+
+    from rich.table import Table
+
+    from tdc_studio.remote.colab_account import ColabAccountManager
+
+    console.print("[bold cyan]Google Colab Remote Environment Status[/bold cyan]\n")
+
+    colab_path = shutil.which("colab")
+    if not colab_path:
+        console.print("[bold red]Colab CLI ('colab') is NOT found on PATH.[/bold red]")
+        console.print("Please install via: [yellow]pip install google-colab-cli[/yellow]")
+        raise typer.Exit(1)
+
+    mgr = ColabAccountManager()
+    active_acc = mgr.get_active_account()
+    accounts = mgr.list_accounts()
+
+    console.print(f"Colab CLI Executable: [green]{colab_path}[/green]")
+    console.print(
+        f"Active Google Account: [bold yellow]{active_acc or 'None / Not Authenticated'}[/bold yellow]\n"
+    )
+
+    # Check Active Colab Sessions
+    try:
+        res = subprocess.run(["colab", "sessions"], capture_output=True, text=True, check=False)
+        output = (res.stdout or "") + (res.stderr or "")
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+
+        table = Table(title="Colab GPU Sessions")
+        table.add_column("Session Identifier", style="cyan")
+        table.add_column("Status / State", style="bold")
+        table.add_column("Details", style="dim")
+
+        found_session = False
+        for line in lines:
+            if "no active sessions" in line.lower():
+                table.add_row(
+                    "None",
+                    "[yellow]Inactive[/yellow]",
+                    "No active sessions currently running on server",
+                )
+                found_session = True
+                break
+            elif "pruned" in line.lower():
+                continue
+            else:
+                table.add_row(
+                    line,
+                    "[bold green]Online / Active[/bold green]",
+                    "Available for remote execution",
+                )
+                found_session = True
+
+        if not found_session:
+            table.add_row("None", "[yellow]Inactive[/yellow]", "No active sessions found")
+
+        console.print(table)
+    except Exception as e:
+        console.print(f"[bold red]Failed to check Colab sessions:[/bold red] {e}")
+
+    if accounts:
+        acc_summary = ", ".join(
+            [
+                f"[bold green]{a['name']}[/bold green]"
+                if a["is_active"]
+                else f"[cyan]{a['name']}[/cyan]"
+                for a in accounts
+            ]
+        )
+        console.print(f"\nRegistered Accounts ({len(accounts)}): {acc_summary}")
 
 
 @remote_app.command("run")

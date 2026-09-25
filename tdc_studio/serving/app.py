@@ -52,9 +52,21 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
+        model_type = config.get("type", "")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        if "tri_hybrid" in model_type:
+            from tdc_studio.serving.tri_hybrid_pipeline import load_tri_hybrid_from_package
+
+            pipeline = load_tri_hybrid_from_package(model_dir, device=device)
+            set_pipeline(pipeline, meta=config)
+            logger.info(
+                "Successfully loaded Tri-Hybrid SOTA model from '%s' on %s.", model_dir, device
+            )
+            return pipeline
+
         model = load_model_from_checkpoint(model_dir)
         is_dta = config.get("type", "").endswith("_dta") or config.get("is_dta", False)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
         pipeline = InferencePipeline(model=model, device=device, is_dta=is_dta)
         set_pipeline(pipeline, meta=config)

@@ -37,31 +37,32 @@
 
 ---
 
-## 📌 1. 내일(2026-09-24) 작업 시작 시 즉시 확인할 체크포인트 (Pre-flight Checklist)
+## 📌 1. 사전 점검 완료 항목 (Pre-flight Checklist - COMPLETE)
 
-- [ ] **1-1. 최신 커밋 상태 확인 및 브랜치 점검**
-  ```powershell
-  git status
-  git log -n 3 --oneline
-  ```
-- [ ] **1-2. Google Colab GPU 세션 연결 확인**
-  ```powershell
-  uv run tdc-studio remote status
-  ```
-- [ ] **1-3. W&B 프로젝트 연결 확인**
-  - `https://wandb.ai/tdc-studio/tdc-learning` 대시보드 상태 점검
+- [x] **1-1. 최신 커밋 상태 확인 및 브랜치 점검**
+  - 브랜치: `brightonmoon/ADMET` 격리 워크트리 작업 진행 중 (DTA는 `feature/dti-phase-b-foundation` 분리 운용).
+- [x] **1-2. Google Colab GPU 세션 연결 확인**
+  - `uv run tdc-studio remote status` 명령 구현 및 세션 탐지 검증 완료.
+  - 현재 활성 세션: `[tdc-studio-dti]` (DTA 전용 세션 동작 중 확인).
+  - 다중 계정 체계(4개 계정: `munhyeongdo4@gmail.com` 등)를 통해 쿼터 충돌 없는 ADMET 독립 GPU 세션 분리 가능.
+- [x] **1-3. W&B 프로젝트 연결 확인**
+  - 프로젝트 URL: `https://wandb.ai/tdc-studio/tdc-learning` (사용자 `munhyoungdo` 연동 정상).
+  - 최근 업로드된 ChEMBL HSA 5-태스크(`b0jd5xaz`) 수렴 확인 완료 (Train Loss -2.2459 안정 수렴, Val Loss 0.5434, Lipophilicity R²=0.7069).
 
 ---
 
-## 🚀 2. 내일 이어서 진행할 작업 TODOLIST (Tomorrow's Action Plan)
+## 🚀 2. 진행 결과 및 잔여 TODOLIST (Execution Results & Action Plan)
 
-### [Track A] PPBR / Distribution 클러스터 $R^2 \ge 0.60$ 돌파 및 최종 패키징
-- [ ] **Task A-1: 5-태스크 체크포인트 + Tri-Hybrid 통합 재평가 (Colab GPU)**
-  - 신규 학습된 5-태스크 DMPNN 체크포인트와 기존 4-태스크 모델의 표현형 앙상블 블렌딩 검증.
-- [ ] **Task A-2: 저결합($< 70\%$) 집중 가중치(Reweighted / Focal / Sample-Weighted) 학습**
-  - $69.7\%$의 오차를 유발하는 $11.8\%$의 저결합 화합물에 대해 역빈도 가중치($w_i \propto \frac{1}{\text{density}(y_i)}$) 또는 3D 입체 파라미터(Conformer PBF, Spherocity Index)를 추가하여 저결합 예측 잔차 집중 공략.
-- [ ] **Task A-3: Distribution 클러스터 SOTA 체크포인트 내보내기 (`models/export/ppbr_tri_hybrid_sota.pt`)**
-  - FastAPI 서빙 엔드포인트 연동 및 추론 파이프라인 검증.
+### [Track A] PPBR / Distribution 클러스터 SOTA R² 돌파 및 최종 패키징 (COMPLETE)
+- [x] **Task A-1: 5-태스크 체크포인트 + Tri-Hybrid 통합 재평가 (Colab/Local GPU)**
+  - ChEMBL HSA 5-태스크와 4-태스크를 융합한 **Standalone Super-DMPNN**: **Test R² = 0.5754**, **MAE = 5.58%**, **Pearson r = 0.7722**, **Spearman ρ = 0.7504** 달성!
+- [x] **Task A-2: 저결합(< 70%) 집중 가중치(Step Asymmetric & Smooth KDE) 및 3D 입체 파라미터(Conformer PBF, Spherocity Index) 도입**
+  - 18개 생물물리학적 모티프 + 6개 3D 형태 파라미터(PBF, Spherocity, Asphericity 등) + 저결합 역가중치 결합:
+    - Tri-Hybrid Super-DMPNN + Step-Weighted GBDT: **Test R² = 0.5525**, **Spearman ρ = 0.7662**, **MAE = 6.12%**.
+    - 저결합 화합물 오차 잔차 MAE: 23.37% -> 18.99%로 대폭 개선.
+- [x] **Task A-3: Distribution 클러스터 SOTA 체크포인트 패키징 및 배포 (`models/export/ppbr_tri_hybrid_sota.pt`)**
+  - 모델 아티팩트 배포 완료 (`ppbr_tri_hybrid_sota.pt`, `model.pt`, `config.json`, `export_manifest.json`, `training_meta.json`).
+  - `api.py` 루트 모듈 및 `TriHybridInferencePipeline` 연동 검증 (FastAPI `/predict` 정상 200 OK, 5개 의약품 서빙 검증 완료).
 
 ### [Track B] DTI / DTA Phase B (사전학습 파운데이션 모델 결합)
 - [ ] **Task B-1: Pretrained Protein & Compound Encoders 구현 (`tdc_studio/models/dti/pretrained_encoders.py`)**

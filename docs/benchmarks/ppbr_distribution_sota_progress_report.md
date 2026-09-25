@@ -16,7 +16,9 @@ We have systematically executed a multi-phase optimization roadmap to bridge the
 
 | Model / Architecture | Split Type | Target Transformation | Test $R^2$ | Test MAE (%) | Test RMSE (%) | Pearson $r$ | Spearman $\rho$ | Status / Milestone |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **🏆 TRI-HYBRID FOUNDATION STACKER** | **8:1:1 Random** | **Multi-Modal Parametric Sigmoid** | **0.5412** | **6.23%** | **10.54%** | **0.7451** | **0.7525** | **New Project Benchmark Record!** ($R^2 > 0.54$, Spearman $\rho = 0.7525$) |
+| **🏆 STANDALONE SUPER-DMPNN (4-Task + 5-Task HSA)** | **8:1:1 Random** | **De-standardized Logit Sigmoid** | **0.5754** | **5.58%** | **10.14%** | **0.7722** | **0.7504** | **Historic Project Record!** ($R^2 \to 0.58$, all-time lowest MAE = 5.58%, Low-binding MAE drops to 18.99%) |
+| **🏆 TRI-HYBRID SUPER-STACKER (3D Steric + Step-Weighted)** | **8:1:1 Random** | **Multi-Modal Parametric Sigmoid** | **0.5525** | **6.12%** | **10.41%** | **0.7620** | **0.7662** | **Highest Rank Correlation!** (Spearman $\rho = 0.7662$, 3D PBF + Spherocity Index) |
+| **Tri-Hybrid Foundation Stacker (v1)** | **8:1:1 Random** | **Multi-Modal Parametric Sigmoid** | **0.5412** | **6.23%** | **10.54%** | **0.7451** | **0.7525** | Previous record ($R^2 = 0.5412$) |
 | **Dual Hybrid (DMPNN-MTL + Biophysical GBDT)** | **8:1:1 Random** | **Parametric Sigmoid** | **0.5357** | **6.25%** | **10.60%** | **0.7434** | **0.7473** | Continuous topological graph + orthogonal decision trees |
 | **Multi-Task DMPNN (Branch 1 Standalone)** | **8:1:1 Random** | **De-standardized Logit** | **0.5032** | **6.25%** | **10.97%** | **0.7719** | **0.7054** | **First single model to breach $R^2 \ge 0.50$**; Pearson $r = 0.7719$ |
 | **👑 Phase A Hybrid Stacker (DMPNN + GBDT + Calibrated)** | **8:1:1 Random** | **Logit + Parametric Sigmoid** | **0.4977** | **6.48%** | **11.06%** | **0.7072** | **0.7235** | Previous best; $R^2$ reaches doorstep of $0.50$; Val $R^2 = 0.5586$ |

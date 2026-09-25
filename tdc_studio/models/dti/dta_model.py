@@ -72,15 +72,23 @@ class GraphDTAModel(BaseTherapeuticsModel):
         # task_type="dta" triggers CI+MSE metrics in BaseTherapeuticsModel
         super().__init__({**config, "task_type": "dta"})
 
-        # ── Drug encoder (GINEModel reused from ADMET) ──
+        # ── Drug encoder (GINEModel or ChemBERTaEncoder) ──
         drug_enc_cfg = config.get("drug_encoder", {"type": "gine", "hidden_dim": 256, "num_layers": 5})
         self.drug_encoder: nn.Module = _build_drug_encoder(drug_enc_cfg)
-        drug_out_dim = drug_enc_cfg.get("hidden_dim", 256) * 2  # GINEModel: mean+sum concat
+        drug_out_dim = getattr(
+            self.drug_encoder,
+            "out_dim",
+            drug_enc_cfg.get("out_dim", drug_enc_cfg.get("hidden_dim", 256) * 2),
+        )
 
-        # ── Target encoder (ProteinCNNEncoder new) ──
+        # ── Target encoder (ProteinCNNEncoder or ESM2Encoder) ──
         target_enc_cfg = config.get("target_encoder", {"type": "protein_cnn", "out_dim": 256})
         self.target_encoder: nn.Module = _build_target_encoder(target_enc_cfg)
-        target_out_dim = target_enc_cfg.get("out_dim", 256)
+        target_out_dim = getattr(
+            self.target_encoder,
+            "out_dim",
+            target_enc_cfg.get("out_dim", 256),
+        )
 
         # ── Fusion head (BilinearAttentionFusion) ──
         fusion_cfg = config.get("fusion", {"hidden_dim": 512})
@@ -113,11 +121,14 @@ class GraphDTAModel(BaseTherapeuticsModel):
             h_drug   : [B, drug_out_dim]   from drug encoder
             h_target : [B, target_out_dim] from target encoder
         """
-        # Drug encoding — GINEModel reads batch["drug_graph"]
-        h_drug = self.drug_encoder.extract_features(batch)   # [B, hidden*2]
+        # Drug encoding — GINEModel reads batch["drug_graph"], ChemBERTa reads batch["drug_smiles_str"]
+        h_drug = self.drug_encoder.extract_features(batch)
 
-        # Target encoding — ProteinCNNEncoder reads batch["target_seq"]
-        h_target = self.target_encoder.encode_sequence(batch["target_seq"])  # [B, out_dim]
+        # Target encoding — ESM-2 reads batch, ProteinCNN reads batch["target_seq"]
+        if hasattr(self.target_encoder, "extract_features"):
+            h_target = self.target_encoder.extract_features(batch)
+        else:
+            h_target = self.target_encoder.encode_sequence(batch["target_seq"])
 
         return h_drug, h_target
 

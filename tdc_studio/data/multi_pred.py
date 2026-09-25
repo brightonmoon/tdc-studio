@@ -190,6 +190,7 @@ class DTADataModule(BaseTDCDataModule):
                 "drug_graph":      graph,                    # torch_geometric Data
                 "drug_smiles_str": smiles,                   # raw str for HF encoder
                 "target_seq":      target_tensor,            # LongTensor [aa_max_len]
+                "target_seq_str":  target_seq,               # raw str for ESM-2 encoder (Phase B)
                 "label":           self._transform_y(raw_y), # normalised float
                 # Metadata for cold-split verification
                 "drug_id":   str(row.get("Drug_ID", "")),

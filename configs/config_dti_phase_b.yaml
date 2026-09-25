@@ -1,0 +1,94 @@
+# ============================================================
+# TDC Studio — DTI Phase B Config (Foundation Models: ChemBERTa + ESM-2)
+# ============================================================
+# Evaluation target: Cold Drug CI & MSE on BindingDB_Kd
+# Key Targets:
+#   - Primary Metric: Cold-Drug Concordance Index (CI) >= 0.70
+#   - Secondary Metric: Cold-Drug MSE <= 0.75
+#
+# Foundation Models:
+#   - Drug Encoder: ChemBERTa-77M-MTR (384 -> 256 dim)
+#   - Target Encoder: facebook/esm2_t12_35M_UR50D (480 -> 256 dim)
+#   - Fusion: BilinearAttentionFusion (DrugBAN-style)
+# ============================================================
+
+task: dti
+
+# ── Dataset ──────────────────────────────────────────────
+dataset:
+  name: BindingDB_Kd        # 52K pairs, 10K+ unique drugs — best for cold split
+  split: cold_drug          # DEFAULT: test drugs never seen in train
+  seed: 42
+  frac: [0.7, 0.1, 0.2]
+  log_transform: true       # log1p(Kd) to handle 6-decade dynamic range
+  aa_max_length: 1024       # ESM-2 max context length
+
+# ── Model ─────────────────────────────────────────────────
+model:
+  type: graph_dta           # GraphDTAModel with Foundation Encoders
+
+  drug_encoder:
+    type: chembert_encoder
+    model_name: "DeepChem/ChemBERTa-77M-MTR"
+    hidden_dim: 384
+    out_dim: 256
+    max_length: 256
+    pooling: mean
+    freeze_backbone: false  # Can be fine-tuned or staged
+    dropout: 0.1
+
+  target_encoder:
+    type: esm2_encoder
+    model_name: "facebook/esm2_t12_35M_UR50D" # fallback: facebook/esm2_t6_8M_UR50D
+    hidden_dim: 480
+    out_dim: 256
+    max_length: 1024
+    pooling: mean
+    freeze_backbone: true   # Freeze 35M ESM backbone to preserve VRAM & prevent overfitting
+    gradient_checkpointing: false
+    dropout: 0.1
+
+  fusion:
+    type: bilinear_fusion   # BilinearAttentionFusion
+    drug_dim: 256
+    target_dim: 256
+    hidden_dim: 512
+    dropout: 0.2
+    out_dim: 1
+
+  use_domain_adaptation: false
+
+# ── Training ──────────────────────────────────────────────
+training:
+  batch_size: 32            # Optimal for Colab T4 16GB
+  max_epochs: 30
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  optimizer: adamw
+  scheduler: cosine
+  warmup_epochs: 3
+  gradient_clip_val: 1.0
+  early_stopping_patience: 7
+  early_stopping_metric: val_ci   # monitor Cold Drug val CI
+
+# ── Evaluation ────────────────────────────────────────────
+evaluation:
+  primary_metric: ci              # Concordance Index on COLD DRUG test split
+  secondary_metrics: [mse, rmse, pearson]
+  reference_split: cold_drug
+  target_thresholds:
+    ci: 0.70                      # Target >= 0.70
+    mse: 0.75                     # Target <= 0.75
+
+# ── Tracking ──────────────────────────────────────────────
+tracking:
+  project: tdc-studio-dti
+  run_name: phase_b_chemberta_esm2_bilinear
+  tags: [dti, cold_drug, phase_b, foundation_models, bindingdb_kd]
+  log_every_n_steps: 10
+
+# ── Export ────────────────────────────────────────────────
+export:
+  save_dir: models/dti/phase_b
+  formats: [pytorch]
+  checkpoint_name: best_model.pt

@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from fastapi import FastAPI, HTTPException
@@ -17,6 +17,7 @@ logger = logging.getLogger("tdc_studio.serving")
 
 # Global pipeline instance and metadata
 _pipeline: Optional[InferencePipeline] = None
+_vdss_pipeline: Optional[Any] = None
 _model_meta: dict = {}
 
 
@@ -27,9 +28,20 @@ def set_pipeline(pipeline: Optional[InferencePipeline], meta: Optional[dict] = N
     _model_meta = meta or {}
 
 
+def set_vdss_pipeline(pipeline: Optional[Any]) -> None:
+    """Setter for global VDss inference pipeline."""
+    global _vdss_pipeline
+    _vdss_pipeline = pipeline
+
+
 def get_pipeline() -> Optional[InferencePipeline]:
     """Getter for global inference pipeline."""
     return _pipeline
+
+
+def get_vdss_pipeline() -> Optional[Any]:
+    """Getter for global VDss inference pipeline."""
+    return _vdss_pipeline
 
 
 def get_model_meta() -> dict:
@@ -55,14 +67,31 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
         model_type = config.get("type", "")
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        if "tri_hybrid" in model_type:
-            from tdc_studio.serving.tri_hybrid_pipeline import load_tri_hybrid_from_package
+        if "tri_hybrid" in model_type or os.path.exists(
+            os.path.join(model_dir, "ppbr_tri_hybrid_sota.pt")
+        ):
+            from tdc_studio.serving.tri_hybrid_pipeline import (
+                load_tri_hybrid_from_package,
+                load_vdss_tri_hybrid_from_package,
+            )
 
             pipeline = load_tri_hybrid_from_package(model_dir, device=device)
             set_pipeline(pipeline, meta=config)
             logger.info(
                 "Successfully loaded Tri-Hybrid SOTA model from '%s' on %s.", model_dir, device
             )
+
+            vdss_pt = os.path.join(model_dir, "vdss_tri_hybrid_sota.pt")
+            if os.path.exists(vdss_pt):
+                vdss_pipe = load_vdss_tri_hybrid_from_package(
+                    model_dir, device=device, ppbr_pipeline=pipeline
+                )
+                set_vdss_pipeline(vdss_pipe)
+                logger.info(
+                    "Successfully loaded VDss Tri-Hybrid SOTA model from '%s' on %s.",
+                    model_dir,
+                    device,
+                )
             return pipeline
 
         model = load_model_from_checkpoint(model_dir)
@@ -135,3 +164,25 @@ async def predict(request: InferenceRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
+
+
+@app.post("/predict/vdss", response_model=InferenceResponse)
+async def predict_vdss(request: InferenceRequest):
+    """Predict Volume of Distribution (log10 L/kg) using SOTA Tri-Hybrid Stacker."""
+    vdss_pipe = get_vdss_pipeline()
+    if vdss_pipe is None:
+        raise HTTPException(
+            status_code=503,
+            detail="VDss Tri-Hybrid pipeline is not initialized or exported yet.",
+        )
+
+    try:
+        preds = await run_in_threadpool(vdss_pipe.predict, request.smiles)
+        return InferenceResponse(
+            predictions=preds,
+            unit="log10(L/kg)",
+            model_name="vdss_tri_hybrid_sota",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"VDss inference error: {str(e)}")
+

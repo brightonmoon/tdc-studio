@@ -10,11 +10,13 @@ from fastapi.testclient import TestClient
 
 from api import app
 from tdc_studio.models.graph.dmpnn import DMPNNModel
-from tdc_studio.serving.app import set_pipeline
+from tdc_studio.serving.app import set_pipeline, set_vdss_pipeline
 from tdc_studio.serving.exporter import export_tri_hybrid_package
 from tdc_studio.serving.tri_hybrid_pipeline import (
     TriHybridInferencePipeline,
+    VDssTriHybridInferencePipeline,
     load_tri_hybrid_from_package,
+    load_vdss_tri_hybrid_from_package,
 )
 
 
@@ -150,3 +152,82 @@ def test_api_tri_hybrid_serving(mock_tri_hybrid_components):
     assert data["model_name"] == "tri_hybrid_stacker"
 
     set_pipeline(None)
+
+
+def test_vdss_tri_hybrid_inference_pipeline(mock_tri_hybrid_components):
+    dmpnn, gbdt, ridge, scaler, _, _, _, _ = mock_tri_hybrid_components
+    vdss_pipeline = VDssTriHybridInferencePipeline(
+        gbdt_model=gbdt,
+        ridge_model=ridge,
+        scaler=scaler,
+        blending_weights=(0.543, 0.084, 0.374),
+        calibration_params=(1.0, 0.0),
+        dmpnn_model=dmpnn,
+        device="cpu",
+    )
+
+    test_smiles = ["CC(=O)Oc1ccccc1C(=O)O", "CCN"]
+    preds = vdss_pipeline.predict(test_smiles)
+
+    assert len(preds) == 2
+    for p in preds:
+        assert isinstance(p, float)
+
+    detailed = vdss_pipeline.predict_detailed(test_smiles)
+    assert len(detailed) == 2
+    assert "vdss_log10" in detailed[0]
+    assert "vdss_L_kg" in detailed[0]
+    assert "decision" in detailed[0]
+    assert detailed[0]["unit"] == "log10(L/kg)"
+
+
+def test_api_vdss_serving(mock_tri_hybrid_components):
+    dmpnn, gbdt, ridge, scaler, _, _, _, _ = mock_tri_hybrid_components
+    vdss_pipeline = VDssTriHybridInferencePipeline(
+        gbdt_model=gbdt,
+        ridge_model=ridge,
+        scaler=scaler,
+        blending_weights=(0.543, 0.084, 0.374),
+        calibration_params=(1.0, 0.0),
+        dmpnn_model=dmpnn,
+        device="cpu",
+    )
+
+    set_vdss_pipeline(vdss_pipeline)
+    client = TestClient(app)
+
+    resp = client.post("/predict/vdss", json={"smiles": ["CC(=O)Oc1ccccc1C(=O)O"]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "predictions" in data
+    assert len(data["predictions"]) == 1
+    assert data["unit"] == "log10(L/kg)"
+    assert data["model_name"] == "vdss_tri_hybrid_sota"
+
+    set_vdss_pipeline(None)
+
+
+def test_export_and_load_vdss_tri_hybrid(tmp_path, mock_tri_hybrid_components):
+    dmpnn, gbdt, ridge, scaler, _, _, _, cfg = mock_tri_hybrid_components
+    import pickle
+
+    export_dir = str(tmp_path / "vdss_export")
+    os.makedirs(export_dir, exist_ok=True)
+    package = {
+        "model_type": "vdss_tri_hybrid_stacker",
+        "dmpnn_state_dict": dmpnn.state_dict(),
+        "dmpnn_config": cfg,
+        "gbdt_pickle": pickle.dumps(gbdt),
+        "ridge_pickle": pickle.dumps(ridge),
+        "scaler_pickle": pickle.dumps(scaler),
+        "optimal_weights": (0.543, 0.084, 0.374),
+        "calibration": (1.0, 0.0),
+    }
+    torch.save(package, os.path.join(export_dir, "vdss_tri_hybrid_sota.pt"))
+
+    loaded_pipe = load_vdss_tri_hybrid_from_package(export_dir, device="cpu")
+    preds = loaded_pipe.predict(["CCO"])
+    assert len(preds) == 1
+    assert isinstance(preds[0], float)
+
+

@@ -206,7 +206,7 @@ class ColabRunner:
         command_to_run: str,
         runner_script: str = "deploy/colab_runner_job.py",
         extra_args: Optional[List[str]] = None,
-        timeout: float = 3600.0,
+        timeout: float = 86400.0,
     ) -> List[str]:
         """Build the ephemeral `colab run` command line arguments."""
         cmd = ["colab", "run"]
@@ -354,7 +354,7 @@ class ColabRunner:
         session: Optional[str] = None,
         script_file: Optional[str] = None,
         script_args: Optional[List[str]] = None,
-        timeout: float = 3600.0,
+        timeout: float = 86400.0,
         dry_run: bool = False,
     ) -> int:
         """Execute a script on an active Colab session with argument injection."""

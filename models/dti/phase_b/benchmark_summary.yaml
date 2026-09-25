@@ -1,0 +1,12 @@
+best_epoch: 7
+ci_passed: true
+mse_passed: true
+test_metrics:
+  ci: 0.7464
+  mse: 0.6609
+  rmse: 0.8130
+  pearson: 0.6508
+target_thresholds:
+  ci_target: 0.70
+  mse_target: 0.75
+status: PASSED

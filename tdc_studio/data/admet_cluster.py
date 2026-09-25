@@ -204,6 +204,8 @@ class ADMETClusterDataModule(BaseTDCDataModule):
                     if self.task_transforms.get(t_name) == "logit":
                         fb = np.clip(valid_vals / 100.0, 1e-4, 1.0 - 1e-4)
                         valid_vals = np.log(fb / (1.0 - fb))
+                    elif self.task_transforms.get(t_name) == "log10":
+                        valid_vals = np.log10(np.clip(valid_vals, 1e-4, None))
                     mean_val = float(np.mean(valid_vals))
                     std_val = float(np.std(valid_vals))
                     if std_val < 1e-6:
@@ -356,6 +358,8 @@ class ADMETClusterDataModule(BaseTDCDataModule):
                     if self.task_transforms.get(t_name) == "logit":
                         fb = np.clip(val / 100.0, 1e-4, 1.0 - 1e-4)
                         val = float(np.log(fb / (1.0 - fb)))
+                    elif self.task_transforms.get(t_name) == "log10":
+                        val = float(np.log10(max(1e-4, val)))
                     if self.standardize_target and t_type == "regression":
                         stat = self.task_stats.get(t_name, {"mean": 0.0, "std": 1.0})
                         val = (val - stat["mean"]) / stat["std"]

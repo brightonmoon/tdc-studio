@@ -20,6 +20,7 @@ data:
     - name: vdss_lombardo
       category: distribution
       type: regression
+      transform: log10
     - name: lipophilicity_astrazeneca
       category: physicochemical
       type: regression

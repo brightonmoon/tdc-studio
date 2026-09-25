@@ -306,6 +306,8 @@ def train(
                             if t_trans == "logit":
                                 t_p = 100.0 * torch.sigmoid(t_p)
                                 t_y = 100.0 * torch.sigmoid(t_y)
+                            elif t_trans == "log10":
+                                pass
                             elif "ppbr" in str(t_name).lower():
                                 t_p = torch.clamp(t_p, min=0.0, max=100.0)
                                 t_y = torch.clamp(t_y, min=0.0, max=100.0)
@@ -487,6 +489,8 @@ def train(
                         if t_trans == "logit":
                             t_p = 100.0 * torch.sigmoid(t_p)
                             t_y = 100.0 * torch.sigmoid(t_y)
+                        elif t_trans == "log10":
+                            pass
                         elif "ppbr" in str(t_name).lower():
                             t_p = torch.clamp(t_p, min=0.0, max=100.0)
                             t_y = torch.clamp(t_y, min=0.0, max=100.0)
@@ -546,6 +550,8 @@ def train(
                     b_auc = all_test_metrics.get("bbb_martins_roc_auc", 0.0)
                     v_r2 = all_test_metrics.get("vdss_lombardo_r2", 0.0)
                     v_pr = all_test_metrics.get("vdss_lombardo_pearson", 0.0)
+                    v_rmse = all_test_metrics.get("vdss_lombardo_rmse", 0.0)
+                    v_mae = all_test_metrics.get("vdss_lombardo_mae", 0.0)
                     l_r2 = all_test_metrics.get("lipophilicity_astrazeneca_r2", 0.0)
                     l_pr = all_test_metrics.get("lipophilicity_astrazeneca_pearson", 0.0)
 
@@ -578,6 +584,12 @@ def train(
                         "R² (Pearson r)",
                         f"{v_r2:.4f} (r={v_pr:.4f})",
                         "0.760 (r~0.88)",
+                    )
+                    table.add_row(
+                        "VDss Lombardo",
+                        "MAE [RMSE] (log10)",
+                        f"{v_mae:.3f} [{v_rmse:.3f}]",
+                        "0.162 [0.301]",
                     )
                     table.add_row(
                         "Lipophilicity",

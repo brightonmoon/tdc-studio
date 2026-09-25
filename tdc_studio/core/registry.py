@@ -19,6 +19,10 @@ class Registry:
     def name(self) -> str:
         return self._name
 
+    def __contains__(self, key: str) -> bool:
+        """Check if a key is registered in this registry."""
+        return key in self._module_dict
+
     def register(self, name: Optional[str] = None):
         """Decorator to register a class or function."""
 

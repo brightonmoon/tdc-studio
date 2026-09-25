@@ -178,6 +178,13 @@ def main():
             train_loss_sum += float(loss.item())
             train_batches += 1
 
+            if train_batches % 100 == 0 or train_batches == len(train_loader):
+                print(
+                    f"  [Epoch {epoch:02d} | Step {train_batches:04d}/{len(train_loader):04d}] "
+                    f"Loss: {loss.item():.4f} | Running Avg: {train_loss_sum / train_batches:.4f}",
+                    flush=True,
+                )
+
         avg_train_loss = train_loss_sum / max(1, train_batches)
         scheduler.step()
 

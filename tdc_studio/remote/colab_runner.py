@@ -132,7 +132,14 @@ class ColabRunner:
         import zipfile
 
         root = (workspace_root or Path.cwd()).resolve()
-        targets = ["tdc_studio", "configs", "data/external/chembl_hsa_processed.csv", "pyproject.toml", "README.md"]
+        targets = [
+            "tdc_studio",
+            "configs",
+            "deploy",
+            "data/external/chembl_hsa_processed.csv",
+            "pyproject.toml",
+            "README.md",
+        ]
         buf = io.BytesIO()
 
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

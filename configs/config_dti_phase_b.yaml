@@ -61,14 +61,14 @@ model:
 # ── Training ──────────────────────────────────────────────
 training:
   batch_size: 32            # Optimal for Colab T4 16GB
-  max_epochs: 30
+  max_epochs: 20
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
   optimizer: adamw
   scheduler: cosine
-  warmup_epochs: 3
+  warmup_epochs: 2
   gradient_clip_val: 1.0
-  early_stopping_patience: 7
+  early_stopping_patience: 5
   early_stopping_metric: val_ci   # monitor Cold Drug val CI
 
 # ── Evaluation ────────────────────────────────────────────

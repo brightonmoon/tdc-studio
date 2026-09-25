@@ -40,7 +40,7 @@ import torch
 
 # Import pretrained encoders to trigger registry registration
 import tdc_studio.models.dti.pretrained_encoders  # noqa: F401
-from tdc_studio.core.registry import MODELS
+from tdc_studio.core.registry import MODELS, auto_import_modules
 from tdc_studio.data.multi_pred import DTADataModule
 from tdc_studio.evaluation.evaluator import TherapeuticsEvaluator
 from tdc_studio.models.dti.dta_model import GraphDTAModel
@@ -50,6 +50,8 @@ def run_dry_run():
     print("=" * 65)
     print("  [DTI Phase B Dry-Run] Foundation Models Integration Check")
     print("=" * 65)
+
+    auto_import_modules("tdc_studio")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device} (CUDA available: {torch.cuda.is_available()})")
@@ -158,7 +160,8 @@ def run_dry_run():
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     optimizer.zero_grad()
-    loss = model.compute_loss(preds, dev_batch["labels"])
+    train_preds = model(dev_batch)
+    loss = model.compute_loss(train_preds, dev_batch["labels"])
     loss.backward()
     optimizer.step()
     print(f"  -> Loss: {loss.item():.4f}")

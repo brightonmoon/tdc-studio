@@ -59,6 +59,20 @@ def _canonicalize_smiles(s: Any) -> Optional[str]:
     return None
 
 
+def _clean_corrupted_tdc_file(name: str) -> None:
+    """Detect and remove corrupted TDC cache files (e.g. 504 Gateway Timeout HTML errors)."""
+    from pathlib import Path
+    tab_path = Path("data") / f"{name}.tab"
+    if tab_path.exists():
+        try:
+            if tab_path.stat().st_size < 1024:
+                content = tab_path.read_text(encoding="utf-8", errors="ignore")
+                if "<html" in content.lower():
+                    tab_path.unlink()
+        except Exception:
+            pass
+
+
 def _fetch_tdc_dataset(name: str, split_type: str = "scaffold", seed: int = 42, get_split: bool = False) -> Any:
     """Fetch TDC dataset from ADME or Tox with automated fallback or local external cache."""
     from pathlib import Path
@@ -67,21 +81,27 @@ def _fetch_tdc_dataset(name: str, split_type: str = "scaffold", seed: int = 42, 
         if p.exists():
             return pd.read_csv(p)
 
+    _clean_corrupted_tdc_file(name)
+
     from tdc.single_pred import ADME, Tox
 
     is_tox = name.lower() in KNOWN_TOX_DATASETS or "tox" in name.lower()
     primary_cls = Tox if is_tox else ADME
     secondary_cls = ADME if is_tox else Tox
 
-    try:
-        loader = primary_cls(name=name)
-        return loader.get_split(method=split_type, seed=seed) if get_split else loader.get_data()
-    except Exception:
+    for attempt in range(3):
         try:
-            loader = secondary_cls(name=name)
+            loader = primary_cls(name=name)
             return loader.get_split(method=split_type, seed=seed) if get_split else loader.get_data()
-        except Exception:
-            return _load_tdc_fallback(dataset_name=name, split_type=split_type, seed=seed)
+        except BaseException:
+            _clean_corrupted_tdc_file(name)
+            try:
+                loader = secondary_cls(name=name)
+                return loader.get_split(method=split_type, seed=seed) if get_split else loader.get_data()
+            except BaseException:
+                _clean_corrupted_tdc_file(name)
+                if attempt == 2:
+                    return _load_tdc_fallback(dataset_name=name, split_type=split_type, seed=seed)
 
 
 @DATASETS.register("admet_cluster_loader")

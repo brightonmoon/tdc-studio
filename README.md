@@ -61,10 +61,29 @@ TDC-Studio는 데이터 희소성(Sample Scarcity)과 화학 골격 편향(Scaff
 ### (2) TDC 22+ ADMET Task Clustering Map 개요
 TDC의 소규모 태스크들을 생물학적 메커니즘 및 대규모 물리화학적 앵커(Anchor)로 묶어 전이학습을 수행하는 표준 클러스터 맵입니다:
 1. **Bio-Permeability & Oral Absorption (검증 완료):** `Caco2_Wang` + `Lipophilicity_AstraZeneca` + `Solubility_AqSolDB` + `HIA_Hou`
-2. **Plasma Distribution & Tissue Penetration:** `PPBR_AZ` + `BBB_Martins` + `VDss_Lombardo` + `Lipophilicity`
-3. **Cytochrome P450 Metabolism:** 대규모 저해 앵커(`CYP3A4/2D6/2C9/2C19/1A2_Veith`, 각 12k+) $\rightarrow$ 기질 예측(`CYP3A4/2D6/2C9_Substrate`, 각 660개)
-4. **Pharmacokinetic Clearance & Elimination:** `Half_Life_Obach` + `Clearance_Hepatocyte_AZ` + `Clearance_Microsome_AZ` + `CYP3A4` + `PPBR`
+2. **Plasma Distribution & Tissue Penetration (검증 완료):** `PPBR_AZ` + `BBB_Martins` + `VDss_Lombardo` + `Lipophilicity`
+3. **Cytochrome P450 Metabolism (검증 완료):** 대규모 저해 앵커(`CYP3A4/2D6/2C9/2C19/1A2_Veith`, 각 12k+) $\rightarrow$ 기질 전이학습(`CYP3A4/2D6/2C9_Substrate`, 각 660개)
+4. **Pharmacokinetic Clearance & Elimination (준비 완료):** `Half_Life_Obach` + `Clearance_Hepatocyte_AZ` + `Clearance_Microsome_AZ` + `CYP3A4` + `PPBR`
 5. **Cardiac Safety & Broad Toxicity:** `hERG` + `DILI` + `Ames` + `Carcinogens` + `Tox21` (12개 경로 앵커)
+
+### (3) 공식 TDC Cluster 3: CYP450 8-Head 대사 매트릭스 벤치마크 성과 (Scaffold Test Set)
+> Veith et al. 5대 저해 효소(60,000+건)로 학습된 DMPNN 백본 지식을 Carbon-Mangels 3대 기질 희소 과제(각 660건)로 전이시키는 **2단계 전이학습(Two-Stage Protocol: Staged Unfreezing + Cosine Annealing)**을 적용하여 도출된 공식 벤치마크 결과입니다.
+
+| 태스크 분류 | 엔드포인트 명칭 | 데이터 규모 | Test AUROC | Accuracy (ACC) | Balanced ACC | Matthews Corr (MCC) | F1-Score | 상태 / 성과 판정 |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **CYP1A2** | `cyp1a2_veith` | 12,579 | **`0.9194`** | **84.3%** | 84.1% | **`+0.686`** | 0.827 | **SOTA 달성 (AUC > 0.90 돌파)** |
+| **CYP2C9** | `cyp2c9_veith` | 12,092 | **`0.8827`** | **81.3%** | 77.9% | **`+0.578`** | 0.713 | **매우 우수 (안정적 수렴)** |
+| **CYP3A4** | `cyp3a4_veith` | 12,328 | **`0.8784`** | **78.7%** | 77.6% | **`+0.566`** | 0.739 | **Primary 벤치마크 앵커 완결** |
+| **CYP2C19**| `cyp2c19_veith`| 12,665 | **`0.8774`** | **79.1%** | 78.8% | **`+0.586`** | 0.766 | **우수 (안정적 수렴)** |
+| **CYP2D6** | `cyp2d6_veith` | 13,130 | **`0.8323`** | **84.1%** | 69.1% | **`+0.470`** | 0.536 | **양호 (클래스 불균형 극복)** |
+| **CYP2D6 기질** | `cyp2d6_substrate` | 667 | **`0.9928`** | **97.7%** | 98.3% | **`+0.952`** | **0.968** | **준-완전 예측 (전이학습 극대화)** |
+| **CYP2C9 기질** | `cyp2c9_substrate` | 669 | **`0.9638`** | **97.0%** | 95.6% | **`+0.912`** | **0.931** | **압도적 SOTA (+31.9% 도약)** |
+| **CYP3A4 기질** | `cyp3a4_substrate` | 670 | **`0.9130`** | **90.2%** | 89.4% | **`+0.800`** | **0.918** | **목표 초과 달성 (+23.4% 폭증)** |
+| **기질 3종 평균**| **Substrates Transfer** | **2,000+** | **`0.9565`** | **95.0%** | **94.4%** | **`+0.888`** | **0.939** | **Cluster 3 태스크 공식 종결** |
+
+- 🔗 **W&B 공식 런 (Stage 1 Joint Pretraining):** [wandb.ai/tdc-studio/tdc-learning/runs/f9v2gcsr](https://wandb.ai/tdc-studio/tdc-learning/runs/f9v2gcsr)
+- 🔗 **W&B 공식 런 (Stage 2 Substrate Transfer):** [wandb.ai/tdc-studio/tdc-learning/runs/3qihar8z](https://wandb.ai/tdc-studio/tdc-learning/runs/3qihar8z)
+- 💾 **공식 체크포인트:** `models/checkpoint_cyp450_stage2/best_model.pt` (21.5MB)
 
 ---
 

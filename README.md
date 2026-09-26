@@ -68,7 +68,98 @@ TDC의 소규모 태스크들을 생물학적 메커니즘 및 대규모 물리�
 
 ---
 
-## 3. 4대 프로젝트 관리 체크리스트
+## 3. 🧬 DTI/DTA Phase B — Foundation Model 기반 Drug-Target 결합력 예측
+
+TDC-Studio는 ADMET 예측을 넘어, **Drug-Target Affinity (DTA)** 예측을 위한 대형 사전학습(Foundation) 모델 파이프라인을 제공합니다. Phase B는 HuggingFace 기반의 ChemBERTa(화합물) + ESM-2(단백질) 파운데이션 인코더를 결합하여 **BindingDB Kd Cold-Drug 벤치마크에서 CI ≥ 0.70을 달성**합니다.
+
+### (1) Phase B 아키텍처
+
+```text
+                    ┌─────────────────────────┐
+    SMILES ─────▶   │  ChemBERTaEncoder        │  ─────┐
+                    │  DeepChem/ChemBERTa-77M  │       │   ┌──────────────────────────┐
+                    │  384d → 256d Projection  │       ├─▶ │  BilinearAttentionFusion  │ ─▶ pKd Score
+                    └─────────────────────────┘       │   └──────────────────────────┘
+                    ┌─────────────────────────┐       │
+    AA Seq ──────▶  │  ESM2Encoder             │  ─────┘
+                    │  facebook/esm2_t12_35M   │
+                    │  480d → 256d Projection  │
+                    │  + In-Memory Cache       │
+                    └─────────────────────────┘
+```
+
+| 컴포넌트 | HuggingFace 모델 ID | 출력 차원 | 특이사항 |
+|:---|:---|:---:|:---|
+| **ChemBERTaEncoder** | `DeepChem/ChemBERTa-77M-MTR` | 256 | Masked Mean Pooling, `freeze()`/`unfreeze(n)` |
+| **ESM2Encoder** | `facebook/esm2_t12_35M_UR50D` | 256 | max_length=1024, **고유 서열 인메모리 캐시** (15× 가속) |
+| **BilinearAttentionFusion** | — | 1 | 약물·단백질 교차 어텐션 융합 후 pKd 회귀 |
+
+> [!TIP] **YAML 2줄로 Phase A → B 업그레이드**: `drug_encoder` / `protein_encoder` 키만 교체하면 기존 Phase A GIN+CNN 파이프라인에서 Phase B 파운데이션 파이프라인으로 전환됩니다.
+
+### (2) 🏆 BindingDB Kd Cold-Drug 벤치마크 결과
+
+> 공식 TDC Cold-Drug Split (학습 약물과 완전히 다른 신약 후보 평가) 기준의 최종 테스트 결과입니다.
+
+| Phase | 약물 인코더 | 단백질 인코더 | Cold-Drug CI ↑ | MSE ↓ | RMSE ↓ | Pearson r ↑ |
+|:---:|:---|:---|:---:|:---:|:---:|:---:|
+| **Phase A** | GINE (GNN) | ProteinCNN | — | — | — | — |
+| **Phase B** | ChemBERTa-77M | ESM-2 35M | **0.7464 ✅** | **0.6609 ✅** | 0.8130 | 0.6508 |
+| **목표 기준** | — | — | ≥ 0.70 | ≤ 0.75 | — | — |
+
+- 📄 **상세 결과**: [`models/dti/phase_b/benchmark_summary.yaml`](models/dti/phase_b/benchmark_summary.yaml)
+- ⚙️ **학습 설정**: [`configs/config_dti_phase_b.yaml`](configs/config_dti_phase_b.yaml)
+- 🚀 **Colab 학습 스크립트**: [`deploy/train_dti_phase_b.py`](deploy/train_dti_phase_b.py)
+
+### (3) DTI/DTA Phase B 실행 가이드
+
+#### 로컬 무결성 검증 (Dry-run)
+```bash
+# 모델 레지스트리, DataModule, forward/backward 통합 검증
+uv run python deploy/dti_phase_b_dry_run.py
+```
+
+#### Colab GPU 학습 (세션 분리 권장)
+```bash
+# tdc-studio-dti 전용 세션으로 T4 GPU 학습 실행
+# (ADMET 학습과 세션 분리: tdc-studio-admet / tdc-studio-dti)
+uv run python -c "
+from tdc_studio.remote.colab_runner import ColabRunner
+runner = ColabRunner(session='tdc-studio-dti')
+runner.run_script('deploy/train_dti_phase_b.py',
+                  config='configs/config_dti_phase_b.yaml')
+"
+```
+
+#### Phase A → Phase B YAML 전환 (핵심 2줄 변경)
+```yaml
+# configs/config_dti_phase_b.yaml (변경된 핵심 항목)
+drug_encoder:
+  name: chemberta_encoder      # ← Phase A: gine_model
+  pretrained_model: DeepChem/ChemBERTa-77M-MTR
+
+protein_encoder:
+  name: esm2_encoder           # ← Phase A: protein_cnn
+  pretrained_model: facebook/esm2_t12_35M_UR50D
+  freeze_backbone: true
+```
+
+#### 단위 테스트 (Zero-training, 인터넷 없이 Mock 기반)
+```bash
+uv run --extra dev pytest tests/test_pretrained_encoders.py -v
+# 예상 출력: 4 passed in ~3s
+```
+
+### (4) 브랜치 거버넌스
+
+| 브랜치 | 목적 |
+|:---|:---|
+| `main` | Phase B 전체 코드 포함 (Fast-forward 병합 완료) |
+| `dta/phase-b-foundation` | DTI/DTA Phase C 연구를 위한 전용 보존 브랜치 |
+| `brightonmoon/ADMET` | ADMET 전용 개발 브랜치 |
+
+---
+
+## 4. 4대 프로젝트 관리 체크리스트
 
 TDC-Studio는 실험의 재현성과 개발 속도를 보장하기 위해 다음 4대 체크리스트를 준수합니다:
 
@@ -89,6 +180,8 @@ TDC-Studio는 실험의 재현성과 개발 속도를 보장하기 위해 다음
 | **[🏆 ADMET SOTA 엔지니어링 레시피 & 클러스터 맵](docs/guides/admet_sota_recipe.md)** | **5대 황금률, TDC 22+ 태스크 클러스터링 맵, 다중학습 및 앙상블 가이드** |
 | **[📊 PPBR 체내분포 SOTA & Tri-Hybrid 리포트](docs/benchmarks/ppbr_distribution_sota_progress_report.md)** | **Tri-Hybrid 스태커(R²=0.5412) 및 잔차 오차 진단, ChEMBL HSA 전이 실측 데이터** |
 | **[📊 Caco-2 SOTA 벤치마크 진화 리포트](docs/benchmarks/caco2_sota_progress_report.md)** | **초기 Baseline부터 SOTA 신뢰구간(0.7327) 도달까지의 전 과정 실측 데이터** |
+| **[🧬 DTI Phase B 실행 계획서](docs/dti/dti_phase_b_plan.md)** | **ChemBERTa + ESM-2 파운데이션 모델 설계 · 8단계 실행 로드맵 · 세션 거버넌스** |
+| **[📊 DTI Phase B 벤치마크 결과](models/dti/phase_b/benchmark_summary.yaml)** | **BindingDB Kd Cold-Drug: CI=0.7464 ✅, MSE=0.6609 ✅ (목표 초과 달성)** |
 | **[01. 환경 설정 및 설치](docs/01_environment_setup.md)** | Python 3.11 고정 이유, UV 가상환경, Colab CLI 인증 가이드 |
 | **[02. 알고리즘 선택 가이드](docs/02_algorithm_selection.md)** | ADMET/DTA 태스크별 의사결정 트리 및 추천 모델 백본 매트릭스 |
 | **[03. 학습 및 HPO 운영](docs/03_training_and_hpo.md)** | 로컬 1-Step 드라이런, Colab GPU 위임 및 W&B 실시간 추적 |

@@ -272,13 +272,14 @@ class ColabRunner:
         dry_run: bool = False,
         retries: int = 1,
         embed_bundle: bool = True,
+        timeout: float = 7200.0,
     ) -> int:
         """Execute a training or tuning job on Google Colab Cloud GPU.
 
         Supports automatic account rotation if quota limits are encountered.
         """
         if dry_run:
-            cmd = self.build_run_command(task_command, runner_script)
+            cmd = self.build_run_command(task_command, runner_script, timeout=timeout)
             print(f"[Dry-run] Colab Run command: {' '.join(cmd)}")
             return 0
 
@@ -298,7 +299,7 @@ class ColabRunner:
                 script_ctx = contextlib.nullcontext(runner_script)
 
             with script_ctx as target_script:
-                cmd = self.build_run_command(task_command, target_script)
+                cmd = self.build_run_command(task_command, target_script, timeout=timeout)
 
                 process = subprocess.Popen(
                     cmd,

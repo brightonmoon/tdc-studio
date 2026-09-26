@@ -161,9 +161,36 @@ def train(
     model_type = model_cfg.get("type", model_cfg.get("name"))
     model_cls = MODELS.get(model_type)
     model = model_cls(model_cfg).to(device)
+
+    # Transfer Learning: Load pre-trained weights if specified in config
+    pretrained_path = cfg.get("pretrained_checkpoint")
+    if pretrained_path and os.path.exists(pretrained_path):
+        console.print(f"[bold cyan]Loading pre-trained weights from: {pretrained_path}[/bold cyan]")
+        chk = torch.load(pretrained_path, map_location=device)
+        state_dict = chk.get("state_dict", chk) if isinstance(chk, dict) else chk
+        model_dict = model.state_dict()
+        matched = {k: v for k, v in state_dict.items() if k in model_dict and v.shape == model_dict[k].shape}
+        model_dict.update(matched)
+        model.load_state_dict(model_dict)
+        console.print(
+            f"[bold green]Successfully transferred {len(matched)}/{len(model_dict)} tensors from backbone![/bold green]"
+        )
+
+    # Initial backbone freezing for Stage 2 fine-tuning
+    freeze_epochs = int(cfg.get("freeze_backbone_epochs", 0))
+    if freeze_epochs > 0:
+        for p_name, param in model.named_parameters():
+            if not p_name.startswith("task_heads"):
+                param.requires_grad = False
+        console.print(
+            f"[bold yellow]Backbone weights frozen for first {freeze_epochs} epoch(s). Training task heads only.[/bold yellow]"
+        )
+
     lr = float(cfg.get("lr", 1e-3))
     weight_decay = float(cfg.get("weight_decay", 1e-4))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay
+    )
 
     console.print(
         f"Device: [cyan]{device}[/cyan] | Task: [cyan]{task_type}[/cyan] | Target Metric: [yellow]{target_metric}[/yellow] (higher_is_better={higher_is_better})"
@@ -193,6 +220,18 @@ def train(
 
     try:
         for epoch in range(max_epochs):
+            # Unfreeze backbone if scheduled
+            if freeze_epochs > 0 and epoch == freeze_epochs:
+                console.print(
+                    f"[bold green]Unfreezing all backbone weights at epoch {epoch} for full network fine-tuning...[/bold green]"
+                )
+                for param in model.parameters():
+                    param.requires_grad = True
+                optimizer = torch.optim.AdamW(model.parameters(), lr=lr * 0.5, weight_decay=weight_decay)
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=max(1, max_epochs - epoch), eta_min=float(cfg.get("min_lr", 1e-6))
+                )
+
             # --- Train Epoch ---
             model.train()
             train_loss_sum = 0.0

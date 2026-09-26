@@ -305,3 +305,126 @@ def test_admet_cluster_log10_transform(mock_distribution_df):
     assert batch["labels"].shape == (4, 2)
     assert batch["mask"].shape == (4, 2)
 
+
+def test_admet_cluster_clearance_synthetic():
+    """Verify Cluster 4 Clearance & Elimination MTL with mixed transforms and uncertainty."""
+    smiles = [
+        "CC(=O)OC1=CC=CC=C1C(=O)O",
+        "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+        "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O",
+        "CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C",
+        "CN(C)CCCN1C2=CC=CC=C2SC3=C1C=C(C=C3)Cl",
+        "CC12CCC3C(C1CCC2O)CCC4=CC(=O)CCC34C",
+    ]
+    df = pd.DataFrame(
+        {
+            "Drug": smiles,
+            "half_life_obach": [1.5, 5.2, 2.1, np.nan, 30.0, 4.0],
+            "clearance_hepatocyte_az": [12.0, 45.0, np.nan, 85.0, 120.0, 15.0],
+            "clearance_microsome_az": [5.0, 22.0, 8.0, 40.0, np.nan, 10.0],
+            "cyp3a4_veith": [0.0, 0.0, 1.0, 1.0, 1.0, 0.0],
+            "ppbr_az": [85.5, 32.0, 99.1, np.nan, 95.0, 80.0],
+        }
+    )
+    tasks = [
+        {"name": "half_life_obach", "category": "excretion", "type": "regression", "transform": "log10"},
+        {"name": "clearance_hepatocyte_az", "category": "excretion", "type": "regression", "transform": "log10"},
+        {"name": "clearance_microsome_az", "category": "excretion", "type": "regression", "transform": "log10"},
+        {"name": "cyp3a4_veith", "category": "metabolism", "type": "binary_classification"},
+        {"name": "ppbr_az", "category": "distribution", "type": "regression", "transform": "logit"},
+    ]
+    dm = ADMETClusterDataModule(
+        tasks=tasks,
+        synthetic_df=df,
+        primary_task="half_life_obach",
+        standardize_target=True,
+        use_descriptors=True,
+    )
+    dm.prepare_data()
+    train_loader, _, _ = dm.setup_loaders(batch_size=3)
+
+    assert dm.num_tasks == 5
+    assert dm.primary_task == "half_life_obach"
+
+    batch = next(iter(train_loader))
+    assert batch["labels"].shape == (3, 5)
+    assert batch["mask"].shape == (3, 5)
+
+    model_cfg = {
+        "type": "dmpnn_mtl",
+        "in_dim": 14,
+        "edge_dim": 6,
+        "hidden_dim": 32,
+        "num_layers": 2,
+        "use_descriptors": True,
+        "descriptor_dim": 210,
+        "tasks": tasks,
+        "use_uncertainty": True,
+    }
+    model = DMPNNModel(model_cfg)
+    preds = model(batch)
+    loss = model.compute_loss(preds, batch["labels"], mask=batch["mask"])
+    assert torch.isfinite(loss)
+    assert loss.item() > 0.0
+
+
+def test_cli_train_cyp450_stage2_pretrained_dry_run(tmp_path, mock_cyp450_df):
+    """Verify CLI train supports pretrained_checkpoint loading and backbone freezing."""
+    class MockCypSubstrateDataModule(ADMETClusterDataModule):
+        def __init__(self, **kwargs):
+            kwargs["synthetic_df"] = mock_cyp450_df
+            super().__init__(**kwargs)
+
+    DATASETS.register("mock_cyp_substrate_loader")(MockCypSubstrateDataModule)
+
+    # 1. Create a dummy pretrained checkpoint file
+    dummy_model_cfg = {
+        "type": "dmpnn_mtl",
+        "in_dim": 14,
+        "edge_dim": 6,
+        "hidden_dim": 16,
+        "num_layers": 2,
+        "use_descriptors": True,
+        "descriptor_dim": 210,
+        "tasks": [{"name": "cyp3a4_substrate_carbonmangels", "type": "binary_classification"}],
+    }
+    dummy_model = DMPNNModel(dummy_model_cfg)
+    ckpt_path = str(tmp_path / "dummy_pretrained.pt")
+    torch.save(dummy_model.state_dict(), ckpt_path)
+
+    # 2. Config referencing the pretrained checkpoint
+    config_content = {
+        "data": {
+            "type": "mock_cyp_substrate_loader",
+            "dataset_name": "cyp450_substrates_transfer",
+            "batch_size": 2,
+            "primary_task": "cyp3a4_substrate_carbonmangels",
+            "use_descriptors": True,
+            "tasks": [
+                {"name": "cyp3a4_substrate_carbonmangels", "type": "binary_classification"},
+            ],
+        },
+        "model": dummy_model_cfg,
+        "pretrained_checkpoint": ckpt_path,
+        "freeze_backbone_epochs": 1,
+        "lr": 0.0001,
+        "max_epochs": 2,
+        "eval_metric": "roc_auc",
+        "tracking": {"enabled": False},
+    }
+
+    config_file = str(tmp_path / "stage2_test_config.yaml")
+    with open(config_file, "w") as f:
+        yaml.dump(config_content, f)
+
+    chk_dir = str(tmp_path / "checkpoints_stage2")
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["train", "--config", config_file, "--checkpoint-dir", chk_dir, "--dry-run"],
+    )
+    assert result.exit_code == 0, f"CLI stage 2 train failed: {result.output}"
+    assert "Successfully transferred" in result.output
+    assert "Backbone weights frozen" in result.output
+    assert "Training Pipeline Finished" in result.output
+

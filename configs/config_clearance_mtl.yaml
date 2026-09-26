@@ -13,18 +13,22 @@ data:
     - name: half_life_obach
       category: excretion
       type: regression
+      transform: log10
     - name: clearance_hepatocyte_az
       category: excretion
       type: regression
+      transform: log10
     - name: clearance_microsome_az
       category: excretion
       type: regression
+      transform: log10
     - name: cyp3a4_veith
       category: metabolism
       type: binary_classification
     - name: ppbr_az
       category: distribution
       type: regression
+      transform: logit
 
 model:
   type: dmpnn_mtl
@@ -52,7 +56,7 @@ model:
     clearance_microsome_az: 1.5
     cyp3a4_veith: 0.5
     ppbr_az: 0.5
-  use_uncertainty: false
+  use_uncertainty: true
 
 lr: 0.0006
 weight_decay: 1.0e-5

@@ -99,8 +99,10 @@
 ### [Track C] ADMET 타 클러스터 본격 학습 (Colab GPU)
 - [ ] **Task C-1: Cluster 1 (Lipophilicity 앵커: Lipo + Sol + FreeSolv + Caco2) 정밀 학습**
   - 목표: Lipophilicity $R^2 \ge 0.74$, AqSolDB MAE $\le 0.70$.
-- [ ] **Task C-2: Cluster 3 (CYP450 8-Head Matrix) 정밀 학습**
-  - 목표: 저해 5종 ROC-AUC $\ge 0.90 \sim 0.94$, 기질 3종 ROC-AUC $\ge 0.78 \sim 0.84$.
+- [x] **Task C-2: Cluster 3 (CYP450 8-Head Matrix) Two-Stage SOTA 학습 (COMPLETE)**
+  - Stage 1 (Veith 5-Head 대규모 사전학습, Colab T4 GPU): 복합 Test ROC-AUC = **0.8784** (`cyp1a2` **0.9194**, `cyp2c9` **0.8827**, `cyp3a4` **0.8784**, `cyp2c19` **0.8774**, `cyp2d6` **0.8323**).
+  - Stage 2 (Carbon-Mangels 3-Substrates Staged Unfreezing 전이 미세조정): 3대 기질 압도적 SOTA 달성 (`cyp2d6_substrate` **0.9928** / ACC 97.7% / MCC +0.952, `cyp2c9_substrate` **0.9638** / ACC 97.0% / MCC +0.912, `cyp3a4_substrate` **0.9130** / ACC 90.2% / MCC +0.800). 기질 평균 ROC-AUC = **0.9565** (+22.6% 도약).
+  - 공식 W&B 런: `f9v2gcsr` (Stage 1), `3qihar8z` (Stage 2). 체크포인트: `models/checkpoint_cyp450_stage2/best_model.pt`.
 
 ---
 

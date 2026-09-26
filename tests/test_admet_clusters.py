@@ -276,3 +276,32 @@ def test_cli_train_staged_herg_standalone_dry_run(tmp_path, mock_herg_central_df
     assert result.exit_code == 0, f"CLI train failed: {result.output}"
     assert "Starting Training Pipeline" in result.output
     assert "Training Pipeline Finished" in result.output
+
+
+def test_admet_cluster_log10_transform(mock_distribution_df):
+    """Verify log10 target transformation for heavy-tailed endpoints like VDss."""
+    tasks = [
+        {"name": "ppbr_az", "category": "distribution", "type": "regression", "transform": "logit"},
+        {"name": "vdss_lombardo", "category": "distribution", "type": "regression", "transform": "log10"},
+    ]
+    dm = ADMETClusterDataModule(
+        tasks=tasks,
+        synthetic_df=mock_distribution_df,
+        primary_task="vdss_lombardo",
+        standardize_target=True,
+        use_descriptors=False,
+    )
+    dm.prepare_data()
+    train_loader, _, _ = dm.setup_loaders(batch_size=4)
+
+    assert dm.task_transforms["vdss_lombardo"] == "log10"
+    stat = dm.task_stats["vdss_lombardo"]
+    # Check that mean was computed in log10 space
+    train_vals = mock_distribution_df["vdss_lombardo"].dropna().values[:4]
+    expected_log_mean = float(np.mean(np.log10(train_vals)))
+    assert np.isclose(stat["mean"], expected_log_mean, atol=1e-3)
+
+    batch = next(iter(train_loader))
+    assert batch["labels"].shape == (4, 2)
+    assert batch["mask"].shape == (4, 2)
+

@@ -23,6 +23,7 @@ data:
     - name: vdss_lombardo
       category: distribution
       type: regression
+      transform: log10
     - name: lipophilicity_astrazeneca
       category: physicochemical
       type: regression
@@ -48,7 +49,7 @@ model:
   task_weights:
     ppbr_az: 1.5
     bbb_martins: 0.8
-    vdss_lombardo: 0.8
+    vdss_lombardo: 1.0
     lipophilicity_astrazeneca: 0.5
   use_uncertainty: true
   pearson_weight: 0.25

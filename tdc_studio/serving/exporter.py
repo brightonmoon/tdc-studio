@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 
@@ -132,6 +132,82 @@ def export_production_package(
     }
     manifest_path = os.path.join(output_dir, "export_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+    return manifest
+
+
+def export_tri_hybrid_package(
+    dmpnn_checkpoint_path: str,
+    dmpnn_config_path: str,
+    gbdt_model: Any,
+    ridge_model: Any,
+    scaler: Any,
+    blending_weights: Tuple[float, float, float],
+    calibration_params: Tuple[float, float],
+    dmpnn_stats: Tuple[float, float],
+    output_dir: str,
+    benchmark_meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Package and export full Tri-Hybrid SOTA model into production serving directory."""
+    import pickle
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    dmpnn_ckpt = torch.load(dmpnn_checkpoint_path, map_location="cpu", weights_only=False)
+    with open(dmpnn_config_path, "r", encoding="utf-8") as f:
+        dmpnn_cfg = json.load(f)
+
+    # Package all components into single .pt file
+    package = {
+        "dmpnn_state_dict": dmpnn_ckpt,
+        "dmpnn_config": dmpnn_cfg,
+        "gbdt_pickle": pickle.dumps(gbdt_model),
+        "ridge_pickle": pickle.dumps(ridge_model),
+        "scaler_pickle": pickle.dumps(scaler),
+        "blending_weights": blending_weights,
+        "calibration_params": calibration_params,
+        "dmpnn_stats": dmpnn_stats,
+    }
+    target_pt = os.path.join(output_dir, "ppbr_tri_hybrid_sota.pt")
+    torch.save(package, target_pt)
+
+    # Standard model.pt copy for generic loader fallback
+    target_standard = os.path.join(output_dir, "model.pt")
+    torch.save(package, target_standard)
+
+    config = {
+        "type": "tri_hybrid_stacker",
+        "task_type": "regression",
+        "primary_task": "ppbr_az",
+        "metric_name": "r2",
+        "blending_weights": {
+            "w_gnn": float(blending_weights[0]),
+            "w_gbdt": float(blending_weights[1]),
+            "w_chemberta": float(blending_weights[2]),
+        },
+        "calibration": {
+            "alpha": float(calibration_params[0]),
+            "beta": float(calibration_params[1]),
+        },
+    }
+    with open(os.path.join(output_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+    if benchmark_meta:
+        with open(os.path.join(output_dir, "training_meta.json"), "w", encoding="utf-8") as f:
+            json.dump(benchmark_meta, f, indent=2)
+
+    manifest = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "model_type": "tri_hybrid_stacker",
+        "task_type": "regression",
+        "primary_task": "ppbr_az",
+        "weights_file": "ppbr_tri_hybrid_sota.pt",
+        "config_file": "config.json",
+        "benchmark_meta": benchmark_meta or {},
+    }
+    with open(os.path.join(output_dir, "export_manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     return manifest

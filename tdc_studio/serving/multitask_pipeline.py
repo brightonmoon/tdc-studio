@@ -89,6 +89,23 @@ class ThresholdDecisionEngine:
                 decision = "High Binding (> 95%)"
             return {"value": val, "unit": "%", "decision": decision}
 
+        if clean_name == "vdss_lombardo":
+            # Volume of distribution at steady state (log10 L/kg or L/kg)
+            # Low: VDss < 0.7 L/kg (log10 < -0.155), Mod: 0.7 - 2.0 L/kg, High: > 2.0 L/kg (log10 > 0.301)
+            real_vdss = round(10.0**val, 3) if val < 5.0 else round(val, 3)
+            if val < -0.155:
+                decision = f"Low Distribution (VDss ~ {real_vdss} L/kg, confined to plasma/extracellular)"
+            elif val <= 0.301:
+                decision = f"Moderate Distribution (VDss ~ {real_vdss} L/kg, extracellular fluids & tissues)"
+            else:
+                decision = f"High Distribution (VDss ~ {real_vdss} L/kg, extensive tissue/cellular uptake)"
+            return {
+                "value": val,
+                "real_vdss_L_kg": real_vdss,
+                "unit": "log10(L/kg)",
+                "decision": decision,
+            }
+
         if clean_name == "solubility_aqsoldb":
             # Aqueous solubility (log mol/L)
             if val >= -2.0:

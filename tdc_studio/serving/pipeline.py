@@ -116,6 +116,20 @@ class DTIInferencePipeline(InferencePipeline):
         self.aa_tokenizer = AminoAcidTokenizer(max_length=aa_max_length)
         self.scaler_meta = scaler_meta or {}
 
+        # Pre-create reusable dummy graph to avoid allocations when drug is SMILES-based
+        self._dummy_graph = Data(
+            x=torch.zeros((1, 14)),
+            edge_index=torch.empty((2, 0), dtype=torch.long),
+            edge_attr=torch.empty((0, 6), dtype=torch.float),
+        )
+
+        # Check if drug encoder is SMILES/sequence based (ChemBERTa) to skip expensive RDKit graph conversion
+        self.is_graph_drug = True
+        if hasattr(model, "drug_encoder"):
+            enc_name = type(model.drug_encoder).__name__.lower()
+            if "chembert" in enc_name or "language" in enc_name:
+                self.is_graph_drug = False
+
     def inverse_transform(self, y_norm: float) -> Tuple[float, float]:
         """Convert normalized model prediction to pKd and Kd (nM).
 
@@ -147,15 +161,17 @@ class DTIInferencePipeline(InferencePipeline):
         self,
         smiles_list: List[str],
         target_seqs: Optional[List[str]] = None,
-    ) -> List[float]:
+        return_attention: bool = False,
+    ) -> Any:
         """Run DTI affinity prediction for paired (SMILES, AA sequence) inputs.
 
         Args:
-            smiles_list : List of drug SMILES strings.
-            target_seqs : List of protein AA sequences (same length as smiles_list).
+            smiles_list     : List of drug SMILES strings.
+            target_seqs     : List of protein AA sequences (same length as smiles_list).
+            return_attention: Whether to return cross-attention weights if supported.
 
         Returns:
-            List of raw model output predictions.
+            List of raw predictions, or (preds, attn_list) if return_attention=True.
         """
         if target_seqs is None or len(target_seqs) != len(smiles_list):
             raise ValueError(
@@ -167,14 +183,13 @@ class DTIInferencePipeline(InferencePipeline):
             clean_smiles = sm.strip()
             clean_seq = seq.strip().upper()
 
-            # Drug graph
-            g = self.graph_transform(clean_smiles)
-            if g is None:
-                g = Data(
-                    x=torch.zeros((1, 14)),
-                    edge_index=torch.empty((2, 0), dtype=torch.long),
-                    edge_attr=torch.empty((0, 6), dtype=torch.float),
-                )
+            # Drug graph: skip RDKit parsing if model is string/ChemBERTa-based
+            if self.is_graph_drug:
+                g = self.graph_transform(clean_smiles)
+                if g is None:
+                    g = self._dummy_graph
+            else:
+                g = self._dummy_graph
 
             # Target sequence tensor
             target_tensor = self.aa_tokenizer(clean_seq)
@@ -191,12 +206,41 @@ class DTIInferencePipeline(InferencePipeline):
             if hasattr(v, "to"):
                 collated[k] = v.to(self.device)
 
+        raw_attn = None
         with torch.no_grad():
-            preds = self.model(collated)
+            if return_attention:
+                try:
+                    model_out = self.model(collated, return_attention=True)
+                except TypeError:
+                    model_out = self.model(collated)
+            else:
+                model_out = self.model(collated)
+
+            if isinstance(model_out, tuple):
+                preds, raw_attn = model_out
+            else:
+                preds = model_out
+
             preds_flat = preds.squeeze(-1).detach().cpu().numpy().tolist()
 
         if isinstance(preds_flat, float):
-            return [preds_flat]
+            preds_flat = [preds_flat]
+
+        if return_attention:
+            attn_list = []
+            batch_size = len(smiles_list)
+            if isinstance(raw_attn, dict):
+                for b in range(batch_size):
+                    item_attn = {}
+                    for k, t in raw_attn.items():
+                        if isinstance(t, torch.Tensor):
+                            t_slice = t[b].detach().cpu().numpy()
+                            item_attn[k] = t_slice.tolist()
+                    attn_list.append(item_attn)
+            else:
+                attn_list = [{} for _ in range(batch_size)]
+            return preds_flat, attn_list
+
         return preds_flat
 
     def predict_affinity(
@@ -204,18 +248,32 @@ class DTIInferencePipeline(InferencePipeline):
         smiles_list: List[str],
         target_seqs: List[str],
         return_kd_nm: bool = True,
+        return_attention: bool = False,
     ) -> Dict[str, Any]:
         """Run DTI prediction and return structured pKd and Kd (nM) values.
 
         Args:
-            smiles_list : List of drug SMILES strings.
-            target_seqs : List of protein AA sequences.
-            return_kd_nm: Whether to compute Kd in nM.
+            smiles_list     : List of drug SMILES strings.
+            target_seqs     : List of protein AA sequences.
+            return_kd_nm    : Whether to compute Kd in nM.
+            return_attention: Whether to include attention weight maps in output.
 
         Returns:
-            Dict containing 'predictions_pkd', 'kd_nm' (optional), and 'raw_predictions'.
+            Dict containing 'predictions_pkd', 'kd_nm', and optional 'attention_weights'.
         """
-        raw_preds = self.predict(smiles_list=smiles_list, target_seqs=target_seqs)
+        if return_attention:
+            raw_preds, attn_list = self.predict(
+                smiles_list=smiles_list,
+                target_seqs=target_seqs,
+                return_attention=True,
+            )
+        else:
+            raw_preds = self.predict(
+                smiles_list=smiles_list,
+                target_seqs=target_seqs,
+                return_attention=False,
+            )
+            attn_list = None
 
         pkd_list = []
         kd_list = []
@@ -231,6 +289,8 @@ class DTIInferencePipeline(InferencePipeline):
         }
         if return_kd_nm:
             res["kd_nm"] = kd_list
+        if return_attention and attn_list is not None:
+            res["attention_weights"] = attn_list
         return res
 
 

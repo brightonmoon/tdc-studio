@@ -139,8 +139,8 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
                 model=model, device=device, scaler_meta=scaler_meta
             )
             set_dti_pipeline(pipeline, meta=config)
-            # Also set global pipeline for backward compatibility with /predict
-            set_pipeline(pipeline, meta=config)
+            if _pipeline is None:
+                set_pipeline(pipeline, meta=config)
             logger.info("Successfully loaded DTI pipeline from '%s' on %s.", model_dir, device)
         else:
             pipeline = InferencePipeline(model=model, device=device, is_dta=False)
@@ -153,24 +153,53 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
         return None
 
 
+def load_all_serving_models() -> None:
+    """Discover and load both ADMET and DTI models simultaneously."""
+    admet_env = os.environ.get("ADMET_MODEL_DIR")
+    dti_env = os.environ.get("DTI_MODEL_DIR")
+    generic_env = os.environ.get("MODEL_DIR")
+
+    if generic_env:
+        init_pipeline_from_directory(generic_env)
+    if admet_env:
+        init_pipeline_from_directory(admet_env)
+    if dti_env:
+        init_pipeline_from_directory(dti_env)
+
+    # Autodiscover ADMET pipeline if not yet initialized
+    if get_pipeline() is None or isinstance(get_pipeline(), DTIInferencePipeline):
+        for candidate in ["models/export", "models/checkpoint"]:
+            cfg_p = os.path.join(candidate, "config.json")
+            if os.path.isdir(candidate) and os.path.exists(cfg_p):
+                try:
+                    with open(cfg_p, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    if not (cfg.get("type", "").endswith("_dta") or cfg.get("is_dta", False)):
+                        init_pipeline_from_directory(candidate)
+                        break
+                except Exception:
+                    pass
+
+    # Autodiscover DTI pipeline if not yet initialized
+    if get_dti_pipeline() is None:
+        for candidate in ["models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
+            cfg_p = os.path.join(candidate, "config.json")
+            if os.path.isdir(candidate) and os.path.exists(cfg_p):
+                init_pipeline_from_directory(candidate)
+                if get_dti_pipeline() is not None:
+                    break
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    # 1. Attempt loading model from environment variable or standard default paths
-    model_dir = os.environ.get("MODEL_DIR")
-    if not model_dir:
-        for candidate in ["models/export", "models/checkpoint", "models/dti/phase_b"]:
-            if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "config.json")):
-                model_dir = candidate
-                break
-
-    if model_dir:
-        init_pipeline_from_directory(model_dir)
+    load_all_serving_models()
 
     yield
 
     # Cleanup on shutdown
     set_pipeline(None)
+    set_vdss_pipeline(None)
     set_dti_pipeline(None)
 
 
@@ -185,10 +214,15 @@ app = FastAPI(
 @app.get("/healthz", response_model=HealthResponse)
 def health_check():
     """Liveness / Readiness probe."""
+    has_admet = _pipeline is not None and not isinstance(_pipeline, DTIInferencePipeline)
+    has_vdss = _vdss_pipeline is not None
+    has_dti = _dti_pipeline is not None or isinstance(_pipeline, DTIInferencePipeline)
     return HealthResponse(
         status="healthy",
-        model_loaded=_pipeline is not None or _dti_pipeline is not None,
-        dti_model_loaded=_dti_pipeline is not None,
+        model_loaded=has_admet or has_dti,
+        admet_model_loaded=has_admet,
+        vdss_model_loaded=has_vdss,
+        dti_model_loaded=has_dti,
     )
 
 
@@ -259,6 +293,7 @@ async def predict_dti(request: DTIInferenceRequest):
             request.smiles,
             request.target_sequences,
             request.return_kd_nm,
+            request.return_attention,
         )
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
         model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseB"))
@@ -266,6 +301,7 @@ async def predict_dti(request: DTIInferenceRequest):
         return DTIInferenceResponse(
             predictions_pkd=result["predictions_pkd"],
             kd_nm=result.get("kd_nm"),
+            attention_weights=result.get("attention_weights"),
             unit="pK_d (-log10 Kd)",
             model_name=model_name,
             count=len(request.smiles),

@@ -259,3 +259,107 @@ def test_load_model_from_wrapped_dict(tmp_path):
     loaded = load_model_from_checkpoint(ckpt_dir)
     assert isinstance(loaded, GraphTransformerModel)
 
+
+def test_dti_predict_with_attention_weights(test_client):
+    """Verify that return_attention=True returns attention_weights list in response."""
+    model_cfg = {
+        "type": "graph_dta",
+        "drug_encoder": {"type": "gine", "in_dim": 14, "hidden_dim": 16, "num_layers": 1},
+        "target_encoder": {"type": "protein_cnn", "out_dim": 16, "kernel_sizes": [3]},
+        "fusion": {"type": "cross_attention", "hidden_dim": 16, "num_heads": 2},
+    }
+    model = GraphDTAModel(model_cfg)
+    pipeline = DTIInferencePipeline(model=model, device="cpu")
+    set_dti_pipeline(pipeline, meta=model_cfg)
+
+    payload = {
+        "smiles": ["CC(=O)OC1=CC=CC=C1C(=O)O"],
+        "target_sequences": ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"],
+        "return_attention": True,
+    }
+    resp = test_client.post("/predict/dti", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "attention_weights" in data
+    assert data["attention_weights"] is not None
+    assert len(data["attention_weights"]) == 1
+
+    # Cleanup
+    set_dti_pipeline(None)
+
+
+def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
+    """Verify that ChemBERTa encoder skips graph_transform parsing overhead."""
+    class DummyChemBERTa(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.out_dim = 256
+        def extract_features(self, batch):
+            b = len(batch["drug_smiles_str"])
+            return torch.zeros((b, 256))
+
+    model_cfg = {
+        "type": "graph_dta",
+        "drug_encoder": {"type": "chemberta_encoder"},
+        "target_encoder": {"type": "protein_cnn", "out_dim": 16},
+        "fusion": {"hidden_dim": 16},
+    }
+    model = GraphDTAModel(model_cfg)
+    # inject dummy ChemBERTa
+    model.drug_encoder = DummyChemBERTa()
+
+    pipeline = DTIInferencePipeline(model=model, device="cpu")
+    assert pipeline.is_graph_drug is False
+
+    # Monkeypatch graph_transform to fail if called
+    def boom(smiles):
+        raise RuntimeError("graph_transform should not be called!")
+    monkeypatch.setattr(pipeline, "graph_transform", boom)
+
+    preds = pipeline.predict(["CCO"], ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"])
+    assert len(preds) == 1
+
+
+def test_concurrent_admet_and_dti_serving(test_client):
+    """Verify that both ADMET and DTI pipelines can run concurrently on single server."""
+    # 1. Setup ADMET property model
+    prop_cfg = {"type": "graph_transformer", "in_dim": 14, "hidden_dim": 16, "num_layers": 1}
+    prop_model = GraphTransformerModel(prop_cfg)
+    prop_pipe = InferencePipeline(model=prop_model, device="cpu")
+    set_pipeline(prop_pipe, meta=prop_cfg)
+
+    # 2. Setup DTI model
+    dti_cfg = {
+        "type": "graph_dta",
+        "drug_encoder": {"type": "gine", "in_dim": 14, "hidden_dim": 16, "num_layers": 1},
+        "target_encoder": {"type": "protein_cnn", "out_dim": 16, "kernel_sizes": [3]},
+        "fusion": {"hidden_dim": 16},
+    }
+    dti_model = GraphDTAModel(dti_cfg)
+    dti_pipe = DTIInferencePipeline(model=dti_model, device="cpu")
+    set_dti_pipeline(dti_pipe, meta=dti_cfg)
+
+    # Health check should report both
+    resp = test_client.get("/healthz")
+    assert resp.status_code == 200
+    h_data = resp.json()
+    assert h_data["admet_model_loaded"] is True
+    assert h_data["dti_model_loaded"] is True
+    assert h_data["model_loaded"] is True
+
+    # /predict should hit ADMET
+    resp_admet = test_client.post("/predict", json={"smiles": ["CC"]})
+    assert resp_admet.status_code == 200
+
+    # /predict/dti should hit DTI
+    resp_dti = test_client.post(
+        "/predict/dti",
+        json={"smiles": ["CC"], "target_sequences": ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"]},
+    )
+    assert resp_dti.status_code == 200
+
+    # Cleanup
+    set_pipeline(None)
+    set_dti_pipeline(None)
+
+

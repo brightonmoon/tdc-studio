@@ -1,6 +1,12 @@
-"""Models module exposing deep learning architectures."""
-
 from tdc_studio.models.base import BaseTherapeuticsModel
+from tdc_studio.models.dti import (
+    BilinearAttentionFusion,
+    ChemBERTaEncoder,
+    CrossAttentionFusion,
+    ESM2Encoder,
+    GraphDTAModel,
+    ProteinCNNEncoder,
+)
 from tdc_studio.models.fingerprint.mlp import MLPBaselineModel
 from tdc_studio.models.graph.dmpnn import DMPNNModel
 from tdc_studio.models.graph.gine import GINEModel
@@ -22,5 +28,12 @@ __all__ = [
     "MLPBaselineModel",
     "CategoricalMTLModel",
     "MaskedMultiTaskLoss",
+    "GraphDTAModel",
+    "ProteinCNNEncoder",
+    "BilinearAttentionFusion",
+    "CrossAttentionFusion",
+    "ChemBERTaEncoder",
+    "ESM2Encoder",
 ]
+
 

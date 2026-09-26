@@ -100,9 +100,14 @@ def load_model_from_checkpoint(
         state_dict = raw_loaded
 
     model = model_cls(config)
-    model.load_state_dict(state_dict)
+    try:
+        model.load_state_dict(state_dict, strict=True)
+    except RuntimeError:
+        # Fallback to strict=False for cross-environment transformers rotary buffer differences
+        model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model
+
 
 
 

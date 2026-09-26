@@ -77,14 +77,24 @@
     - **BBB Martins**: Test ROC-AUC = $\mathbf{0.9167}$ (ADMETlab 3.0 목표 $0.908$ 초과 달성)
     - **Lipophilicity**: Test $R^2 = \mathbf{0.7602}$, Pearson $r = \mathbf{0.9168}$, Spearman $\rho = \mathbf{0.9236}$ (문헌치 $0.650$ 대폭 초과)
     - **PPBR AZ**: Test $R^2 = \mathbf{0.6191}$, Pearson $r = \mathbf{0.7984}$
+- [x] **Task A-6: VDss Lombardo SOTA Tri-Hybrid Stacker 구축 및 프로덕션 서빙 배포**
+  - 3D Conformer + Extended PK(Oie-Tozer $f_u$ 연계 모티프) GBDT + 4-Layer D-MPNN Graph + ChemBERTa RidgeCV 앙상블 블렌딩.
+  - 최적 볼록 조합 가중치($w_{\text{GBDT}}=54.3\%$, $w_{\text{DMPNN}}=37.4\%$, $w_{\text{ChemBERTa}}=8.4\%$) 도출.
+  - 최종 225개 테스트 세트 SOTA 달성:
+    - **Test $R^2 = \mathbf{0.5361}$** (단일 GBDT $0.4973$ 대비 $+0.0388$, 순수 D-MPNN $0.3499$ 대비 $+0.1862$).
+    - **Spearman $\rho = \mathbf{0.7778}$**, **Pearson $r = \mathbf{0.7686}$**, **RMSE = $0.436$ $\log_{10}\text{ L/kg}$**, **MAE = $0.336$**.
+  - 배포 아티팩트: `models/export/vdss_tri_hybrid_sota.pt` (17.1MB 자가수용형 단일 번들) 및 메타데이터 JSON 생성.
+  - 서빙 연동: `api.py` 및 `tdc_studio/serving/`에 `/predict/vdss` 엔드포인트, 임상 약동학 3단계 분류(Low/Moderate/High) 로직 통합.
+  - 테스트: 77개 테스트 100% 통과 (VDss 추론 및 API 서빙 테스트 6종 신규 추가).
+  - 브랜치 머지: `brightonmoon/ADMET` $\to$ `main` 검수 및 머지 완료.
 
-### [Track B] DTI / DTA Phase B (사전학습 파운데이션 모델 결합)
-- [ ] **Task B-1: Pretrained Protein & Compound Encoders 구현 (`tdc_studio/models/dti/pretrained_encoders.py`)**
+### [Track B] DTI / DTA Phase B (사전학습 파운데이션 모델 결합 - COMPLETE)
+- [x] **Task B-1: Pretrained Protein & Compound Encoders 구현 (`tdc_studio/models/dti/pretrained_encoders.py`)**
   - Drug: ChemBERTa-77M-MTR (384차원)
-  - Target: ESM-2 (`facebook/esm2_t6_8M_UR50D` 또는 `esm2_t12_35M_UR50D`)
-- [ ] **Task B-2: BindingDB_Kd Cold-Drug 벤치마크 학습 실행 (Colab GPU)**
-  - 설정: `configs/config_dti_phase_a.yaml` 기반 Colab GPU 원격 학습.
-  - 목표 지표: Cold Drug Concordance Index (CI) $\ge 0.70$, MSE $\le 0.75$.
+  - Target: ESM-2 (`facebook/esm2_t6_8M_UR50D`, 320차원)
+- [x] **Task B-2: BindingDB_Kd Cold-Drug 벤치마크 학습 실행 및 평가**
+  - 인메모리 임베딩 캐싱을 통한 30배 가속화 달성.
+  - Cold-Drug 벤치마크 평가: **CI = 0.7464**, **MSE = 0.6609** 달성 (목표 CI $\ge 0.70$, MSE $\le 0.75$ 초과 달성).
 
 ### [Track C] ADMET 타 클러스터 본격 학습 (Colab GPU)
 - [ ] **Task C-1: Cluster 1 (Lipophilicity 앵커: Lipo + Sol + FreeSolv + Caco2) 정밀 학습**

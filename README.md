@@ -163,11 +163,24 @@ protein_encoder:
 ```
 
 #### 단위 테스트 (Zero-training, 인터넷 없이 Mock 기반)
-```bash
-uv run --extra dev pytest tests/test_pretrained_encoders.py -v
-# 예상 출력: 4 passed in ~3s
+uv run --extra dev pytest tests/test_pretrained_encoders.py tests/test_serving_api.py tests/test_cross_attention_fusion.py -v
+# 예상 출력: 17 passed
 ```
 
+#### DTI 프로덕션 서빙 (/predict/dti)
+```bash
+# 1. 서빙 서버 구동 (DTI 모델 디렉토리 지정 시 자동 로딩)
+MODEL_DIR=models/export/dti_phase_c uv run tdc-studio serve --port 8000
+
+# 2. DTI 결합 친화도 추론 요청 (pKd 및 Kd nM 산출)
+curl -X POST "http://localhost:8000/predict/dti" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "smiles": ["CC1=C(C(=O)N2CCCC2=N1)CCN3CCC(CC3)C4=NOC5=C4C=CC(=C5)F"],
+       "target_sequences": ["MSHHWGYGKHNGPEHWHKDFPIAKGERQSPVDIDTHTAKYDPSLKPLSVSYDQATSLRILNNGHAFNVEFD"],
+       "return_kd_nm": true
+     }'
+```
 ### (4) 브랜치 거버넌스
 
 | 브랜치 | 목적 |

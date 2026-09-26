@@ -31,7 +31,6 @@ import torch.nn as nn
 
 from tdc_studio.core.registry import MODELS
 from tdc_studio.models.base import BaseTherapeuticsModel
-from tdc_studio.models.dti.fusion import BilinearAttentionFusion
 from tdc_studio.models.dti.protein_encoder import ProteinCNNEncoder
 
 
@@ -51,9 +50,15 @@ def _build_target_encoder(cfg: Dict[str, Any]) -> nn.Module:
     return MODELS.build({**cfg, "type": encoder_type})
 
 
+def _build_fusion(cfg: Dict[str, Any]) -> nn.Module:
+    """Build fusion head from config. Falls back to BilinearAttentionFusion."""
+    fusion_type = cfg.get("type", "bilinear_fusion")
+    return MODELS.build({**cfg, "type": fusion_type})
+
+
 @MODELS.register("graph_dta")
 class GraphDTAModel(BaseTherapeuticsModel):
-    """Drug-Target Affinity model with GNN drug encoder + CNN target encoder.
+    """Drug-Target Affinity model with GNN/LM drug encoder + CNN/LM target encoder.
 
     Config keys (all nested under top-level config dict):
         drug_encoder  : dict — passed to _build_drug_encoder()
@@ -63,9 +68,11 @@ class GraphDTAModel(BaseTherapeuticsModel):
         target_encoder: dict — passed to _build_target_encoder()
             type        : "protein_cnn" (Phase A) | "esm2_encoder" (Phase B)
             out_dim     : 256
-        fusion        : dict — passed to BilinearAttentionFusion
-            hidden_dim  : 512
-        use_domain_adaptation: bool — False (Phase A), True (Phase C)
+        fusion        : dict — passed to _build_fusion()
+            type        : "bilinear_fusion" (Phase A/B) | "cross_attention" (Phase C)
+            hidden_dim  : 256 or 512
+            num_heads   : 4 (for cross_attention)
+        use_domain_adaptation: bool — False (Phase A/B), True (Phase C)
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -90,7 +97,7 @@ class GraphDTAModel(BaseTherapeuticsModel):
             target_enc_cfg.get("out_dim", 256),
         )
 
-        # ── Fusion head (BilinearAttentionFusion) ──
+        # ── Fusion head (BilinearAttentionFusion or CrossAttentionFusion) ──
         fusion_cfg = config.get("fusion", {"hidden_dim": 512})
         fusion_full_cfg = {
             **fusion_cfg,
@@ -98,7 +105,7 @@ class GraphDTAModel(BaseTherapeuticsModel):
             "target_dim": target_out_dim,
             "out_dim":    1,
         }
-        self.fusion: BilinearAttentionFusion = BilinearAttentionFusion(fusion_full_cfg)
+        self.fusion: nn.Module = _build_fusion(fusion_full_cfg)
 
         # ── Phase C placeholder: domain adversarial head ──
         self.use_domain_adaptation: bool = config.get("use_domain_adaptation", False)
@@ -132,19 +139,29 @@ class GraphDTAModel(BaseTherapeuticsModel):
 
         return h_drug, h_target
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def forward(
+        self, batch: Dict[str, Any], return_attention: bool = False
+    ) -> Any:
         """Predict binding affinity for (Drug, Target) pairs.
 
         Args:
             batch: Dict containing at minimum:
                 "drug_graph"  : torch_geometric.data.Batch (from DTADataModule)
                 "target_seq"  : LongTensor [B, max_len]    (from AminoAcidTokenizer)
+            return_attention: If True and supported, returns (affinity, attention_dict)
 
         Returns:
-            FloatTensor [B, 1] — normalised affinity predictions.
+            FloatTensor [B, 1] — normalised affinity predictions,
+            or (affinity, attn_dict) if return_attention=True.
         """
         h_drug, h_target = self.extract_features(batch)
+        if return_attention:
+            try:
+                return self.fusion(h_drug, h_target, return_attention=True)
+            except TypeError:
+                pass
         return self.fusion(h_drug, h_target)  # [B, 1]
+
 
     # ------------------------------------------------------------------
     # Loss

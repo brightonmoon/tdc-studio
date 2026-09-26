@@ -62,7 +62,7 @@ model:
 # ── Training & Staged Fine-Tuning ─────────────────────────
 training:
   batch_size: 32            # Optimal for Colab T4 16GB
-  max_epochs: 18
+  max_epochs: 15
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
   optimizer: adamw
@@ -73,8 +73,8 @@ training:
   early_stopping_metric: val_ci
 
 staged_training:
-  stage1_epochs: 3            # Epochs 1..3: Train CrossAttention head with frozen ChemBERTa
-  stage2_unfreeze_layers: 2   # Epochs 4+: Unfreeze top 2 RoBERTa transformer layers
+  stage1_epochs: 15           # Option A: Train CrossAttention head for 15 epochs with frozen ChemBERTa
+  stage2_unfreeze_layers: 2   # Option B (Backlog): Unfreeze top 2 RoBERTa transformer layers
   stage2_backbone_lr: 1.0e-5  # Delicate learning rate for pretrained backbone
   stage2_head_lr: 5.0e-5      # Adapted LR for head in Stage 2
 

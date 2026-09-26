@@ -29,11 +29,12 @@ models/checkpoint*/
 
 # Temporary logs & notebooks
 scratch/*.json
-scratch/.temp_colab/
+**/.temp_colab/
 *.log
 tdc_colab*.ipynb
 .DS_Store
 Thumbs.db
 data/cache/
-.temp_colab/
-
+# Worktrees
+ADMET/
+greenling/

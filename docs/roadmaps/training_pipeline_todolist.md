@@ -1,12 +1,39 @@
 # ADMET & DTI Multi-Task Training Pipeline Execution Checklist & TODOLIST
 
-> **최종 갱신 일시:** 2026-09-23 20:05 (KST)  
+> **최종 갱신 일시:** 2026-09-27 20:45 (KST)  
 > **W&B 추적 프로젝트:** `tdc-studio/tdc-learning`  
-> **실행 환경 원칙:** **로컬 학습 지양, Google Colab Cloud GPU (`remote exec`) 기본 적용**
+> **실행 환경 원칙:** **로컬 학습 지양, Google Colab Cloud GPU (`remote exec`) 기본 적용 (`munhyoungdo@gmail.com`)**
 
 ---
 
-## 📅 오늘(2026-09-23) 작업 완료 요약 (Today's Executive Summary)
+## 📅 오늘(2026-09-27) 작업 완료 요약 (Today's Executive Summary)
+
+### 1. Cluster 4 (체내 클리어런스 & 반감기) SOTA 경신 & 생체 PBPK 파이프라인 완성
+- **마이크로솜 클리어런스 TDC 역대 SOTA 경신**: `clearance_microsome_az` **Spearman $\rho = \mathbf{0.6918}$** (기존 리더보드 최고치 $0.575$ 대비 **$+0.1168$ 도약 🏆**), Pearson $r = 0.6046$, MAE = $0.369$ ($\log_{10}$).
+- **체내 소실 반감기 안정 수렴**: `half_life_obach` **Spearman $\rho = \mathbf{0.5256}$**, Pearson $r = 0.5062$, MAE = $0.363$.
+- **전주기 생리학적 PBPK 시뮬레이션 엔진 구축**:
+  - `tdc_studio/pbpk/engine.py`: $CL_{\text{total}} = \frac{V_{dss} \cdot \ln 2}{t_{1/2}}$, 간 Well-Stirred 모델, 간 추출율($E_H$), IVIVE 스케일링 공식 수학적 정립.
+  - `tdc_studio/serving/pbpk_pipeline.py` & FastAPI `POST /predict/pbpk` 서빙 엔드포인트 연동 및 검증 완료.
+
+### 2. Cluster 5 (심장 안전성 및 치명적 독성 방어벽) SOTA 달성
+- **약물 유도 간독성(DILI) 압도적 SOTA**: **ROC-AUC = $\mathbf{0.9444}$** (목표 $\ge 0.82$ 대비 $+12.4\%$ 초과 달성 🏆).
+- **FDA 임상 독성 실패(ClinTox) 97.4% 완벽 방어**: **ROC-AUC = $\mathbf{0.9739}$** (골드 스탠다드).
+- **심장 독성(hERG Karim & Wang) 및 급성 경구 치사량(LD50)**:
+  - `herg_karim` ROC-AUC = **$0.8333$** (13.4k 대규모 데이터 융합).
+  - `herg` (Wang et al.) ROC-AUC = **$0.8330$** (Val 피크: $0.8471$).
+  - `ld50_zhu` **MAE = $\mathbf{0.4394}$** ($r = 0.5980$, 목표 $\le 0.584$ 초과 달성).
+
+### 3. 프로덕션 컨테이너화 & CI/CD & Model Registry 자동 동기화
+- **W&B Model Registry 자동 동기화 도구 구축**: `scripts/sync_wandb_models.py`를 통해 C2(분포), C3(CYP450), C4(클리어런스), C5(안전성) 최신 SOTA 체크포인트 자동 다운로드 및 `export_manifest.json` 생성.
+- **경량 Docker 컨테이너 및 CI 워크플로우**: `deploy/Dockerfile.serving`, `docker-compose.yml`, `.github/workflows/docker_build.yml` 구축.
+
+### 4. ADMETlab 3.0 대비 정밀 갭 분석 리포트 발행 & README 최신화
+- `docs/benchmarks/admetlab3_vs_tdc_studio_gap_analysis.md` 발행: 100% 엄격한 Bemis-Murcko Scaffold Split 기준으로 이미 압도한 태스크, 추가 개선 가능 태스크, 물리적 한계 태스크 분류 완료.
+- `README.md` 공식 벤치마크 및 PBPK 퀵스타트 최신화 완료.
+
+---
+
+## 📅 이전(2026-09-23) 작업 완료 요약 (Previous Summary)
 
 ### 1. 체내 분포(Cluster 2: PPBR / BBB / VDss / Lipophilicity) SOTA 돌파
 - **단일 모델 $R^2 \ge 0.50$ 최초 돌파**:
@@ -135,6 +162,35 @@
   - Astral `uv` 2단계 멀티스테이지 빌드 (Python 3.11-slim, OpenMP C-라이브러리 및 curl 헬스체크 탑재).
 - [x] **Task D-3: GitHub Actions Docker CI/CD 파이프라인 구축 (`.github/workflows/docker_build.yml`)**
   - PR/Push 시 Docker Buildx 캐시 기반 컨테이너 자동 빌드 및 무결성 검증.
+
+---
+
+## 🌅 내일(2026-09-28) 착수 예정 TODOLIST (Tomorrow's Action Packages)
+
+### 🥇 [Package 1: hERG & AMES 전용 안전성 챔피언 모델 구축 (Colab GPU: `munhyoungdo@gmail.com`)]
+- [ ] **Task E-1: hERG 2-Stage Fine-tuning 원격 Colab GPU 학습**
+  - 설정: [`configs/config_herg_standalone.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/ADMET/configs/config_herg_standalone.yaml)
+  - Stage 1: `herg_karim` (13,445개) 단독 백본 사전학습 (Hidden Dim 512, Dropout 0.2)
+  - Stage 2: `herg` (Wang et al., 648개) 저비율($0.1 \times \text{lr}$) 미세조정 및 헤드 적응
+  - 목표: `herg_karim` AUROC $\ge \mathbf{0.90}$, `herg` AUROC $\ge \mathbf{0.88} \sim \mathbf{0.90}$ 진입
+- [ ] **Task E-2: AMES 유전독성 구조 경보(Ashby-Tennant) 모듈 및 단독 모델 복구**
+  - Ashby-Tennant 100-dim 하위구조 경보 비트벡터 추출 모듈 구현 (`tdc_studio/features/structural_alerts.py`)
+  - Focal Loss ($\gamma=2.0$) 기반 단독 D-MPNN-Des / GBDT 파이프라인 구축 및 학습
+  - 목표: `ames` 돌연변이원성 AUROC $\mathbf{0.50} \to \ge \mathbf{0.86}$ 즉시 정상화
+
+### 🥈 [Package 2: 간세포 클리어런스 계단식 전이 & Lipo GBDT 스태킹]
+- [ ] **Task E-3: 간세포(Hepatocyte) 클리어런스 계단식 캐스케이딩(Cascaded Transfer)**
+  - 이미 $\rho = 0.6918$을 달성한 `clearance_microsome_az` 예측값을 `clearance_hepatocyte_az`의 사전 피처(Prior Feature)로 주입하는 2차 파이프라인 구성
+  - 목표: `clearance_hepatocyte_az` Spearman $\rho = 0.33 \to \ge \mathbf{0.45}$ 도약
+- [ ] **Task E-4: Lipophilicity AstraZeneca GBDT + ChemBERTa 스태킹**
+  - RDKit Crippen LogP, LabuteASA, pKa 특화 24-dim 모티프 결합 GBDT + ChemBERTa 언어모델 앙상블
+  - 목표: `lipophilicity` Test $R^2 = 0.7602 \to \ge \mathbf{0.85}$ 도약
+
+### 🥉 [Package 3: 전주기 Unified ADMET 통합 서빙 엔드포인트 구축]
+- [ ] **Task E-5: 통합 서빙 엔드포인트 `POST /predict/admet_full` 구현**
+  - Cluster 1(Caco2/Lipo), Cluster 2(PPBR/VDss/BBB), Cluster 3(CYP450 8-Head), Cluster 4(Clearance/Half-life/PBPK), Cluster 5(DILI/ClinTox/hERG/LD50)를 단일 프로세스에서 동시 로드
+  - 단일 SMILES 입력 시 22대 전주기 ADMET 예측치 및 PBPK PK 파라미터 일괄 반환
+- [ ] **Task E-6: 통합 서빙 E2E 테스트 및 Docker 컨테이너 엔드포인트 검증**
 
 ---
 

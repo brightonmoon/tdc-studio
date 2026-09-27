@@ -53,7 +53,11 @@ def sync_artifacts(
             cluster = "cluster_4_clearance"
         elif "cyp450" in run_name.lower():
             cluster = "cluster_3_cyp450"
-        elif "vdss" in run_name.lower() or "distribution" in run_name.lower() or "ppbr" in run_name.lower():
+        elif (
+            "vdss" in run_name.lower()
+            or "distribution" in run_name.lower()
+            or "ppbr" in run_name.lower()
+        ):
             cluster = "cluster_2_distribution"
         elif "toxicity" in run_name.lower() or "herg" in run_name.lower():
             cluster = "cluster_5_safety"
@@ -62,9 +66,13 @@ def sync_artifacts(
             continue
 
         artifacts = list(run.logged_artifacts())
-        logger.info("Run '%s' (%s) -> Cluster: %s, Artifacts: %d", run_name, run_id, cluster, len(artifacts))
+        logger.info(
+            "Run '%s' (%s) -> Cluster: %s, Artifacts: %d", run_name, run_id, cluster, len(artifacts)
+        )
 
-        if cluster not in cluster_models or run.created_at > cluster_models[cluster].get("created_at", ""):
+        if cluster not in cluster_models or run.created_at > cluster_models[cluster].get(
+            "created_at", ""
+        ):
             cluster_models[cluster] = {
                 "run_id": run_id,
                 "run_name": run_name,
@@ -79,7 +87,9 @@ def sync_artifacts(
                 target_art_dir.mkdir(parents=True, exist_ok=True)
                 try:
                     latest_art.download(root=str(target_art_dir))
-                    logger.info("Downloaded artifact '%s' to '%s'.", latest_art.name, target_art_dir)
+                    logger.info(
+                        "Downloaded artifact '%s' to '%s'.", latest_art.name, target_art_dir
+                    )
                 except Exception as e:
                     logger.warning("Could not download artifact '%s': %s", latest_art.name, e)
 

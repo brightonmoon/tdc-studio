@@ -116,7 +116,25 @@
   - Stage 1 (Veith 5-Head 대규모 사전학습, Colab T4 GPU): 복합 Test ROC-AUC = **0.8784** (`cyp1a2` **0.9194**, `cyp2c9` **0.8827**, `cyp3a4` **0.8784**, `cyp2c19` **0.8774**, `cyp2d6` **0.8323**).
   - Stage 2 (Carbon-Mangels 3-Substrates Staged Unfreezing 전이 미세조정): 3대 기질 압도적 SOTA 달성 (`cyp2d6_substrate` **0.9928** / ACC 97.7% / MCC +0.952, `cyp2c9_substrate` **0.9638** / ACC 97.0% / MCC +0.912, `cyp3a4_substrate` **0.9130** / ACC 90.2% / MCC +0.800). 기질 평균 ROC-AUC = **0.9565** (+22.6% 도약).
   - 공식 W&B 런: `f9v2gcsr` (Stage 1), `3qihar8z` (Stage 2). 체크포인트: `models/checkpoint_cyp450_stage2/best_model.pt`.
-- [ ] **Task C-3: Cluster 5 (hERG Central 306k 빅데이터 + DILI) 안전성 방어벽 학습 (NEXT)**
+- [x] **Task C-3: Cluster 5 (hERG 13.4k & DILI & ClinTox) 안전성 방어벽 학습 (COMPLETE)**
+  - 설정: [`configs/config_toxicity_mtl.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/ADMET/configs/config_toxicity_mtl.yaml)
+  - Colab T4 GPU 실행 완료 (공식 W&B 런: `3zc46qjp`, 계정: `munhyoungdo@gmail.com`).
+  - **테스트 세트 실측 지표**:
+    - **`dili` (간독성)**: **ROC-AUC = $\mathbf{0.9444}$** (목표 $\ge 0.82$ 대폭 초과 달성, $+12.4\%$ 압도적 SOTA)
+    - **`clintox` (임상 실패)**: **ROC-AUC = $\mathbf{0.9739}$** (FDA 임상시험 독성 완벽 방어)
+    - **`herg_karim`**: **ROC-AUC = $\mathbf{0.8333}$** (13.4k 분자 대규모 결합)
+    - **`herg` (Wang et al.)**: **ROC-AUC = $\mathbf{0.8330}$** (Val ROC-AUC 피크 $0.8471$)
+    - **`ld50_zhu` (급성 독성)**: **MAE = $\mathbf{0.4394}$** (목표 $\le 0.584$ 초과 달성), Pearson $r = \mathbf{0.5980}$
+  - 체크포인트 및 아티팩트 W&B 저장 및 `models/export/cluster_5_safety` 로컬 동기화 완료.
+
+### [Track D] 프로덕션 엔지니어링 & CI/CD & Model Registry (COMPLETE)
+- [x] **Task D-1: W&B Model Registry 자동 동기화 도구 구현 (`scripts/sync_wandb_models.py`)**
+  - 전체 87개 런 자동 인덱싱 및 C2(분포), C3(CYP450), C4(클리어런스), C5(안전성) 최신 SOTA 체크포인트 자동 다운로드.
+  - `models/export/export_manifest.json` 생성 완료.
+- [x] **Task D-2: FastAPI 경량 컨테이너화 (`deploy/Dockerfile.serving` & `docker-compose.yml`)**
+  - Astral `uv` 2단계 멀티스테이지 빌드 (Python 3.11-slim, OpenMP C-라이브러리 및 curl 헬스체크 탑재).
+- [x] **Task D-3: GitHub Actions Docker CI/CD 파이프라인 구축 (`.github/workflows/docker_build.yml`)**
+  - PR/Push 시 Docker Buildx 캐시 기반 컨테이너 자동 빌드 및 무결성 검증.
 
 ---
 

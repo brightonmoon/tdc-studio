@@ -17,15 +17,17 @@ RUN uv pip install --no-cache --system --target=/install .
 FROM python:3.11-slim AS runtime
 WORKDIR /app
 
-# RDKit and system C-libraries (libgomp1 is critical for OpenMP)
+# RDKit and system C-libraries (libgomp1 is critical for OpenMP, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libxrender1 \
     libxext6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local/lib/python3.11/site-packages
 COPY tdc_studio/ /app/tdc_studio/
+COPY api.py /app/api.py
 COPY deploy/entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh

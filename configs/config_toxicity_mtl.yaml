@@ -13,22 +13,25 @@ data:
     - name: herg
       category: tox
       type: binary_classification
-    - name: ld50_zhu
+    - name: herg_karim
       category: tox
-      type: regression
+      type: binary_classification
     - name: dili
       category: tox
       type: binary_classification
     - name: ames
       category: tox
       type: binary_classification
+    - name: ld50_zhu
+      category: tox
+      type: regression
+    - name: clintox
+      category: tox
+      type: binary_classification
     - name: skin_reaction
       category: tox
       type: binary_classification
     - name: carcinogens_lagunin
-      category: tox
-      type: binary_classification
-    - name: clintox
       category: tox
       type: binary_classification
 
@@ -44,29 +47,33 @@ model:
   tasks:
     - name: herg
       type: binary_classification
-    - name: ld50_zhu
-      type: regression
+    - name: herg_karim
+      type: binary_classification
     - name: dili
       type: binary_classification
     - name: ames
+      type: binary_classification
+    - name: ld50_zhu
+      type: regression
+    - name: clintox
       type: binary_classification
     - name: skin_reaction
       type: binary_classification
     - name: carcinogens_lagunin
       type: binary_classification
-    - name: clintox
-      type: binary_classification
   task_weights:
     herg: 2.0
-    ld50_zhu: 1.0
-    dili: 2.0
+    herg_karim: 1.5
+    dili: 2.5
     ames: 1.0
-    skin_reaction: 1.0
-    carcinogens_lagunin: 1.0
+    ld50_zhu: 0.8
     clintox: 1.0
+    skin_reaction: 0.8
+    carcinogens_lagunin: 0.8
   use_uncertainty: true
 
 lr: 0.0006
+min_lr: 1.0e-6
 weight_decay: 1.0e-5
 max_epochs: 60
 early_stopping: 20

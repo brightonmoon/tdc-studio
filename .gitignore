@@ -28,7 +28,7 @@ models/checkpoint*/
 !data/external/
 
 # Temporary logs & notebooks
-scratch/*.json
+scratch/
 **/.temp_colab/
 *.log
 tdc_colab*.ipynb

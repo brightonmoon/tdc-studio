@@ -3,13 +3,13 @@
 # ============================================================
 # Target Evaluation: BindingDB_Kd on Cold Drug Split
 # Phase C Targets:
-#   - Primary Metric: Cold-Drug CI >= 0.76 (Phase B baseline: 0.7464)
-#   - Secondary Metric: Cold-Drug MSE <= 0.65 (Phase B baseline: 0.6609)
+#   - Primary Metric: Cold-Drug CI >= 0.77 ~ 0.78 (Phase B baseline: 0.7464, Phase C Opt A: 0.7659)
+#   - Secondary Metric: Cold-Drug MSE <= 0.55 (Phase B baseline: 0.6609, Phase C Opt A: 0.5780)
 #
 # Innovations:
-#   - Fusion: Bidirectional Multi-Head Cross-Attention (Atom-Residue contact modeling + XAI)
-#   - Drug Encoder: ChemBERTa-77M-MTR with Staged Top-2 Layer Unfreezing
-#   - Target Encoder: facebook/esm2_t12_35M_UR50D with High-Speed In-Memory Embedding Cache
+#   - Task F-1: Bidirectional Multi-Head Cross-Attention (Atom-Residue 2D contact modeling + XAI)
+#   - Task F-2: ChemBERTa-77M-MTR with Staged Top-2 Layer Unfreezing (LR 2.0e-6, Weight Decay 0.05, Warmup 6 epochs)
+#   - Task F-3: Multi-Affinity Multi-Task Ready Architecture
 # ============================================================
 
 task: dti
@@ -35,6 +35,7 @@ model:
     max_length: 256
     pooling: mean
     freeze_backbone: true   # Initially frozen for Stage 1 warmup
+    return_sequence: false  # Pooled representation for robust training
     dropout: 0.1
 
   target_encoder:
@@ -44,7 +45,8 @@ model:
     out_dim: 256
     max_length: 1024
     pooling: mean
-    freeze_backbone: true   # Kept frozen to exploit 30x in-memory cache
+    freeze_backbone: true   # Kept frozen to exploit CPU RAM cache
+    return_sequence: false  # Pooled representation for robust training
     gradient_checkpointing: false
     dropout: 0.1
 
@@ -54,7 +56,7 @@ model:
     target_dim: 256
     hidden_dim: 256
     num_heads: 4
-    dropout: 0.1
+    dropout: 0.15
     out_dim: 1
 
   use_domain_adaptation: false
@@ -62,21 +64,22 @@ model:
 # ── Training & Staged Fine-Tuning ─────────────────────────
 training:
   batch_size: 32            # Optimal for Colab T4 16GB
-  max_epochs: 15
-  learning_rate: 1.0e-4
+  max_epochs: 14
+  learning_rate: 1.0e-4     # Head LR for Stage 1 convergence
   weight_decay: 1.0e-4
   optimizer: adamw
   scheduler: cosine
-  warmup_epochs: 2
+  warmup_epochs: 2          # 2 epochs warmup for head
   gradient_clip_val: 1.0
-  early_stopping_patience: 6
+  early_stopping_patience: 12
   early_stopping_metric: val_ci
 
 staged_training:
-  stage1_epochs: 15           # Option A: Train CrossAttention head for 15 epochs with frozen ChemBERTa
-  stage2_unfreeze_layers: 2   # Option B (Backlog): Unfreeze top 2 RoBERTa transformer layers
-  stage2_backbone_lr: 1.0e-5  # Delicate learning rate for pretrained backbone
-  stage2_head_lr: 5.0e-5      # Adapted LR for head in Stage 2
+  stage1_epochs: 11          # Epochs 1..11: Train CrossAttention head to peak convergence
+  stage2_unfreeze_layers: 2  # Task F-2: Unfreeze top 2 RoBERTa transformer layers
+  stage2_backbone_lr: 1.0e-6 # Task F-2: Delicate discriminative LR
+  stage2_head_lr: 5.0e-5     # Adapted LR for head in Stage 2
+  stage2_weight_decay: 0.05  # Task F-2: Enhanced regularization for backbone
 
 # ── Evaluation ────────────────────────────────────────────
 evaluation:
@@ -84,18 +87,18 @@ evaluation:
   secondary_metrics: [mse, rmse, pearson]
   reference_split: cold_drug
   target_thresholds:
-    ci: 0.76                  # Target >= 0.76
-    mse: 0.65                 # Target <= 0.65
+    ci: 0.77                  # Target >= 0.77 ~ 0.78
+    mse: 0.55                 # Target <= 0.55
 
 # ── Tracking ──────────────────────────────────────────────
 tracking:
   project: tdc-studio-dti
-  run_name: phase_c_cross_attention_staged_finetuning
-  tags: [dti, cold_drug, phase_c, cross_attention, xai, staged_finetuning]
+  run_name: phase_c_cross_attention_staged_finetuning_f1_f2
+  tags: [dti, cold_drug, phase_c, cross_attention, xai, staged_finetuning, contact_map]
   log_every_n_steps: 10
 
 # ── Export ────────────────────────────────────────────────
 export:
-  save_dir: models/dti/phase_c
+  save_dir: models/dti/phase_c_adv
   formats: [pytorch]
   checkpoint_name: best_model.pt

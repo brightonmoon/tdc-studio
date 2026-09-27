@@ -52,6 +52,7 @@ class ChemBERTaEncoder(nn.Module):
         self.max_length = cfg.get("max_length", 256)
         self.pooling = cfg.get("pooling", "mean")
         self.freeze_backbone = cfg.get("freeze_backbone", False)
+        self.return_sequence = cfg.get("return_sequence", False)
         dropout = cfg.get("dropout", 0.1)
 
         # Load HuggingFace tokenizer and transformer body
@@ -94,9 +95,7 @@ class ChemBERTaEncoder(nn.Module):
                 for param in self.model.pooler.parameters():
                     param.requires_grad = True
             # Unfreeze last N encoder layers
-            encoder_layers = getattr(
-                getattr(self.model, "encoder", None), "layer", None
-            )
+            encoder_layers = getattr(getattr(self.model, "encoder", None), "layer", None)
             if encoder_layers is not None:
                 for layer in encoder_layers[-last_n_layers:]:
                     for param in layer.parameters():
@@ -107,23 +106,30 @@ class ChemBERTaEncoder(nn.Module):
         self, last_hidden_state: torch.Tensor, attention_mask: torch.Tensor
     ) -> torch.Tensor:
         """Compute masked mean pooling over non-padding tokens."""
-        input_mask_expanded = (
-            attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-        )
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
         sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, dim=1)
         sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
         return sum_embeddings / sum_mask
 
-    def encode_smiles(self, smiles_list: List[str], device: torch.device) -> torch.Tensor:
+    def encode_smiles(
+        self,
+        smiles_list: List[str],
+        device: torch.device,
+        return_sequence: Optional[bool] = None,
+    ) -> torch.Tensor:
         """Tokenize and encode a list of SMILES strings.
 
         Args:
             smiles_list: List of valid SMILES strings.
             device: Target torch device.
+            return_sequence: If True, returns full token sequence [B, L, out_dim].
 
         Returns:
-            FloatTensor [B, out_dim]
+            FloatTensor [B, out_dim] or [B, L, out_dim]
         """
+        if return_sequence is None:
+            return_sequence = self.return_sequence
+
         # Sanitize empty strings
         clean_smiles = [s if (s and isinstance(s, str)) else "C" for s in smiles_list]
 
@@ -139,6 +145,11 @@ class ChemBERTaEncoder(nn.Module):
 
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
+        if return_sequence:
+            # Full token-level representation projected to out_dim (zero-out padding tokens)
+            proj_seq = self.proj(outputs.last_hidden_state)
+            return proj_seq * attention_mask.unsqueeze(-1).float()
+
         if self.pooling == "cls":
             # Extract [CLS] / <s> token representation
             pooled = outputs.last_hidden_state[:, 0, :]
@@ -147,12 +158,13 @@ class ChemBERTaEncoder(nn.Module):
 
         return self.proj(pooled)
 
-    def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def extract_features(
+        self, batch: Dict[str, Any], return_sequence: Optional[bool] = None
+    ) -> torch.Tensor:
         """Extract drug features from batch dict (matching GraphDTAModel interface).
 
         Reads `batch["drug_smiles_str"]` or fallbacks to SMILES strings.
         """
-        # Determine device from parameters or projection layer
         device = next(self.parameters()).device
 
         if "drug_smiles_str" in batch:
@@ -167,11 +179,13 @@ class ChemBERTaEncoder(nn.Module):
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]
 
-        return self.encode_smiles(smiles_list, device=device)
+        return self.encode_smiles(smiles_list, device=device, return_sequence=return_sequence)
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def forward(
+        self, batch: Dict[str, Any], return_sequence: Optional[bool] = None
+    ) -> torch.Tensor:
         """Standard forward pass delegating to extract_features."""
-        return self.extract_features(batch)
+        return self.extract_features(batch, return_sequence=return_sequence)
 
 
 @MODELS.register("esm2_encoder")
@@ -207,6 +221,7 @@ class ESM2Encoder(nn.Module):
         self.pooling = cfg.get("pooling", "mean")
         self.freeze_backbone = cfg.get("freeze_backbone", True)
         self.use_grad_ckpt = cfg.get("gradient_checkpointing", False)
+        self.return_sequence = cfg.get("return_sequence", False)
         dropout = cfg.get("dropout", 0.1)
 
         # Load HuggingFace tokenizer and ESM model
@@ -251,9 +266,7 @@ class ESM2Encoder(nn.Module):
                 param.requires_grad = True
         else:
             self.freeze()
-            encoder_layers = getattr(
-                getattr(self.model, "encoder", None), "layer", None
-            )
+            encoder_layers = getattr(getattr(self.model, "encoder", None), "layer", None)
             if encoder_layers is not None:
                 for layer in encoder_layers[-last_n_layers:]:
                     for param in layer.parameters():
@@ -264,33 +277,104 @@ class ESM2Encoder(nn.Module):
         self, last_hidden_state: torch.Tensor, attention_mask: torch.Tensor
     ) -> torch.Tensor:
         """Compute masked mean pooling over non-padding AA residues."""
-        input_mask_expanded = (
-            attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-        )
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
         sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, dim=1)
         sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
         return sum_embeddings / sum_mask
 
-    def encode_sequences(self, seq_list: List[str], device: torch.device) -> torch.Tensor:
+    def encode_sequences(
+        self,
+        seq_list: List[str],
+        device: torch.device,
+        return_sequence: Optional[bool] = None,
+    ) -> torch.Tensor:
         """Tokenize and encode amino acid sequences using ESM-2.
 
         Args:
             seq_list: List of amino acid sequence strings.
             device: Target torch device.
+            return_sequence: If True, returns full token representation [B, L, out_dim].
 
         Returns:
-            FloatTensor [B, out_dim]
+            FloatTensor [B, out_dim] or [B, L, out_dim]
         """
+        if return_sequence is None:
+            return_sequence = self.return_sequence
+
         clean_seqs = [s if (s and isinstance(s, str)) else "A" for s in seq_list]
 
+        if return_sequence:
+            if self.freeze_backbone:
+                missing_indices = []
+                missing_seqs = []
+                seq_tensors: List[Optional[torch.Tensor]] = [None] * len(clean_seqs)
+
+                for idx, seq in enumerate(clean_seqs):
+                    cache_key = f"seq_{seq}"
+                    if cache_key in self._embedding_cache:
+                        seq_tensors[idx] = self._embedding_cache[cache_key].to(device)
+                    else:
+                        missing_indices.append(idx)
+                        missing_seqs.append(seq)
+
+                if missing_seqs:
+                    encoded = self.tokenizer(
+                        missing_seqs,
+                        padding=True,
+                        truncation=True,
+                        max_length=self.max_length,
+                        return_tensors="pt",
+                    )
+                    input_ids = encoded["input_ids"].to(device)
+                    attention_mask = encoded["attention_mask"].to(device)
+
+                    with torch.no_grad():
+                        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                        raw_hidden = outputs.last_hidden_state
+
+                    for i, orig_idx in enumerate(missing_indices):
+                        act_len = int(attention_mask[i].sum().item())
+                        # Store unpadded raw hidden state tokens on CPU in half precision
+                        s_vec = raw_hidden[i, :act_len, :].detach().cpu().half()
+                        self._embedding_cache[f"seq_{clean_seqs[orig_idx]}"] = s_vec
+                        seq_tensors[orig_idx] = s_vec.to(device).float()
+
+                # Pad sequences across the batch dimension and apply projection
+                valid_seqs = [
+                    s.float() if s.dtype != torch.float32 else s
+                    for s in seq_tensors
+                    if s is not None
+                ]
+                padded = torch.nn.utils.rnn.pad_sequence(valid_seqs, batch_first=True)
+                proj_seq = self.proj(padded)
+                # Keep padding positions strictly zeroed out
+                pad_mask = (padded.abs().sum(dim=-1, keepdim=True) > 0).float()
+                return proj_seq * pad_mask
+            else:
+                encoded = self.tokenizer(
+                    clean_seqs,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt",
+                )
+                input_ids = encoded["input_ids"].to(device)
+                attention_mask = encoded["attention_mask"].to(device)
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                proj_seq = self.proj(outputs.last_hidden_state)
+                return proj_seq * attention_mask.unsqueeze(-1).float()
+
+        # Pooled vector extraction [B, out_dim]
         if self.freeze_backbone:
-            # High-performance caching: lookup already encoded protein representations
             missing_indices = []
             missing_seqs = []
             pooled_list: List[Optional[torch.Tensor]] = [None] * len(clean_seqs)
 
             for idx, seq in enumerate(clean_seqs):
-                if seq in self._embedding_cache:
+                cache_key = f"pool_{seq}"
+                if cache_key in self._embedding_cache:
+                    pooled_list[idx] = self._embedding_cache[cache_key].to(device)
+                elif seq in self._embedding_cache:
                     pooled_list[idx] = self._embedding_cache[seq].to(device)
                 else:
                     missing_indices.append(idx)
@@ -312,12 +396,14 @@ class ESM2Encoder(nn.Module):
                     if self.pooling == "bos":
                         missing_pooled = outputs.last_hidden_state[:, 0, :]
                     else:
-                        missing_pooled = self._mean_pooling(outputs.last_hidden_state, attention_mask)
+                        missing_pooled = self._mean_pooling(
+                            outputs.last_hidden_state, attention_mask
+                        )
 
                 for i, orig_idx in enumerate(missing_indices):
                     p_vec = missing_pooled[i].detach()
                     # Cache representation on CPU to avoid GPU VRAM buildup
-                    self._embedding_cache[clean_seqs[orig_idx]] = p_vec.cpu()
+                    self._embedding_cache[f"pool_{clean_seqs[orig_idx]}"] = p_vec.cpu()
                     pooled_list[orig_idx] = p_vec
 
             pooled = torch.stack([p for p in pooled_list if p is not None], dim=0)
@@ -341,7 +427,9 @@ class ESM2Encoder(nn.Module):
 
         return self.proj(pooled)
 
-    def encode_sequence(self, seq_input: Any) -> torch.Tensor:
+    def encode_sequence(
+        self, seq_input: Any, return_sequence: Optional[bool] = None
+    ) -> torch.Tensor:
         """Encode sequence input, maintaining backward compatibility with ProteinCNNEncoder.
 
         Supports:
@@ -352,22 +440,28 @@ class ESM2Encoder(nn.Module):
         device = next(self.parameters()).device
 
         if isinstance(seq_input, dict):
-            return self.extract_features(seq_input)
+            return self.extract_features(seq_input, return_sequence=return_sequence)
 
         if isinstance(seq_input, (list, tuple)):
-            return self.encode_sequences(list(seq_input), device=device)
+            return self.encode_sequences(
+                list(seq_input), device=device, return_sequence=return_sequence
+            )
 
         if isinstance(seq_input, torch.Tensor):
             # Decode tokenized tensor back to AA string list
             seq_list = [self._aa_tokenizer_fallback.decode(row) for row in seq_input]
-            return self.encode_sequences(seq_list, device=device)
+            return self.encode_sequences(seq_list, device=device, return_sequence=return_sequence)
 
         if isinstance(seq_input, str):
-            return self.encode_sequences([seq_input], device=device)
+            return self.encode_sequences(
+                [seq_input], device=device, return_sequence=return_sequence
+            )
 
         raise TypeError(f"Unsupported sequence input type for ESM2Encoder: {type(seq_input)}")
 
-    def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def extract_features(
+        self, batch: Dict[str, Any], return_sequence: Optional[bool] = None
+    ) -> torch.Tensor:
         """Extract protein features from batch dict."""
         device = next(self.parameters()).device
 
@@ -375,15 +469,15 @@ class ESM2Encoder(nn.Module):
             seq_list = batch["target_seq_str"]
             if isinstance(seq_list, str):
                 seq_list = [seq_list]
-            return self.encode_sequences(seq_list, device=device)
+            return self.encode_sequences(seq_list, device=device, return_sequence=return_sequence)
 
         if "target_seq" in batch:
-            return self.encode_sequence(batch["target_seq"])
+            return self.encode_sequence(batch["target_seq"], return_sequence=return_sequence)
 
-        raise KeyError(
-            "Batch does not contain 'target_seq_str' or 'target_seq' for ESM2Encoder."
-        )
+        raise KeyError("Batch does not contain 'target_seq_str' or 'target_seq' for ESM2Encoder.")
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def forward(
+        self, batch: Dict[str, Any], return_sequence: Optional[bool] = None
+    ) -> torch.Tensor:
         """Standard forward pass."""
-        return self.extract_features(batch)
+        return self.extract_features(batch, return_sequence=return_sequence)

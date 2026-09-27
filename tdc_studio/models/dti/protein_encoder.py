@@ -41,24 +41,22 @@ class ProteinCNNEncoder(nn.Module):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
-        embed_dim   = config.get("embed_dim",   128)
+        embed_dim = config.get("embed_dim", 128)
         num_filters = config.get("num_filters", 256)
-        out_dim     = config.get("out_dim",     256)
-        dropout     = config.get("dropout",     0.1)
+        out_dim = config.get("out_dim", 256)
+        dropout = config.get("dropout", 0.1)
 
         self.out_dim = out_dim
 
         # Embedding: maps AA token IDs → dense vectors (padding_idx=0 → zero grad)
-        self.embedding = nn.Embedding(
-            self.VOCAB_SIZE, embed_dim, padding_idx=0
-        )
+        self.embedding = nn.Embedding(self.VOCAB_SIZE, embed_dim, padding_idx=0)
 
         # Three parallel 1D convolutions at different receptive fields:
         #   k=4  → dipeptide-level patterns (e.g. turn motifs)
         #   k=8  → short helical repeats
         #   k=12 → beta-strand / longer motifs
-        self.conv4  = nn.Conv1d(embed_dim, num_filters, kernel_size=4,  padding=0)
-        self.conv8  = nn.Conv1d(embed_dim, num_filters, kernel_size=8,  padding=0)
+        self.conv4 = nn.Conv1d(embed_dim, num_filters, kernel_size=4, padding=0)
+        self.conv8 = nn.Conv1d(embed_dim, num_filters, kernel_size=8, padding=0)
         self.conv12 = nn.Conv1d(embed_dim, num_filters, kernel_size=12, padding=0)
 
         # Project concatenated multi-scale features → unified protein representation
@@ -82,11 +80,11 @@ class ProteinCNNEncoder(nn.Module):
 
         # Convolve + global max-pool: each → [B, num_filters]
         def _conv_pool(conv: nn.Conv1d, h: torch.Tensor) -> torch.Tensor:
-            out = F.relu(conv(h))                            # [B, num_filters, L']
-            return F.max_pool1d(out, out.size(2)).squeeze(2) # [B, num_filters]
+            out = F.relu(conv(h))  # [B, num_filters, L']
+            return F.max_pool1d(out, out.size(2)).squeeze(2)  # [B, num_filters]
 
-        h4  = _conv_pool(self.conv4,  x)
-        h8  = _conv_pool(self.conv8,  x)
+        h4 = _conv_pool(self.conv4, x)
+        h8 = _conv_pool(self.conv8, x)
         h12 = _conv_pool(self.conv12, x)
 
         # Concatenate all scales → [B, num_filters * 3]

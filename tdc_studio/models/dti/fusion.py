@@ -10,7 +10,7 @@ Design rationale:
 - Registered as "bilinear" in MODELS registry for YAML-driven config.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -39,11 +39,11 @@ class BilinearAttentionFusion(nn.Module):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
-        drug_dim   = config.get("drug_dim",   256)
+        drug_dim = config.get("drug_dim", 256)
         target_dim = config.get("target_dim", 256)
         hidden_dim = config.get("hidden_dim", 512)
-        dropout    = config.get("dropout",    0.2)
-        out_dim    = config.get("out_dim",    1)
+        dropout = config.get("dropout", 0.2)
+        out_dim = config.get("out_dim", 1)
 
         # Bilinear layer: h_drug^T W h_target → hidden_dim
         # Unlike Concat + Linear, this allows cross-modal feature interaction
@@ -75,7 +75,7 @@ class BilinearAttentionFusion(nn.Module):
             FloatTensor [B, 1] — predicted affinity (normalised Kd/Ki/etc.).
         """
         interaction = self.bilinear(h_drug, h_target)  # [B, hidden_dim]
-        return self.head(interaction)                   # [B, out_dim]
+        return self.head(interaction)  # [B, out_dim]
 
 
 @MODELS.register("cross_attention_fusion")
@@ -172,23 +172,37 @@ class CrossAttentionFusion(nn.Module):
         h_drug: torch.Tensor,
         h_target: torch.Tensor,
         return_attention: bool = False,
+        drug_padding_mask: Optional[torch.Tensor] = None,
+        target_padding_mask: Optional[torch.Tensor] = None,
     ) -> Any:
         """Predict binding affinity with bidirectional cross-attention.
 
         Args:
-            h_drug          : FloatTensor [B, drug_dim] or [B, L_drug, drug_dim]
-            h_target        : FloatTensor [B, target_dim] or [B, L_target, target_dim]
-            return_attention: If True, returns (affinity, attention_dict)
+            h_drug              : FloatTensor [B, drug_dim] or [B, L_drug, drug_dim]
+            h_target            : FloatTensor [B, target_dim] or [B, L_target, target_dim]
+            return_attention    : If True, returns (affinity, attention_dict)
+            drug_padding_mask   : Optional Byte/Bool tensor [B, L_drug] (True for padding)
+            target_padding_mask : Optional Byte/Bool tensor [B, L_target] (True for padding)
 
         Returns:
             affinity: FloatTensor [B, out_dim]
-            (optional) attention_dict: {"attn_d2t": Tensor, "attn_t2d": Tensor}
+            (optional) attention_dict: {
+                "attn_d2t": Tensor,
+                "attn_t2d": Tensor,
+                "contact_map": Tensor [B, L_drug, L_target]
+            }
         """
         # Ensure 3D sequence tensors [B, L, D]
         if h_drug.dim() == 2:
             h_drug = h_drug.unsqueeze(1)  # [B, 1, D_drug]
         if h_target.dim() == 2:
             h_target = h_target.unsqueeze(1)  # [B, 1, D_target]
+
+        # Auto-detect padding masks if not explicitly provided
+        if drug_padding_mask is None and h_drug.size(1) > 1:
+            drug_padding_mask = h_drug.abs().sum(dim=-1) < 1e-5
+        if target_padding_mask is None and h_target.size(1) > 1:
+            target_padding_mask = h_target.abs().sum(dim=-1) < 1e-5
 
         d_proj = self.norm_drug(self.proj_drug(h_drug))
         t_proj = self.norm_target(self.proj_target(h_target))
@@ -198,6 +212,9 @@ class CrossAttentionFusion(nn.Module):
             query=d_proj,
             key=t_proj,
             value=t_proj,
+            key_padding_mask=target_padding_mask
+            if (target_padding_mask is not None and target_padding_mask.any())
+            else None,
             need_weights=return_attention,
             average_attn_weights=False if return_attention else True,
         )
@@ -209,23 +226,43 @@ class CrossAttentionFusion(nn.Module):
             query=t_proj,
             key=d_proj,
             value=d_proj,
+            key_padding_mask=drug_padding_mask
+            if (drug_padding_mask is not None and drug_padding_mask.any())
+            else None,
             need_weights=return_attention,
             average_attn_weights=False if return_attention else True,
         )
         t_inter = self.post_norm_t(t_proj + t_cross)
         t_out = self.final_norm_t(t_inter + self.ffn_t(t_inter))
 
-        # Pool sequences across token dimension
-        d_pooled = d_out.mean(dim=1)  # [B, hidden_dim]
-        t_pooled = t_out.mean(dim=1)  # [B, hidden_dim]
+        # Masked pooling across token dimension (strictly exclude padding noise)
+        if drug_padding_mask is not None and drug_padding_mask.any():
+            d_mask = (~drug_padding_mask).unsqueeze(-1).float()
+            d_pooled = (d_out * d_mask).sum(dim=1) / d_mask.sum(dim=1).clamp(min=1.0)
+        else:
+            d_pooled = d_out.mean(dim=1)  # [B, hidden_dim]
+
+        if target_padding_mask is not None and target_padding_mask.any():
+            t_mask = (~target_padding_mask).unsqueeze(-1).float()
+            t_pooled = (t_out * t_mask).sum(dim=1) / t_mask.sum(dim=1).clamp(min=1.0)
+        else:
+            t_pooled = t_out.mean(dim=1)  # [B, hidden_dim]
 
         fused = torch.cat([d_pooled, t_pooled], dim=-1)  # [B, hidden_dim * 2]
         affinity = self.head(fused)  # [B, out_dim]
 
         if return_attention:
+            contact_map = (
+                attn_d2t.mean(dim=1) if (attn_d2t is not None and attn_d2t.dim() == 4) else attn_d2t
+            )
+            if contact_map is not None:
+                if drug_padding_mask is not None and drug_padding_mask.any():
+                    contact_map = contact_map * (~drug_padding_mask).unsqueeze(-1).float()
+                if target_padding_mask is not None and target_padding_mask.any():
+                    contact_map = contact_map * (~target_padding_mask).unsqueeze(1).float()
             return affinity, {
                 "attn_d2t": attn_d2t,
                 "attn_t2d": attn_t2d,
+                "contact_map": contact_map,
             }
         return affinity
-

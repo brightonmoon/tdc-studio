@@ -1,0 +1,6 @@
+{
+  "y_mean": 7.276469095351765,
+  "y_std": 3.0118914330714577,
+  "log_transform": true,
+  "dataset_name": "BindingDB_Kd"
+}

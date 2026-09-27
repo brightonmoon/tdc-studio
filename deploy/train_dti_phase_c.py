@@ -57,12 +57,16 @@ from tdc_studio.models.dti.dta_model import GraphDTAModel
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train DTI Phase C Cross-Attention Model on Colab")
-    parser.add_argument("--config", type=str, default="configs/config_dti_phase_c.yaml", help="Path to config YAML")
+    parser.add_argument(
+        "--config", type=str, default="configs/config_dti_phase_c.yaml", help="Path to config YAML"
+    )
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
-    parser.add_argument("--output-dir", type=str, default="models/dti/phase_c", help="Dir to save best checkpoint")
-    parser.add_argument("--stage2-epoch", type=int, default=None, help="Epoch to start Stage 2 unfreezing")
+    parser.add_argument("--output-dir", type=str, default=None, help="Dir to save best checkpoint")
+    parser.add_argument(
+        "--stage2-epoch", type=int, default=None, help="Epoch to start Stage 2 unfreezing"
+    )
     return parser.parse_args()
 
 
@@ -93,14 +97,18 @@ def main():
     base_lr = args.lr or float(cfg.get("training", {}).get("learning_rate", 1.0e-4))
     weight_decay = float(cfg.get("training", {}).get("weight_decay", 1.0e-4))
     patience = int(cfg.get("training", {}).get("early_stopping_patience", 6))
-    output_dir = Path(args.output_dir)
+    warmup_epochs = int(cfg.get("training", {}).get("warmup_epochs", 2))
+    output_dir = Path(
+        args.output_dir or cfg.get("export", {}).get("save_dir", "models/dti/phase_c_adv")
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     staged_cfg = cfg.get("staged_training", {})
-    stage1_epochs = args.stage2_epoch or staged_cfg.get("stage1_epochs", 3)
+    stage1_epochs = args.stage2_epoch or staged_cfg.get("stage1_epochs", 6)
     stage2_unfreeze_layers = staged_cfg.get("stage2_unfreeze_layers", 2)
-    stage2_backbone_lr = float(staged_cfg.get("stage2_backbone_lr", 1.0e-5))
+    stage2_backbone_lr = float(staged_cfg.get("stage2_backbone_lr", 2.0e-6))
     stage2_head_lr = float(staged_cfg.get("stage2_head_lr", 5.0e-5))
+    stage2_weight_decay = float(staged_cfg.get("stage2_weight_decay", 0.05))
 
     # 2. DataModule Setup
     print("\n[Step 1] Loading BindingDB_Kd Cold-Drug Split...")
@@ -143,7 +151,9 @@ def main():
         lr=base_lr,
         weight_decay=weight_decay,
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-6)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max_epochs, eta_min=1e-6
+    )
     scaler = torch.cuda.amp.GradScaler(enabled=torch.cuda.is_available())
     evaluator = TherapeuticsEvaluator(task_type="dta")
 
@@ -160,20 +170,50 @@ def main():
         # Check for Stage 2 Transition
         if epoch == stage1_epochs + 1 and hasattr(model.drug_encoder, "unfreeze"):
             print(f"\n  ★ [Stage 2] Unfreezing ChemBERTa top {stage2_unfreeze_layers} layers!")
-            model.drug_encoder.unfreeze(last_n_layers=stage2_unfreeze_layers)
+            print(
+                f"      Backbone LR: {stage2_backbone_lr:.2e}, Weight Decay: {stage2_weight_decay}"
+            )
+            print(f"      Head LR    : {stage2_head_lr:.2e}, Weight Decay: {weight_decay}")
 
-            # Differential learning rate
-            optimizer = torch.optim.AdamW(
-                [
-                    {"params": model.drug_encoder.parameters(), "lr": stage2_backbone_lr},
-                    {"params": model.fusion.parameters(), "lr": stage2_head_lr},
-                    {"params": model.target_encoder.proj.parameters(), "lr": stage2_head_lr},
-                ],
-                weight_decay=weight_decay,
-            )
+            # Reload best Stage 1 checkpoint before fine-tuning backbone
+            best_ckpt_path = output_dir / "best_model.pt"
+            if best_ckpt_path.is_file():
+                print(f"  ★ Reloading best Stage 1 checkpoint from {best_ckpt_path}...")
+                ckpt = torch.load(best_ckpt_path, map_location=device)
+                model.load_state_dict(
+                    ckpt["model_state_dict"]
+                    if isinstance(ckpt, dict) and "model_state_dict" in ckpt
+                    else ckpt
+                )
+
+            model.drug_encoder.unfreeze(last_n_layers=stage2_unfreeze_layers)
+            patience_counter = 0  # Reset early stopping counter for Stage 2 adaptation
+
+            # Only add newly unfrozen parameters that are not already in optimizer (strictly disjoint)
+            existing_params = {p for pg in optimizer.param_groups for p in pg["params"]}
+            new_params = [
+                p
+                for p in model.drug_encoder.parameters()
+                if p.requires_grad and p not in existing_params
+            ]
+            if new_params:
+                optimizer.add_param_group(
+                    {
+                        "params": new_params,
+                        "lr": stage2_backbone_lr,
+                        "weight_decay": stage2_weight_decay,
+                    }
+                )
+            # Adapt head learning rate for joint fine-tuning
+            for pg in optimizer.param_groups[:-1]:
+                pg["lr"] = stage2_head_lr
+
+            # Re-initialize Cosine Annealing scheduler for remaining Stage 2 epochs
+            remaining_epochs = max(1, max_epochs - stage1_epochs)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=(max_epochs - stage1_epochs), eta_min=1e-6
+                optimizer, T_max=remaining_epochs, eta_min=1e-7
             )
+
             unfrozen_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
             print(f"  Trainable Parameters (Stage 2): {unfrozen_params:,}")
 
@@ -216,7 +256,9 @@ def main():
                 val_preds.extend(preds.cpu().numpy().tolist())
                 val_targets.extend(dev_batch["labels"].cpu().numpy().tolist())
 
-        val_metrics = evaluator.compute_all(np.array(val_preds), np.array(val_targets), task_type="dta")
+        val_metrics = evaluator.compute_all(
+            np.array(val_preds), np.array(val_targets), task_type="dta"
+        )
         val_ci = val_metrics.get("ci", 0.0)
         val_mse = val_metrics.get("mse", 1.0)
         elapsed = time.time() - epoch_start
@@ -230,7 +272,9 @@ def main():
             f"LR: {current_lr:.2e}"
         )
 
-        if val_ci > best_val_ci:
+        # Only update best checkpoint after warmup epochs to prevent early noise from locking checkpoint
+        is_after_warmup = epoch > warmup_epochs
+        if is_after_warmup and val_ci > best_val_ci:
             best_val_ci = val_ci
             best_val_mse = val_mse
             best_epoch = epoch
@@ -252,8 +296,10 @@ def main():
             with open(output_dir / "config.json", "w", encoding="utf-8") as f:
                 json.dump(model_cfg, f, indent=2)
 
-            print(f"  ★ Best checkpoint saved (Val CI: {best_val_ci:.4f}, Val MSE: {best_val_mse:.4f})")
-        else:
+            print(
+                f"  ★ Best checkpoint saved (Val CI: {best_val_ci:.4f}, Val MSE: {best_val_mse:.4f})"
+            )
+        elif is_after_warmup:
             patience_counter += 1
             if patience_counter >= patience:
                 print(f"\n[Early Stopping] No improvement in Val CI for {patience} epochs.")
@@ -279,9 +325,13 @@ def main():
             dev_batch = {k: (v.to(device) if hasattr(v, "to") else v) for k, v in batch.items()}
             with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
                 if i == 0 and hasattr(model, "forward"):
-                    # Extract XAI attention weights from first batch
-                    preds, attn_dict = model(dev_batch, return_attention=True)
-                    attention_sample = {k: v.cpu().numpy()[:2] for k, v in attn_dict.items()}
+                    # Extract XAI attention weights & 2D Contact Map from first batch
+                    preds, attn_dict = model(dev_batch, return_attention=True, return_sequence=True)
+                    attention_sample = {
+                        k: v.cpu().numpy()[:2].tolist()
+                        for k, v in attn_dict.items()
+                        if hasattr(v, "cpu")
+                    }
                 else:
                     preds = model(dev_batch)
                 preds_sq = preds.squeeze(-1)
@@ -289,15 +339,17 @@ def main():
             test_preds.extend(preds_sq.cpu().numpy().tolist())
             test_targets.extend(dev_batch["labels"].cpu().numpy().tolist())
 
-    test_metrics = evaluator.compute_all(np.array(test_preds), np.array(test_targets), task_type="dta")
+    test_metrics = evaluator.compute_all(
+        np.array(test_preds), np.array(test_targets), task_type="dta"
+    )
 
     ci_val = test_metrics.get("ci", 0.0)
     mse_val = test_metrics.get("mse", 0.0)
     rmse_val = test_metrics.get("rmse", 0.0)
     pearson_val = test_metrics.get("pearson", 0.0)
 
-    target_ci = float(cfg.get("evaluation", {}).get("target_thresholds", {}).get("ci", 0.76))
-    target_mse = float(cfg.get("evaluation", {}).get("target_thresholds", {}).get("mse", 0.65))
+    target_ci = float(cfg.get("evaluation", {}).get("target_thresholds", {}).get("ci", 0.77))
+    target_mse = float(cfg.get("evaluation", {}).get("target_thresholds", {}).get("mse", 0.55))
 
     ci_pass = ci_val >= target_ci
     mse_pass = mse_val <= target_mse
@@ -305,13 +357,24 @@ def main():
     print("\n" + "=" * 70)
     print("  * Phase C Cross-Attention Cold-Drug Benchmark Results Summary")
     print("=" * 70)
-    print(f"  - Primary Metric:   Concordance Index (CI) = {ci_val:.4f}  [Target >= {target_ci:.2f}] -> {'[OK] PASSED' if ci_pass else '[FAIL]'}")
-    print(f"  - Secondary Metric: Mean Squared Error (MSE) = {mse_val:.4f} [Target <= {target_mse:.2f}] -> {'[OK] PASSED' if mse_pass else '[FAIL]'}")
+    print(
+        f"  - Primary Metric:   Concordance Index (CI) = {ci_val:.4f}  [Target >= {target_ci:.2f}] -> {'[OK] PASSED' if ci_pass else '[FAIL]'}"
+    )
+    print(
+        f"  - Secondary Metric: Mean Squared Error (MSE) = {mse_val:.4f} [Target <= {target_mse:.2f}] -> {'[OK] PASSED' if mse_pass else '[FAIL]'}"
+    )
     print(f"  - Secondary Metric: Root MSE (RMSE)          = {rmse_val:.4f}")
     print(f"  - Secondary Metric: Pearson Correlation (r)  = {pearson_val:.4f}")
-    print(f"  - XAI Attention Map: {'[OK] Extracted' if attention_sample is not None else '[None]'}")
+    print(
+        f"  - XAI 2D Contact Map: {'[OK] Extracted' if attention_sample is not None else '[None]'}"
+    )
     print("=" * 70)
 
+    if attention_sample is not None:
+        contact_map_file = output_dir / "contact_map_sample.json"
+        with open(contact_map_file, "w", encoding="utf-8") as f:
+            json.dump(attention_sample, f)
+        print(f"XAI Contact map sample saved to: {contact_map_file}")
 
     summary_file = output_dir / "benchmark_summary.yaml"
     with open(summary_file, "w", encoding="utf-8") as f:
@@ -332,4 +395,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

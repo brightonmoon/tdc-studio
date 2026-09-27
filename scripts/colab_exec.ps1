@@ -15,10 +15,50 @@ if (-not (Test-Path $FilePath)) {
     exit 1
 }
 
+# Isolate colab-cli profile to munhyeongdo4 account
+$env:USERPROFILE = "C:\Users\xps\.colab_munhyeongdo4"
+
 # 1. Read original python script content
 $originalCode = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
 
-# 2. Prepare the injection header to override sys.argv
+# 2. Package and upload workspace zip directly via colab upload
+$tempDir = Join-Path $PSScriptRoot "..\.temp_colab"
+if (-not (Test-Path $tempDir)) {
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+}
+$zipPath = Join-Path $tempDir "workspace.zip"
+
+$pyExe = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
+if (-not (Test-Path $pyExe)) {
+    $pyExe = "python"
+}
+
+# Create zip bundle locally
+$zipScript = @"
+import zipfile, os
+from pathlib import Path
+root = Path.cwd().resolve()
+zip_file = Path(r'$zipPath')
+targets = ['tdc_studio', 'configs', 'deploy', 'pyproject.toml', 'README.md']
+with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for t in targets:
+        tp = root / t
+        if tp.is_file():
+            zf.write(tp, arcname=t)
+        elif tp.is_dir():
+            for item in tp.rglob('*'):
+                if '__pycache__' in item.parts or item.suffix in ('.pyc', '.pt', '.pth', '.log', '.npz', '.tab'):
+                    continue
+                if item.is_file() and item.stat().st_size <= 2 * 1024 * 1024:
+                    rel_path = item.relative_to(root)
+                    zf.write(item, arcname=str(rel_path).replace('\\', '/'))
+"@
+& $pyExe -c $zipScript
+
+# Upload workspace to remote Colab VM
+colab upload -s $Session $zipPath /content/workspace.zip
+
+# 3. Prepare the injection header to override sys.argv and unpack bundle
 $argList = @()
 foreach ($arg in $ScriptArgs) {
     # Escape single quotes for python string literal
@@ -27,19 +67,20 @@ foreach ($arg in $ScriptArgs) {
 }
 $argsStr = "[" + ($argList -join ", ") + "]"
 
-# Prepend sys.argv override and disable Jupyter flag
 $header = @"
-import sys
-import os
-sys.argv = ['$($FilePath -replace '\\', '\\')'] + $($argsStr)
+import sys, os, zipfile
+workspace = os.path.abspath('/content/tdc-studio')
+if os.path.exists('/content/workspace.zip'):
+    with zipfile.ZipFile('/content/workspace.zip', 'r') as zf:
+        zf.extractall(workspace)
+if workspace not in sys.path:
+    sys.path.insert(0, workspace)
+os.chdir(workspace)
+sys.argv = ['$($FilePath -replace '\\', '/')'] + $($argsStr)
 os.environ["FORCE_CLI_ARGS"] = "1"
+os.environ["TDC_REMOTE_EXECUTION"] = "1"
 "@
 
-# 3. Create a temporary file in the workspace
-$tempDir = Join-Path $PSScriptRoot "..\.temp_colab"
-if (-not (Test-Path $tempDir)) {
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-}
 $tempFileName = "temp_exec_" + [System.IO.Path]::GetFileName($FilePath)
 $tempFile = Join-Path $tempDir $tempFileName
 
@@ -51,9 +92,10 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 # 4. Execute using colab exec
 Write-Host "Executing '$FilePath' on Colab session '$Session' with arguments: $($ScriptArgs -join ' ')..." -ForegroundColor Cyan
 try {
-    # Set encoding to UTF-8 for Colab output
+    # Set encoding to UTF-8 for Colab output and file reading on Windows
     $env:PYTHONIOENCODING = 'utf-8'
-    colab exec -s $Session -f $tempFile
+    $env:PYTHONUTF8 = '1'
+    colab exec -s $Session -f $tempFile --timeout 7200.0
 } finally {
     # Clean up temp file
     if (Test-Path $tempFile) {

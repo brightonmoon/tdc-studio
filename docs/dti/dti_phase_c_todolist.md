@@ -1,49 +1,59 @@
-# TDC-Studio DTI Phase C: Future TODOLIST Backlog (옵션 B & C 이관)
+# TDC-Studio DTI Phase C: TODOLIST & Future Backlog
 
-> **이관 일자**: 2026-09-26  
-> **상태**: 추후 진행 (오늘 작업에서는 제외)  
-> **대상 모듈**: DTA/DTI 트랙 (`tdc_studio/models/dti`, `tdc_studio/data`, `deploy`)
-
----
-
-## 📌 배경 및 현황
-- **오늘 완료된 작업 (옵션 A)**:
-  - Cross-Attention Fusion 아키텍처 및 XAI Attention Map 추출 구현.
-  - ChemBERTa/ESM-2 백본을 Frozen 상태로 유지하고 Cross-Attention Fusion 헤드만 15 에포크 동안 충분히 수렴 (Scaffold Overfitting 방지).
-  - FastAPI 프로덕션 서빙 파이프라인 연동 (`/predict/dti`).
-- **추후 이관 사유**:
-  - 오늘 작업 범위에서는 토큰 및 컴퓨팅 자원을 최소화하고 안정된 서빙 파이프라인을 조기 완성하기 위해, 백본 미세조정(옵션 B) 및 멀티태스크 확장(옵션 C)은 추후 고도화 단계로 분리하여 관리함.
+> **최종 갱신 일자**: 2026-09-27  
+> **상태**: Phase C 고도화 완료 및 후속 서빙 연동 과제 이관  
+> **대상 모듈**: DTA/DTI 트랙 (`tdc_studio/models/dti`, `tdc_studio/data`, `tdc_studio/serving`, `deploy`)
 
 ---
 
-## 📋 추후 작업 목록 (Future Backlog)
+## 📌 오늘(2026-09-27) 완료된 고도화 작업 요약
 
-### 1. [옵션 B] 정규화 강화 Staged Fine-Tuning
-- **우선순위**: P2 (Phase C 옵션 A 수렴 모델 성능 검토 후 필요 시 착수)
-- **목표**: 미지의 신약 골격(Unseen Scaffold)에 대한 ChemBERTa 표현력 미세조정 및 Cold-Drug CI 0.77+ 돌파.
+Google Colab 격리 환경(`munhyeongdo4@gmail.com`, 세션 `dti-gpu`, Tesla T4 14.6GB VRAM)에서 전체 파이프라인 검증 및 학습을 완수함.
+
+| 과제 ID | 작업명 | 상태 | 주요 성과 및 산출물 |
+| :--- | :--- | :---: | :--- |
+| **Task F-1** | Cross-Attention Full Token-Level Contact Map (XAI) | **완료** | • `ChemBERTaEncoder` & `ESM2Encoder`에 `return_sequence=True` 지원<br>• 패딩 토큰 Zero-out 및 Masked Multi-Head Cross-Attention 구현<br>• `models/dti/phase_c_adv/contact_map_sample.json` 추출 검증 |
+| **Task F-2** | Phase C [옵션 B] 정규화 강화 Staged Fine-Tuning | **완료** | • ChemBERTa 상위 2개 RoBERTa 레이어 Unfreezing ($LR=1.0\times 10^{-6}, WD=0.05$)<br>• Colab T4 14에포크 전체 학습 수행 (Cold-Drug CI `0.7443`, MSE `0.6404`)<br>• **실증 분석**: 미지의 골격(Cold-Drug) 평가에서는 7,700만 범용 화학 표현 공간을 보존한 Frozen Option A(CI `0.7659`, MSE `0.5780`)가 미세조정 대비 일반화 능력이 우수함을 입증 |
+| **Task F-3** | Phase C [옵션 C] Multi-Affinity Multi-Task 확장 | **완료** | • BindingDB $K_d + K_i + \text{IC}_{50}$ 통합 `MultiAffinityDTADataModule` 구현<br>• 부분 결측 레이블 지원 `MaskedMSELoss` 구현<br>• `GraphDTAModel` 3-head 분기 및 `DTIMultiAffinityInferenceResponse` 스키마 확장 |
+
+---
+
+## 📋 내일(2026-09-28) TODOLIST: 제안 후속 과제
+
+### 1. [Task T-1] 프로덕션 서빙 API에 XAI 2D Contact Map 엔드포인트 연동
+- **우선순위**: P1 (사용자 편의성 및 신약 후보물질 결합 부위 해석력 극대화)
+- **목표**: `/predict/dti` 엔드포인트에서 추론과 동시에 원자 $\times$ 아미노산 잔기 어텐션 맵을 옵션으로 반환.
 - **주요 작업 내용**:
-  1. **Layer-wise Discriminative Learning Rate**:
-     - CrossAttention Fusion 헤드: $5.0 \times 10^{-5}$
-     - ChemBERTa 상위 2개 RoBERTa 레이어: $2.0 \times 10^{-6}$ (매우 완만한 미세조정으로 Scaffold 과적합 방지)
-  2. **정규화 및 스케줄링 강화**:
-     - Backbone 파라미터 대상 `weight_decay: 0.05` 적용.
-     - Warmup 기간을 4~6 에포크로 확장하여 Cross-Attention 헤드가 완벽히 안정된 후 Unfreezing 진행.
-  3. **대상 파일**:
-     - [`configs/config_dti_phase_c.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/greenling/configs/config_dti_phase_c.yaml)
-     - [`deploy/train_dti_phase_c.py`](file:///C:/Users/xps/orca/workspaces/tdc-studio/greenling/deploy/train_dti_phase_c.py)
+  1. `DTIInferenceRequest`에 `return_contact_map: bool = False` 옵션 추가.
+  2. 추론 시 `return_sequence=True, return_attention=True`로 실행하여 상위 K개 고강도 결합 잔기(Top-K Contact Residues, 예: Glu312, Tyr104) 및 원자 인덱스를 파싱하여 응답에 포함.
+  3. PyMOL 및 3D/2D 분자 시각화 도구 연동 스키마 표준화.
+- **대상 파일**:
+  - `tdc_studio/serving/schema.py`
+  - `tdc_studio/serving/app.py`
+  - `tests/test_serving_api.py`
 
 ---
 
-### 2. [옵션 C] Multi-Affinity Multi-Task 확장 ($K_d + K_i + \text{IC}_{50}$)
-- **우선순위**: P3 (데이터 확장 및 범용 친화도 예측 모델 구축)
-- **목표**: BindingDB 내의 $K_d, K_i, \text{IC}_{50}$ 데이터를 통합하여 데이터 볼륨을 3배 이상 확장하고 일반화 오차 극소화.
+### 2. [Task T-2] Multi-Affinity Multi-Task 서빙 파이프라인 정식 연동
+- **우선순위**: P2 (다각적 친화도 분석 및 앙상블 신뢰도 제공)
+- **목표**: 동일 약물-타깃 쌍에 대해 $K_d, K_i, \text{IC}_{50}$ 3종 동시 예측 서빙 엔드포인트 구축.
 - **주요 작업 내용**:
-  1. **멀티태스크 데이터로더 구축**:
-     - [`tdc_studio/data/multi_pred.py`](file:///C:/Users/xps/orca/workspaces/tdc-studio/greenling/tdc_studio/data/multi_pred.py) 내 `MultiAffinityDTADataModule` 구현.
-     - 동일 약물-타깃 쌍의 다중 측정치 통합 및 스케일러 정규화.
-  2. **Multi-Head 아키텍처 및 손실 함수**:
-     - [`tdc_studio/models/dti/dta_model.py`](file:///C:/Users/xps/orca/workspaces/tdc-studio/greenling/tdc_studio/models/dti/dta_model.py)에 3개 태스크별 선형 헤드 분기.
-     - 결측 레이블을 무시하는 `MaskedMSELoss` 구현.
-  3. **서빙 스키마 및 API 확장**:
-     - [`tdc_studio/serving/schema.py`](file:///C:/Users/xps/orca/workspaces/tdc-studio/greenling/tdc_studio/serving/schema.py)에 $K_i, \text{IC}_{50}$ 필드 추가.
-     - [`tests/test_multi_task_dti.py`](file:///C:/Users/xps/orca/workspaces/tdc-studio/greenling/tests/test_multi_task_dti.py) 단위 테스트 작성.
+  1. `/predict/dti/multi-affinity` 엔드포인트 신설.
+  2. 3개 결합 지표 간 물리화학적 상관관계 일관성을 검증하는 신뢰도 지표(Affinity Consistency Score) 산출.
+  3. 클라이언트용 통합 테스트 케이스 추가.
+- **대상 파일**:
+  - `tdc_studio/serving/app.py`
+  - `tdc_studio/serving/schema.py`
+  - `tests/test_tri_hybrid_serving.py`
+
+---
+
+### 3. [Task T-3] Colab 세션 유휴 자원 정리 및 자동 회수 가이드
+- **우선순위**: P3 (컴퓨팅 자원 및 크레딧 관리)
+- **목표**: 작업 종료 후 불필요한 Colab GPU 인스턴스 점유를 방지하고 자동 회수 체계 정착.
+- **주요 작업 내용**:
+  1. `scripts/colab_cleanup.ps1` 스크립트를 작성하여 사용 완료된 세션(`dti-gpu` 등) 일괄 `colab stop` 및 `unassign` 처리.
+  2. 로컬 계정 전환 및 세션 현황 대시보드 스크립트 정비.
+- **대상 파일**:
+  - `scripts/colab_cleanup.ps1`
+  - `scripts/colab_switch.ps1`

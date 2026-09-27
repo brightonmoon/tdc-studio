@@ -1,6 +1,6 @@
 """Pydantic schemas for inference requests and responses."""
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -32,7 +32,6 @@ class HealthResponse(BaseModel):
     dti_model_loaded: bool = False
 
 
-
 class DTIInferenceRequest(BaseModel):
     """Payload for Drug-Target Interaction (DTI) affinity inference."""
 
@@ -61,8 +60,54 @@ class DTIInferenceResponse(BaseModel):
 
     predictions_pkd: List[float] = Field(..., description="Predicted pKd values (-log10 Kd).")
     kd_nm: Optional[List[float]] = Field(None, description="Predicted Kd values in nanomolar (nM).")
-    unit: str = Field(default="pK_d (-log10 Kd)", description="Measurement unit of primary prediction.")
+    unit: str = Field(
+        default="pK_d (-log10 Kd)", description="Measurement unit of primary prediction."
+    )
     model_name: str = Field(default="GraphDTA-Model", description="Serving model identifier.")
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
 
+
+class DTIMultiAffinityInferenceRequest(BaseModel):
+    """Payload for Multi-Affinity (Kd, Ki, IC50) inference."""
+
+    smiles: List[str] = Field(
+        ..., description="List of drug SMILES strings to predict.", min_length=1
+    )
+    target_sequences: List[str] = Field(
+        ..., description="List of target amino acid sequences.", min_length=1
+    )
+    return_nm: bool = Field(
+        default=True, description="Whether to include affinity values in nanomolar (nM)."
+    )
+    return_contact_maps: bool = Field(
+        default=False, description="Whether to include 2D token-level contact maps (XAI)."
+    )
+
+    @model_validator(mode="after")
+    def check_lengths_match(self) -> "DTIMultiAffinityInferenceRequest":
+        if len(self.smiles) != len(self.target_sequences):
+            raise ValueError(
+                f"Mismatch between number of SMILES ({len(self.smiles)}) "
+                f"and target sequences ({len(self.target_sequences)}). They must be equal."
+            )
+        return self
+
+
+class DTIMultiAffinityInferenceResponse(BaseModel):
+    """Response payload for Multi-Affinity (Kd, Ki, IC50) inference."""
+
+    predictions_pkd: Optional[List[float]] = Field(None, description="Predicted pKd values.")
+    predictions_pki: Optional[List[float]] = Field(None, description="Predicted pKi values.")
+    predictions_pic50: Optional[List[float]] = Field(None, description="Predicted pIC50 values.")
+    kd_nm: Optional[List[float]] = Field(None, description="Predicted Kd in nM.")
+    ki_nm: Optional[List[float]] = Field(None, description="Predicted Ki in nM.")
+    ic50_nm: Optional[List[float]] = Field(None, description="Predicted IC50 in nM.")
+    contact_maps: Optional[List[Any]] = Field(
+        None, description="2D Contact Maps [L_drug, L_target]."
+    )
+    model_name: str = Field(
+        default="GraphDTA-MultiAffinity", description="Serving model identifier."
+    )
+    count: int = Field(..., description="Number of drug-target pairs evaluated.")
+    elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")

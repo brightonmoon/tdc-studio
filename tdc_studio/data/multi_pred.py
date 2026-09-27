@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
 from tdc_studio.core.registry import DATASETS
@@ -72,10 +74,10 @@ class DTADataModule(BaseTDCDataModule):
     def __init__(
         self,
         dataset_name: str = "BindingDB_Kd",
-        split_type: str = "cold_drug",           # ← DEFAULT: cold drug split
+        split_type: str = "cold_drug",  # ← DEFAULT: cold drug split
         seed: int = 42,
         task_type: str = "dta",
-        metric_name: str = "ci",                 # ← PRIMARY metric: Concordance Index
+        metric_name: str = "ci",  # ← PRIMARY metric: Concordance Index
         log_transform: bool = True,
         aa_max_length: int = 1000,
         frac: Optional[List[float]] = None,
@@ -126,7 +128,7 @@ class DTADataModule(BaseTDCDataModule):
             self.splits = {
                 "train": df.iloc[:n_train].reset_index(drop=True),
                 "valid": df.iloc[n_train : n_train + n_val].reset_index(drop=True),
-                "test":  df.iloc[n_train + n_val :].reset_index(drop=True),
+                "test": df.iloc[n_train + n_val :].reset_index(drop=True),
             }
         else:
             try:
@@ -173,9 +175,9 @@ class DTADataModule(BaseTDCDataModule):
         samples: List[Dict[str, Any]] = []
 
         for _, row in df.iterrows():
-            smiles     = str(row.get("Drug", ""))
+            smiles = str(row.get("Drug", ""))
             target_seq = str(row.get("Target", ""))
-            raw_y      = float(row.get("Y", 0.0))
+            raw_y = float(row.get("Y", 0.0))
 
             # Build molecular graph (Drug GNN encoder — Phase A)
             graph = self.graph_transform(smiles)
@@ -186,16 +188,18 @@ class DTADataModule(BaseTDCDataModule):
             # Tokenise amino acid sequence with clean AA vocab (Phase A & B)
             target_tensor = self.aa_tokenizer(target_seq)
 
-            samples.append({
-                "drug_graph":      graph,                    # torch_geometric Data
-                "drug_smiles_str": smiles,                   # raw str for HF encoder
-                "target_seq":      target_tensor,            # LongTensor [aa_max_len]
-                "target_seq_str":  target_seq,               # raw str for ESM-2 encoder (Phase B)
-                "label":           self._transform_y(raw_y), # normalised float
-                # Metadata for cold-split verification
-                "drug_id":   str(row.get("Drug_ID", "")),
-                "target_id": str(row.get("Target_ID", "")),
-            })
+            samples.append(
+                {
+                    "drug_graph": graph,  # torch_geometric Data
+                    "drug_smiles_str": smiles,  # raw str for HF encoder
+                    "target_seq": target_tensor,  # LongTensor [aa_max_len]
+                    "target_seq_str": target_seq,  # raw str for ESM-2 encoder (Phase B)
+                    "label": self._transform_y(raw_y),  # normalised float
+                    # Metadata for cold-split verification
+                    "drug_id": str(row.get("Drug_ID", "")),
+                    "target_id": str(row.get("Target_ID", "")),
+                }
+            )
 
         return DrugTargetPairDataset(samples)
 
@@ -217,8 +221,8 @@ class DTADataModule(BaseTDCDataModule):
 
         if self._cached_datasets is None:
             train_ds = self._build_dataset(self.splits["train"])
-            val_ds   = self._build_dataset(self.splits["valid"])
-            test_ds  = self._build_dataset(self.splits["test"])
+            val_ds = self._build_dataset(self.splits["valid"])
+            test_ds = self._build_dataset(self.splits["test"])
             self._cached_datasets = (train_ds, val_ds, test_ds)
         else:
             train_ds, val_ds, test_ds = self._cached_datasets
@@ -230,9 +234,9 @@ class DTADataModule(BaseTDCDataModule):
         )
 
         return (
-            DataLoader(train_ds, shuffle=True,  **loader_kwargs),
-            DataLoader(val_ds,   shuffle=False, **loader_kwargs),
-            DataLoader(test_ds,  shuffle=False, **loader_kwargs),  # cold drug test
+            DataLoader(train_ds, shuffle=True, **loader_kwargs),
+            DataLoader(val_ds, shuffle=False, **loader_kwargs),
+            DataLoader(test_ds, shuffle=False, **loader_kwargs),  # cold drug test
         )
 
     # ------------------------------------------------------------------
@@ -247,6 +251,297 @@ class DTADataModule(BaseTDCDataModule):
     @property
     def split_info(self) -> Dict[str, int]:
         """Number of (Drug, Target) pairs in each split."""
+        if not self.is_prepared:
+            return {}
+        return {k: len(v) for k, v in self.splits.items()}
+
+
+# ======================================================================
+# Task F-3: Multi-Affinity Multi-Task Extension (Kd + Ki + IC50)
+# ======================================================================
+
+
+class MaskedMSELoss(nn.Module):
+    """Multi-task MSE loss ignoring missing/masked target affinity values."""
+
+    def __init__(self, task_weights: Optional[torch.Tensor] = None):
+        super().__init__()
+        if task_weights is not None:
+            self.register_buffer("task_weights", task_weights.float())
+        else:
+            self.task_weights = None
+
+    def forward(
+        self,
+        preds: torch.Tensor,
+        targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute masked MSE.
+
+        Args:
+            preds: FloatTensor [B, num_tasks]
+            targets: FloatTensor [B, num_tasks]
+            mask: Optional Byte/Bool/Float Tensor [B, num_tasks] (1=valid, 0=missing).
+        """
+        if mask is None:
+            mask = ~torch.isnan(targets)
+            targets = torch.nan_to_num(targets, nan=0.0)
+
+        preds = preds.view_as(targets)
+        diff_sq = (preds - targets.float()) ** 2
+
+        if self.task_weights is not None:
+            diff_sq = diff_sq * self.task_weights.to(preds.device)
+
+        masked_diff = diff_sq * mask.float()
+        valid_count = torch.clamp(mask.float().sum(), min=1.0)
+        return masked_diff.sum() / valid_count
+
+
+class MultiAffinityDrugTargetDataset(Dataset):
+    """In-memory PyTorch Dataset for Multi-Affinity (Kd, Ki, IC50) triplets."""
+
+    def __init__(self, samples: List[Dict[str, Any]]):
+        self.samples = samples
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        return self.samples[idx]
+
+
+@DATASETS.register("multi_affinity_dta_loader")
+@DATASETS.register("multi_affinity_loader")
+class MultiAffinityDTADataModule(BaseTDCDataModule):
+    """Multi-Task DTA DataModule integrating BindingDB Kd, Ki, and IC50.
+
+    Ensures zero leakage across assays by splitting unique drugs simultaneously:
+    If a drug is in Test, it is NEVER seen in Train or Valid for Kd, Ki, or IC50.
+
+    Args:
+        dataset_names: List of TDC dataset names. Default: ["BindingDB_Kd", "BindingDB_Ki", "BindingDB_IC50"]
+        split_type   : Splitting strategy. Default: "cold_drug"
+        seed         : Random seed.
+        log_transform: Apply log1p transform to nanomolar values. Default: True.
+        aa_max_length: Maximum target sequence length. Default: 1000.
+        frac         : [train, val, test] split fractions. Default: [0.7, 0.1, 0.2].
+    """
+
+    def __init__(
+        self,
+        dataset_names: Optional[List[str]] = None,
+        split_type: str = "cold_drug",
+        seed: int = 42,
+        task_type: str = "multi_dta",
+        metric_name: str = "ci",
+        log_transform: bool = True,
+        aa_max_length: int = 1000,
+        frac: Optional[List[float]] = None,
+        synthetic_df: Optional[pd.DataFrame] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(
+            dataset_name="BindingDB_MultiAffinity",
+            split_type=split_type,
+            seed=seed,
+            task_type=task_type,
+            metric_name=metric_name,
+            synthetic_df=synthetic_df,
+        )
+        self.dataset_names = dataset_names or ["BindingDB_Kd", "BindingDB_Ki", "BindingDB_IC50"]
+        self.task_names = ["Kd", "Ki", "IC50"]
+        self.log_transform = log_transform
+        self.aa_max_length = aa_max_length
+        self.frac = frac or [0.7, 0.1, 0.2]
+
+        self.graph_transform = SmilesToGraphTransform()
+        self.aa_tokenizer = AminoAcidTokenizer(max_length=aa_max_length)
+
+        # Per-task stats on training set: {0: {'mean': float, 'std': float, 'name': str}}
+        self.task_stats: Dict[int, Dict[str, Any]] = {}
+        self._cached_datasets: Optional[Tuple] = None
+
+    def prepare_data(self) -> None:
+        """Download or construct multi-affinity dataset and partition into splits."""
+        if self.synthetic_df is not None:
+            master_df = self.synthetic_df.copy()
+            # Standardize column naming if necessary
+            for col in self.task_names:
+                if col not in master_df.columns:
+                    alt_cols = [c for c in master_df.columns if col.lower() in c.lower()]
+                    if alt_cols:
+                        master_df[col] = master_df[alt_cols[0]]
+                    else:
+                        master_df[col] = np.nan
+        else:
+            try:
+                from tdc.multi_pred import DTI
+
+                dfs = []
+                for name, task_col in zip(self.dataset_names, self.task_names):
+                    dti = DTI(name=name)
+                    df = dti.get_data()
+                    df_renamed = df.rename(columns={"Y": task_col})
+                    dfs.append(df_renamed)
+
+                # Merge on Drug and Target
+                merged = dfs[0]
+                for next_df in dfs[1:]:
+                    # Merge on unique drug and target representations
+                    merged = pd.merge(
+                        merged,
+                        next_df[
+                            [
+                                "Drug",
+                                "Target",
+                                [c for c in next_df.columns if c in self.task_names][0],
+                            ]
+                        ],
+                        on=["Drug", "Target"],
+                        how="outer",
+                    )
+                master_df = merged
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to load multi-affinity datasets {self.dataset_names} via TDC: {exc}"
+                ) from exc
+
+        # Ensure required identifiers exist
+        if "Drug" not in master_df.columns or "Target" not in master_df.columns:
+            raise KeyError("DataFrame must contain 'Drug' and 'Target' columns.")
+
+        # Leakage-Free Cold-Drug Split Partitioning
+        unique_drugs = master_df["Drug"].dropna().unique()
+        rng = np.random.RandomState(self.seed)
+        rng.shuffle(unique_drugs)
+
+        n_drugs = len(unique_drugs)
+        n_train = int(n_drugs * self.frac[0])
+        n_val = int(n_drugs * self.frac[1])
+
+        train_drugs = set(unique_drugs[:n_train])
+        val_drugs = set(unique_drugs[n_train : n_train + n_val])
+        test_drugs = set(unique_drugs[n_train + n_val :])
+
+        self.splits = {
+            "train": master_df[master_df["Drug"].isin(train_drugs)].reset_index(drop=True),
+            "valid": master_df[master_df["Drug"].isin(val_drugs)].reset_index(drop=True),
+            "test": master_df[master_df["Drug"].isin(test_drugs)].reset_index(drop=True),
+        }
+
+        # Calculate per-task normalization statistics on TRAIN split only
+        train_df = self.splits["train"]
+        for idx, task_name in enumerate(self.task_names):
+            if task_name in train_df.columns:
+                vals = train_df[task_name].dropna().astype(float).values
+                if len(vals) > 0:
+                    if self.log_transform:
+                        vals = np.log1p(np.clip(vals, 0.0, None))
+                    mean_val = float(np.nanmean(vals))
+                    std_val = float(np.nanstd(vals))
+                    if std_val < 1e-6:
+                        std_val = 1.0
+                else:
+                    mean_val, std_val = 0.0, 1.0
+            else:
+                mean_val, std_val = 0.0, 1.0
+
+            self.task_stats[idx] = {
+                "name": task_name,
+                "mean": mean_val,
+                "std": std_val,
+            }
+
+        self.is_prepared = True
+
+    def _transform_val(self, val: float, task_idx: int) -> float:
+        """Standardize a single task value using fitted train statistics."""
+        st = self.task_stats[task_idx]
+        v = np.log1p(max(0.0, float(val))) if self.log_transform else float(val)
+        return float((v - st["mean"]) / st["std"])
+
+    def _build_dataset(self, df: pd.DataFrame) -> MultiAffinityDrugTargetDataset:
+        """Convert split DataFrame into MultiAffinityDrugTargetDataset."""
+        samples: List[Dict[str, Any]] = []
+
+        for _, row in df.iterrows():
+            smiles = str(row.get("Drug", ""))
+            target_seq = str(row.get("Target", ""))
+
+            graph = self.graph_transform(smiles)
+            if graph is None:
+                continue
+
+            target_tensor = self.aa_tokenizer(target_seq)
+
+            labels_vec = []
+            mask_vec = []
+            for idx, task_name in enumerate(self.task_names):
+                raw_val = row.get(task_name, np.nan)
+                if pd.notna(raw_val) and np.isfinite(raw_val):
+                    labels_vec.append(self._transform_val(raw_val, idx))
+                    mask_vec.append(True)
+                else:
+                    labels_vec.append(0.0)
+                    mask_vec.append(False)
+
+            # Skip samples with no labels at all
+            if not any(mask_vec):
+                continue
+
+            samples.append(
+                {
+                    "drug_graph": graph,
+                    "drug_smiles_str": smiles,
+                    "target_seq": target_tensor,
+                    "target_seq_str": target_seq,
+                    "labels": torch.tensor(labels_vec, dtype=torch.float32),
+                    "mask": torch.tensor(mask_vec, dtype=torch.bool),
+                    "drug_id": str(row.get("Drug_ID", "")),
+                    "target_id": str(row.get("Target_ID", "")),
+                }
+            )
+
+        return MultiAffinityDrugTargetDataset(samples)
+
+    def setup_loaders(
+        self,
+        batch_size: int = 32,
+        num_workers: int = 0,
+    ) -> Tuple[DataLoader, DataLoader, DataLoader]:
+        """Return (train_loader, val_loader, test_loader)."""
+        self.check_prepared()
+
+        if self._cached_datasets is None:
+            train_ds = self._build_dataset(self.splits["train"])
+            val_ds = self._build_dataset(self.splits["valid"])
+            test_ds = self._build_dataset(self.splits["test"])
+            self._cached_datasets = (train_ds, val_ds, test_ds)
+        else:
+            train_ds, val_ds, test_ds = self._cached_datasets
+
+        loader_kwargs: Dict[str, Any] = dict(
+            batch_size=batch_size,
+            num_workers=num_workers,
+            collate_fn=molecule_collate_fn,
+        )
+
+        return (
+            DataLoader(train_ds, shuffle=True, **loader_kwargs),
+            DataLoader(val_ds, shuffle=False, **loader_kwargs),
+            DataLoader(test_ds, shuffle=False, **loader_kwargs),
+        )
+
+    def inverse_transform_y(self, y_norm: float, task_idx: int) -> float:
+        """Reverse z-score + log1p for a specific task index (0=Kd, 1=Ki, 2=IC50)."""
+        st = self.task_stats[task_idx]
+        y_log = y_norm * st["std"] + st["mean"]
+        return float(np.expm1(y_log)) if self.log_transform else y_log
+
+    @property
+    def split_info(self) -> Dict[str, int]:
         if not self.is_prepared:
             return {}
         return {k: len(v) for k, v in self.splits.items()}

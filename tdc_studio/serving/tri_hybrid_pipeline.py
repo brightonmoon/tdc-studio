@@ -261,9 +261,7 @@ def load_tri_hybrid_from_package(
     )
 
 
-def compute_extended_pk_motifs(
-    mol: Optional[Chem.Mol], ppbr_val: float = 90.0
-) -> List[float]:
+def compute_extended_pk_motifs(mol: Optional[Chem.Mol], ppbr_val: float = 90.0) -> List[float]:
     """Compute 24 biophysical + 3D steric motifs + Oie-Tozer fraction unbound features."""
     if mol is None:
         return [0.0] * 30
@@ -450,15 +448,12 @@ class VDssTriHybridInferencePipeline:
         emb_sc = self.scaler.transform(emb_bert) if self.scaler is not None else emb_bert
         p_ridge = self.ridge_model.predict(emb_sc)
 
-        p_dmpnn = (
-            self._predict_dmpnn(smiles_list)
-            if self.w_dmpnn > 0.0
-            else np.zeros_like(p_gbdt)
-        )
+        p_dmpnn = self._predict_dmpnn(smiles_list) if self.w_dmpnn > 0.0 else np.zeros_like(p_gbdt)
 
-        p_blend = self.alpha * (
-            self.w_gbdt * p_gbdt + self.w_ridge * p_ridge + self.w_dmpnn * p_dmpnn
-        ) + self.beta
+        p_blend = (
+            self.alpha * (self.w_gbdt * p_gbdt + self.w_ridge * p_ridge + self.w_dmpnn * p_dmpnn)
+            + self.beta
+        )
 
         return [round(float(v), 4) for v in p_blend]
 
@@ -530,4 +525,3 @@ def load_vdss_tri_hybrid_from_package(
         ppbr_pipeline=ppbr_pipeline,
         device=device,
     )
-

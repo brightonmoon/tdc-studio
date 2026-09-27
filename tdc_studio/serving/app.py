@@ -11,13 +11,19 @@ from fastapi import FastAPI, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from tdc_studio.serving.pipeline import InferencePipeline
-from tdc_studio.serving.schema import HealthResponse, InferenceRequest, InferenceResponse
+from tdc_studio.serving.schema import (
+    HealthResponse,
+    InferenceRequest,
+    InferenceResponse,
+    PBPKResponse,
+)
 
 logger = logging.getLogger("tdc_studio.serving")
 
 # Global pipeline instance and metadata
 _pipeline: Optional[InferencePipeline] = None
 _vdss_pipeline: Optional[Any] = None
+_pbpk_pipeline: Optional[Any] = None
 _model_meta: dict = {}
 
 
@@ -34,6 +40,12 @@ def set_vdss_pipeline(pipeline: Optional[Any]) -> None:
     _vdss_pipeline = pipeline
 
 
+def set_pbpk_pipeline(pipeline: Optional[Any]) -> None:
+    """Setter for global PBPK inference pipeline."""
+    global _pbpk_pipeline
+    _pbpk_pipeline = pipeline
+
+
 def get_pipeline() -> Optional[InferencePipeline]:
     """Getter for global inference pipeline."""
     return _pipeline
@@ -42,6 +54,11 @@ def get_pipeline() -> Optional[InferencePipeline]:
 def get_vdss_pipeline() -> Optional[Any]:
     """Getter for global VDss inference pipeline."""
     return _vdss_pipeline
+
+
+def get_pbpk_pipeline() -> Optional[Any]:
+    """Getter for global PBPK inference pipeline."""
+    return _pbpk_pipeline
 
 
 def get_model_meta() -> dict:
@@ -92,6 +109,14 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
                     model_dir,
                     device,
                 )
+                from tdc_studio.serving.pbpk_pipeline import PBPKServingPipeline
+
+                pbpk_pipe = PBPKServingPipeline(
+                    ppbr_pipeline=pipeline,
+                    vdss_pipeline=vdss_pipe,
+                )
+                set_pbpk_pipeline(pbpk_pipe)
+                logger.info("Successfully initialized PBPKServingPipeline.")
             return pipeline
 
         model = load_model_from_checkpoint(model_dir)
@@ -186,3 +211,22 @@ async def predict_vdss(request: InferenceRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"VDss inference error: {str(e)}")
 
+
+@app.post("/predict/pbpk", response_model=PBPKResponse)
+async def predict_pbpk(request: InferenceRequest):
+    """Predict in vivo pharmacokinetic profile (CL_total, t1/2, Vdss, fu, extraction ratio) via PBPK."""
+    pbpk_pipe = get_pbpk_pipeline()
+    if pbpk_pipe is None:
+        raise HTTPException(
+            status_code=503,
+            detail="PBPK pipeline is not initialized. Ensure PPBR and VDss models are loaded.",
+        )
+
+    try:
+        results = await run_in_threadpool(pbpk_pipe.predict_pbpk, request.smiles)
+        return PBPKResponse(
+            results=results,
+            model_name="TDC-Studio-PBPK-Pipeline",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PBPK inference error: {str(e)}")

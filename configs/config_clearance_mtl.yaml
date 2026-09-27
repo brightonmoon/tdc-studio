@@ -57,8 +57,10 @@ model:
     cyp3a4_veith: 0.5
     ppbr_az: 0.5
   use_uncertainty: true
+  pearson_weight: 0.25
 
 lr: 0.0006
+min_lr: 1.0e-6
 weight_decay: 1.0e-5
 max_epochs: 60
 early_stopping: 20

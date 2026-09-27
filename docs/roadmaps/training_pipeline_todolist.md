@@ -97,12 +97,26 @@
   - Cold-Drug 벤치마크 평가: **CI = 0.7464**, **MSE = 0.6609** 달성 (목표 CI $\ge 0.70$, MSE $\le 0.75$ 초과 달성).
 
 ### [Track C] ADMET 타 클러스터 본격 학습 (Colab GPU)
-- [ ] **Task C-1: Cluster 1 (Lipophilicity 앵커: Lipo + Sol + FreeSolv + Caco2) 정밀 학습**
-  - 목표: Lipophilicity $R^2 \ge 0.74$, AqSolDB MAE $\le 0.70$.
+- [x] **우선순위 재평가 (Priority Reassessment - COMPLETE)**
+  - 사용자 비동의 반영: Cluster 1(Caco-2 $R^2=0.7327$, Lipophilicity $R^2=0.7602$ 기달성) 재학습을 지양하고, ADMET의 핵심 병목인 **Cluster 4 (Clearance & T1/2) 및 생체 약동학(PBPK) 파이프라인 연계를 [Priority 1]로 격상**.
+  - Colab 활성 계정: `munhyoungdo@gmail.com` 전환 완료.
+- [x] **Task C-0: 생리학적 PBPK 시뮬레이션 엔진 및 서빙 파이프라인 구축 (COMPLETE)**
+  - `tdc_studio/pbpk/engine.py`: $CL_{\text{total}} = \frac{V_{dss} \cdot \ln 2}{t_{1/2}}$, Well-Stirred 간 클리어런스($CL_H$), $E_H$ 추출비, IVIVE 스케일링 구현.
+  - `tdc_studio/serving/pbpk_pipeline.py` 및 `/predict/pbpk` FastAPI 엔드포인트 연동. 단위/통합 테스트 100% 통과.
+- [x] **Task C-1: Cluster 4 (Clearance & Half-Life) 생체 연계 MTL 원격 Colab GPU 학습 (COMPLETE)**
+  - 설정: [`configs/config_clearance_mtl.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/ADMET/configs/config_clearance_mtl.yaml)
+  - Colab T4 GPU 실행 완료 (공식 W&B 런: `rf7sv2a8`, 계정: `munhyoungdo@gmail.com`).
+  - **테스트 세트 실측 지표**:
+    - **`clearance_microsome_az`**: **Spearman $\rho = \mathbf{0.6918}$** (목표 $0.575$ 대폭 초과 달성, $+0.1168$ SOTA 경신), **Pearson $r = \mathbf{0.6046}$**, MAE = $0.369$ ($\log_{10}$)
+    - **`half_life_obach`**: **Spearman $\rho = \mathbf{0.5256}$**, **Pearson $r = \mathbf{0.5062}$**, **$R^2 = 0.2233$**, MAE = $0.363$ ($\log_{10}$)
+    - **`clearance_hepatocyte_az`**: Spearman $\rho = 0.3356$, Pearson $r = 0.3154$, MAE = $0.470$ ($\log_{10}$)
+    - 가교 앵커: `ppbr_az` Spearman $\rho = 0.5871$, Pearson $r = 0.5276$
+  - 체크포인트 및 아티팩트 W&B 저장 완료. PBPK 파이프라인 연동 기반 확보.
 - [x] **Task C-2: Cluster 3 (CYP450 8-Head Matrix) Two-Stage SOTA 학습 (COMPLETE)**
   - Stage 1 (Veith 5-Head 대규모 사전학습, Colab T4 GPU): 복합 Test ROC-AUC = **0.8784** (`cyp1a2` **0.9194**, `cyp2c9` **0.8827**, `cyp3a4` **0.8784**, `cyp2c19` **0.8774**, `cyp2d6` **0.8323**).
   - Stage 2 (Carbon-Mangels 3-Substrates Staged Unfreezing 전이 미세조정): 3대 기질 압도적 SOTA 달성 (`cyp2d6_substrate` **0.9928** / ACC 97.7% / MCC +0.952, `cyp2c9_substrate` **0.9638** / ACC 97.0% / MCC +0.912, `cyp3a4_substrate` **0.9130** / ACC 90.2% / MCC +0.800). 기질 평균 ROC-AUC = **0.9565** (+22.6% 도약).
   - 공식 W&B 런: `f9v2gcsr` (Stage 1), `3qihar8z` (Stage 2). 체크포인트: `models/checkpoint_cyp450_stage2/best_model.pt`.
+- [ ] **Task C-3: Cluster 5 (hERG Central 306k 빅데이터 + DILI) 안전성 방어벽 학습 (NEXT)**
 
 ---
 

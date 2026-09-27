@@ -29,3 +29,12 @@ class HealthResponse(BaseModel):
 
     status: str = "healthy"
     model_loaded: bool = False
+
+
+class PBPKResponse(BaseModel):
+    """PBPK prediction response payload."""
+
+    results: List[dict] = Field(..., description="Calculated in vivo pharmacokinetic profiles.")
+    model_name: str = Field(
+        default="TDC-Studio-PBPK-Pipeline", description="Serving model identifier."
+    )

@@ -107,6 +107,7 @@ class DTIInferencePipeline(InferencePipeline):
     ):
         super().__init__(model=model, device=device, is_dta=True, modality="graph")
         from tdc_studio.data.transforms import AminoAcidTokenizer
+
         self.aa_tokenizer = AminoAcidTokenizer(max_length=aa_max_length)
 
     def predict(
@@ -135,6 +136,7 @@ class DTIInferencePipeline(InferencePipeline):
             g = self.graph_transform(sm)
             if g is None:
                 from torch_geometric.data import Data
+
                 g = Data(
                     x=torch.zeros((1, 14)),
                     edge_index=torch.empty((2, 0), dtype=torch.long),
@@ -142,11 +144,13 @@ class DTIInferencePipeline(InferencePipeline):
                 )
             # Target sequence
             target_tensor = self.aa_tokenizer(seq)
-            batch_items.append({
-                "drug_graph":      g,
-                "drug_smiles_str": sm,         # kept for Phase B HF encoder
-                "target_seq":      target_tensor,
-            })
+            batch_items.append(
+                {
+                    "drug_graph": g,
+                    "drug_smiles_str": sm,  # kept for Phase B HF encoder
+                    "target_seq": target_tensor,
+                }
+            )
 
         collated = molecule_collate_fn(batch_items)
         for k, v in collated.items():
@@ -160,4 +164,3 @@ class DTIInferencePipeline(InferencePipeline):
         if isinstance(preds_flat, float):
             return [preds_flat]
         return preds_flat
-

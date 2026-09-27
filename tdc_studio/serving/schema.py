@@ -1,6 +1,6 @@
 """Pydantic schemas for inference requests and responses."""
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -29,6 +29,8 @@ class HealthResponse(BaseModel):
 
     status: str = "healthy"
     model_loaded: bool = False
+    admet_model_loaded: bool = False
+    vdss_model_loaded: bool = False
     dti_model_loaded: bool = False
 
 
@@ -43,6 +45,10 @@ class DTIInferenceRequest(BaseModel):
     )
     return_kd_nm: bool = Field(
         default=True, description="Whether to include Kd values in nanomolar (nM) in response."
+    )
+    return_attention: bool = Field(
+        default=False,
+        description="Whether to include residue/token attention weight maps (for models supporting XAI).",
     )
 
     @model_validator(mode="after")
@@ -60,6 +66,9 @@ class DTIInferenceResponse(BaseModel):
 
     predictions_pkd: List[float] = Field(..., description="Predicted pKd values (-log10 Kd).")
     kd_nm: Optional[List[float]] = Field(None, description="Predicted Kd values in nanomolar (nM).")
+    attention_weights: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Attention weight maps per pair (e.g. attn_d2t, attn_t2d)."
+    )
     unit: str = Field(
         default="pK_d (-log10 Kd)", description="Measurement unit of primary prediction."
     )

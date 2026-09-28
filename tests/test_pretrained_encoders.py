@@ -89,9 +89,39 @@ def test_chemberta_encoder_freeze_unfreeze(mock_automodel, mock_autotokenizer):
     encoder = ChemBERTaEncoder({"freeze_backbone": True})
     encoder.freeze()
     assert encoder.freeze_backbone is True
+    assert encoder.partially_unfrozen is False
 
     encoder.unfreeze()
     assert encoder.freeze_backbone is False
+    assert encoder.partially_unfrozen is False
+
+    encoder.unfreeze(last_n_layers=2)
+    assert encoder.freeze_backbone is False
+    assert encoder.partially_unfrozen is True
+    assert encoder.unfrozen_layers == 2
+
+
+@patch("tdc_studio.models.dti.pretrained_encoders.AutoTokenizer.from_pretrained")
+@patch("tdc_studio.models.dti.pretrained_encoders.AutoModel.from_pretrained")
+def test_esm2_encoder_freeze_unfreeze(mock_automodel, mock_autotokenizer):
+    """Test freeze, full unfreeze, and partial unfreeze on ESM2Encoder."""
+    mock_model, mock_tok = _create_mock_hf_model(hidden_size=480)
+    mock_automodel.return_value = mock_model
+    mock_autotokenizer.return_value = mock_tok
+
+    encoder = ESM2Encoder({"freeze_backbone": True})
+    encoder.freeze()
+    assert encoder.freeze_backbone is True
+    assert encoder.partially_unfrozen is False
+
+    encoder.unfreeze()
+    assert encoder.freeze_backbone is False
+    assert encoder.partially_unfrozen is False
+
+    encoder.unfreeze(last_n_layers=2)
+    assert encoder.freeze_backbone is False
+    assert encoder.partially_unfrozen is True
+    assert encoder.unfrozen_layers == 2
 
 
 @patch("tdc_studio.models.dti.pretrained_encoders.AutoTokenizer.from_pretrained")

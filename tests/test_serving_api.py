@@ -10,7 +10,9 @@ from tdc_studio.serving.app import (
     app,
     init_pipeline_from_directory,
     set_dti_pipeline,
+    set_pbpk_pipeline,
     set_pipeline,
+    set_vdss_pipeline,
 )
 from tdc_studio.serving.exporter import (
     export_dti_package,
@@ -28,6 +30,9 @@ def test_client():
 
 def test_healthz_endpoint_initial(test_client):
     set_pipeline(None)
+    set_vdss_pipeline(None)
+    set_pbpk_pipeline(None)
+    set_dti_pipeline(None)
     resp = test_client.get("/healthz")
     assert resp.status_code == 200
     data = resp.json()

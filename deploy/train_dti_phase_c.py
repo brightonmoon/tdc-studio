@@ -223,7 +223,7 @@ def main():
 
         for batch in train_loader:
             dev_batch = {k: (v.to(device) if hasattr(v, "to") else v) for k, v in batch.items()}
-            targets = dev_batch["labels"].float()
+            targets = dev_batch.get("labels", dev_batch.get("label")).float()
 
             optimizer.zero_grad()
             with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
@@ -254,7 +254,8 @@ def main():
                 with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
                     preds = model(dev_batch).squeeze(-1)
                 val_preds.extend(preds.cpu().numpy().tolist())
-                val_targets.extend(dev_batch["labels"].cpu().numpy().tolist())
+                targets = dev_batch.get("labels", dev_batch.get("label"))
+                val_targets.extend(targets.cpu().numpy().tolist())
 
         val_metrics = evaluator.compute_all(
             np.array(val_preds), np.array(val_targets), task_type="dta"
@@ -337,7 +338,8 @@ def main():
                 preds_sq = preds.squeeze(-1)
 
             test_preds.extend(preds_sq.cpu().numpy().tolist())
-            test_targets.extend(dev_batch["labels"].cpu().numpy().tolist())
+            targets = dev_batch.get("labels", dev_batch.get("label"))
+            test_targets.extend(targets.cpu().numpy().tolist())
 
     test_metrics = evaluator.compute_all(
         np.array(test_preds), np.array(test_targets), task_type="dta"

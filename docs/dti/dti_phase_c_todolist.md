@@ -18,25 +18,21 @@ Google Colab 격리 환경(`munhyeongdo4@gmail.com`, 세션 `dti-gpu`, Tesla T4 
 
 ---
 
-## 🚨 [긴급 점검 및 조치] 금일 발견된 핵심 결함 및 패치 계획 (Critical Bugs & Fixes)
+## 🚨 [긴급 점검 및 조치] 금일 발견된 핵심 결함 및 패치 완료 내역 (Critical Bugs & Fixes - COMPLETE)
 
-오늘자(2026-09-27) 코드 리뷰에서 발견된 최우선 결함 사항으로, 신규 기능 작업 전 우선 패치 필수:
+오늘자(2026-09-27) 코드 리뷰에서 발견된 최우선 결함 4건 전량 패치 및 101개 테스트 통과 검증 완료:
 
-1. **[DTA - 치명적] 학습 스크립트 레이블 키 불일치 (`train_dti_phase_c.py` L226, 340)**
-   - **문제**: `DTADataModule`은 배치 데이터에 단수형 `batch["label"]`을 적재하지만, 학습 스크립트는 `dev_batch["labels"]`를 조회하여 첫 배치에서 즉각적인 `KeyError` 크래시 발생.
-   - **조치**: `targets = dev_batch.get("labels", dev_batch.get("label")).float()` 형태로 단수/복수형 호환 안전 폴백 적용.
+1. **[DTA - 치명적] 학습 스크립트 레이블 키 불일치 (`train_dti_phase_c.py` L226, 257, 340) [완료]**
+   - **조치**: `targets = dev_batch.get("labels", dev_batch.get("label")).float()` 단수/복수형 호환 안전 폴백 적용 완료.
 
-2. **[ADMET - 브랜치 분기 이슈] `main`과 `brightonmoon/ADMET` 브랜치 간 파일 불일치**
-   - **문제**: `pbpk/engine.py`, `pbpk_pipeline.py` 등 핵심 PBPK 코드가 아직 `brightonmoon/ADMET`에만 존재하여, `main` 브랜치 단독 빌드/서빙 시 `ImportError` 유발 위험.
-   - **조치**: `brightonmoon/ADMET` 브랜치의 최신 커밋을 `main`으로 안전하게 Rebase/Merge 완료.
+2. **[ADMET - 브랜치 분기 이슈] `main`과 `brightonmoon/ADMET` 브랜치 간 파일 불일치 [완료]**
+   - **조치**: `brightonmoon/ADMET` 브랜치(Cluster 4/5 SOTA, PBPK 엔진, Docker CI/CD 등)를 `main`으로 안전하게 병합 완료.
 
-3. **[ADMET - 테스트 깨짐] `test_tri_hybrid_serving.py` (L11) import 경로 오류**
-   - **문제**: `from api import app`으로 잘못 임포트되어 있어 테스트 스위트 실행 시 즉시 `ModuleNotFoundError` 발생.
-   - **조치**: `from tdc_studio.serving.app import app`으로 수정하여 회귀 테스트 정상화.
+3. **[ADMET - 테스트 깨짐] `test_tri_hybrid_serving.py` (L11) import 경로 오류 [완료]**
+   - **조치**: `from tdc_studio.serving.app import app`으로 수정하여 회귀 테스트 정상화 완료.
 
-4. **[DTA - 캐시 메모리 및 동결 해제 버그] (`pretrained_encoders.py` L103, 274)**
-   - **문제**: `unfreeze(last_n_layers=N)` 호출 시 전체 플래그가 `self.freeze_backbone = False`로 변경되어, 여전히 동결 상태인 하위 레이어들까지 ESM 캐시 경로를 우회하고 매 에포크마다 30배 느린 재연산 수행.
-   - **조치**: 부분 동결 해제 상태(`self.partially_unfrozen = True`)를 별도 추적하고, 동결된 하위 블록의 사전 연산 캐싱은 지속 활용하도록 분기 로직 정교화.
+4. **[DTA - 캐시 메모리 및 동결 해제 버그] (`pretrained_encoders.py` L103, 274) [완료]**
+   - **조치**: 부분 동결 해제 상태(`self.partially_unfrozen = True`, `self.unfrozen_layers`) 추적 모듈 구현 및 고정 하위 블록의 `_embedding_cache` 사전 연산 캐싱 재활용 분기 로직 정교화 완료.
 
 ---
 

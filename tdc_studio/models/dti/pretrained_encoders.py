@@ -52,6 +52,8 @@ class ChemBERTaEncoder(nn.Module):
         self.max_length = cfg.get("max_length", 256)
         self.pooling = cfg.get("pooling", "mean")
         self.freeze_backbone = cfg.get("freeze_backbone", False)
+        self.partially_unfrozen = False
+        self.unfrozen_layers = 0
         self.return_sequence = cfg.get("return_sequence", False)
         dropout = cfg.get("dropout", 0.1)
 
@@ -81,12 +83,17 @@ class ChemBERTaEncoder(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
         self.freeze_backbone = True
+        self.partially_unfrozen = False
+        self.unfrozen_layers = 0
 
     def unfreeze(self, last_n_layers: Optional[int] = None) -> None:
         """Unfreeze backbone parameters (optionally only the last N transformer layers)."""
         if last_n_layers is None:
             for param in self.model.parameters():
                 param.requires_grad = True
+            self.freeze_backbone = False
+            self.partially_unfrozen = False
+            self.unfrozen_layers = 0
         else:
             # First freeze all
             self.freeze()
@@ -100,7 +107,9 @@ class ChemBERTaEncoder(nn.Module):
                 for layer in encoder_layers[-last_n_layers:]:
                     for param in layer.parameters():
                         param.requires_grad = True
-        self.freeze_backbone = False
+            self.freeze_backbone = False
+            self.partially_unfrozen = True
+            self.unfrozen_layers = last_n_layers
 
     def _mean_pooling(
         self, last_hidden_state: torch.Tensor, attention_mask: torch.Tensor
@@ -220,6 +229,8 @@ class ESM2Encoder(nn.Module):
         self.max_length = cfg.get("max_length", 1024)
         self.pooling = cfg.get("pooling", "mean")
         self.freeze_backbone = cfg.get("freeze_backbone", True)
+        self.partially_unfrozen = False
+        self.unfrozen_layers = 0
         self.use_grad_ckpt = cfg.get("gradient_checkpointing", False)
         self.return_sequence = cfg.get("return_sequence", False)
         dropout = cfg.get("dropout", 0.1)
@@ -258,12 +269,17 @@ class ESM2Encoder(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
         self.freeze_backbone = True
+        self.partially_unfrozen = False
+        self.unfrozen_layers = 0
 
     def unfreeze(self, last_n_layers: Optional[int] = None) -> None:
         """Unfreeze transformer parameters (optionally only the top N layers)."""
         if last_n_layers is None:
             for param in self.model.parameters():
                 param.requires_grad = True
+            self.freeze_backbone = False
+            self.partially_unfrozen = False
+            self.unfrozen_layers = 0
         else:
             self.freeze()
             encoder_layers = getattr(getattr(self.model, "encoder", None), "layer", None)
@@ -271,7 +287,9 @@ class ESM2Encoder(nn.Module):
                 for layer in encoder_layers[-last_n_layers:]:
                     for param in layer.parameters():
                         param.requires_grad = True
-        self.freeze_backbone = False
+            self.freeze_backbone = False
+            self.partially_unfrozen = True
+            self.unfrozen_layers = last_n_layers
 
     def _mean_pooling(
         self, last_hidden_state: torch.Tensor, attention_mask: torch.Tensor
@@ -302,6 +320,87 @@ class ESM2Encoder(nn.Module):
             return_sequence = self.return_sequence
 
         clean_seqs = [s if (s and isinstance(s, str)) else "A" for s in seq_list]
+
+        # Branch 1: Partially unfrozen backbone (reuse cached frozen lower layers)
+        if (
+            self.partially_unfrozen
+            and self.unfrozen_layers > 0
+            and hasattr(self.model, "encoder")
+            and getattr(self.model.encoder, "layer", None) is not None
+            and len(self.model.encoder.layer) > self.unfrozen_layers
+        ):
+            encoder_layers = self.model.encoder.layer
+            num_frozen = len(encoder_layers) - self.unfrozen_layers
+            missing_indices = []
+            missing_seqs = []
+            seq_tensors: List[Optional[torch.Tensor]] = [None] * len(clean_seqs)
+
+            for idx, seq in enumerate(clean_seqs):
+                cache_key = f"inter_{num_frozen}_{seq}"
+                if cache_key in self._embedding_cache:
+                    seq_tensors[idx] = self._embedding_cache[cache_key].to(device)
+                else:
+                    missing_indices.append(idx)
+                    missing_seqs.append(seq)
+
+            if missing_seqs:
+                encoded = self.tokenizer(
+                    missing_seqs,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt",
+                )
+                input_ids = encoded["input_ids"].to(device)
+                attention_mask = encoded["attention_mask"].to(device)
+
+                with torch.no_grad():
+                    ext_mask = self.model.get_extended_attention_mask(
+                        attention_mask, input_ids.shape
+                    )
+                    h = self.model.embeddings(input_ids=input_ids, attention_mask=attention_mask)
+                    for layer in encoder_layers[:num_frozen]:
+                        h = layer(h, attention_mask=ext_mask)[0]
+
+                for i, orig_idx in enumerate(missing_indices):
+                    act_len = int(attention_mask[i].sum().item())
+                    s_vec = h[i, :act_len, :].detach().cpu().half()
+                    self._embedding_cache[f"inter_{num_frozen}_{clean_seqs[orig_idx]}"] = s_vec
+                    seq_tensors[orig_idx] = s_vec.to(device).float()
+
+            valid_seqs = [
+                s.float() if s.dtype != torch.float32 else s
+                for s in seq_tensors
+                if s is not None
+            ]
+            padded_h = torch.nn.utils.rnn.pad_sequence(valid_seqs, batch_first=True)
+            lengths = [s.shape[0] for s in valid_seqs]
+            max_len = padded_h.shape[1]
+            attn_mask = (
+                torch.arange(max_len, device=device)[None, :]
+                < torch.tensor(lengths, device=device)[:, None]
+            ).long()
+            ext_mask = self.model.get_extended_attention_mask(
+                attn_mask, padded_h.shape[:2]
+            )
+
+            # Pass through unfrozen upper layers with active gradients
+            for layer in encoder_layers[-self.unfrozen_layers:]:
+                padded_h = layer(padded_h, attention_mask=ext_mask)[0]
+
+            if getattr(self.model.encoder, "emb_layer_norm_after", None) is not None:
+                padded_h = self.model.encoder.emb_layer_norm_after(padded_h)
+
+            if return_sequence:
+                proj_seq = self.proj(padded_h)
+                pad_mask = (padded_h.abs().sum(dim=-1, keepdim=True) > 0).float()
+                return proj_seq * pad_mask
+            else:
+                if self.pooling == "bos":
+                    pooled = padded_h[:, 0, :]
+                else:
+                    pooled = self._mean_pooling(padded_h, attn_mask)
+                return self.proj(pooled)
 
         if return_sequence:
             if self.freeze_backbone:

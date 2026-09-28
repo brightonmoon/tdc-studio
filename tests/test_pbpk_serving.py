@@ -57,16 +57,19 @@ def test_pbpk_api_endpoint():
         vdss_pipeline=MockVDssPipeline(),
         clearance_pipeline=MockClearancePipeline(),
     )
-    set_pbpk_pipeline(pipe)
+    try:
+        set_pbpk_pipeline(pipe)
 
-    client = TestClient(app)
-    response = client.post(
-        "/predict/pbpk",
-        json={"smiles": ["CC(=O)NC1=CC=C(O)C=C1", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"]},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "results" in data
-    assert len(data["results"]) == 2
-    assert data["model_name"] == "TDC-Studio-PBPK-Pipeline"
-    assert "cl_total_ml_min_kg" in data["results"][0]
+        client = TestClient(app)
+        response = client.post(
+            "/predict/pbpk",
+            json={"smiles": ["CC(=O)NC1=CC=C(O)C=C1", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "results" in data
+        assert len(data["results"]) == 2
+        assert data["model_name"] == "TDC-Studio-PBPK-Pipeline"
+        assert "cl_total_ml_min_kg" in data["results"][0]
+    finally:
+        set_pbpk_pipeline(None)

@@ -129,6 +129,23 @@
 | **ADMET 실전** | **Task F-5** | **Cluster 5 (hERG Central 306k & DILI) 안전성 방어벽 학습**<br/>• 306k hERG Central 3-Head Multi-Task 학습<br/>• DILI (약물유도간손상) 이진분류 모델 결합 | • hERG ROC-AUC $\ge 0.88$, DILI ROC-AUC $\ge 0.82$<br/>• 초기 독성 스크리닝 필터 확립 |
 | **엔지니어링** | **Task F-6** | **Docker 프로덕션 컨테이너화 및 W&B Model Registry 자동 동기화**<br/>• FastAPI 기반 경량 배포 Dockerfile 작성<br/>• SOTA 모델 아티팩트 자동 버전 태깅 및 CI/CD 롤백 체계 구축 | • 배포 환경 일관성 및 재현성 100% 보장 |
 
+## 🚨 [긴급 점검 및 조치] 금일(2026-09-27) 코드 리뷰 발견 핵심 결함 (Critical Bugs & Immediate Fixes)
+
+코드 리뷰 결과 파악된 최우선 결함 사항으로, 차기 마일스톤 착수 전 반드시 해결 필요:
+
+1. **[DTA - 치명적] 학습 스크립트 레이블 키 불일치 (`train_dti_phase_c.py` L226, 340)**
+   - `DTADataModule`은 배치에 `batch["label"]`(단수형)을 제공하나, 학습 스크립트는 `dev_batch["labels"]`(복수형)를 조회하여 1번째 배치에서 즉시 `KeyError` 발생.
+   - **조치**: `dev_batch.get("labels", dev_batch.get("label"))` 형태의 안전 조회 폴백 적용.
+2. **[ADMET - 브랜치 분기 이슈] `main`과 `brightonmoon/ADMET` 브랜치 간 파일 불일치**
+   - `pbpk/engine.py`, `pbpk_pipeline.py` 등 핵심 코드가 아직 `brightonmoon/ADMET`에만 존재하여, `main` 브랜치 단독 빌드 시 엔드포인트 연동 깨짐 위험.
+   - **조치**: `brightonmoon/ADMET` 브랜치 최신 산출물을 검증 후 `main`으로 안전하게 머지.
+3. **[ADMET - 테스트 깨짐] `test_tri_hybrid_serving.py` (L11) import 경로 오류**
+   - `from api import app`으로 잘못 임포트되어 있어 테스트 실행 시 즉각적인 `ModuleNotFoundError` 발생.
+   - **조치**: `from tdc_studio.serving.app import app`으로 수정.
+4. **[DTA - 캐시 메모리 및 동결 해제 버그] (`pretrained_encoders.py`)**
+   - `unfreeze(last_n_layers=N)` 호출 시 전체를 `freeze_backbone=False`로 변경하여, 동결 상태인 하위 레이어까지 ESM 캐시를 타지 못하고 매번 재계산되는 성능 저하 유발.
+   - **조치**: 부분 동결 해제 여부를 구분하여 고정 레이어 캐시 재활용 보장.
+
 ---
 
 ## 🛠️ 주요 설정 파일 및 문서 빠른 링크

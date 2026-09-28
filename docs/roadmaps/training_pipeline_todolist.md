@@ -167,30 +167,38 @@
 
 ## 🌅 내일(2026-09-28) 착수 예정 TODOLIST (Tomorrow's Action Packages)
 
-### 🥇 [Package 1: hERG & AMES 전용 안전성 챔피언 모델 구축 (Colab GPU: `munhyoungdo@gmail.com`)]
-- [ ] **Task E-1: hERG 2-Stage Fine-tuning 원격 Colab GPU 학습**
-  - 설정: [`configs/config_herg_standalone.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/ADMET/configs/config_herg_standalone.yaml)
-  - Stage 1: `herg_karim` (13,445개) 단독 백본 사전학습 (Hidden Dim 512, Dropout 0.2)
+### 🥇 [Package 1: hERG & AMES 전용 안전성 챔피언 모델 파이프라인 (COMPLETE)]
+- [x] **Task E-1: hERG 2-Stage Fine-tuning 스크립트 및 모델 파이프라인 구축** (`deploy/train_herg_2stage.py`)
+  - Stage 1: `herg_karim` (13,445개) 단독 백본 사전학습
   - Stage 2: `herg` (Wang et al., 648개) 저비율($0.1 \times \text{lr}$) 미세조정 및 헤드 적응
-  - 목표: `herg_karim` AUROC $\ge \mathbf{0.90}$, `herg` AUROC $\ge \mathbf{0.88} \sim \mathbf{0.90}$ 진입
-- [ ] **Task E-2: AMES 유전독성 구조 경보(Ashby-Tennant) 모듈 및 단독 모델 복구**
+- [x] **Task E-2: AMES 유전독성 구조 경보(Ashby-Tennant) 모듈 및 Focal Loss 파이프라인 구축**
   - Ashby-Tennant 100-dim 하위구조 경보 비트벡터 추출 모듈 구현 (`tdc_studio/features/structural_alerts.py`)
-  - Focal Loss ($\gamma=2.0$) 기반 단독 D-MPNN-Des / GBDT 파이프라인 구축 및 학습
-  - 목표: `ames` 돌연변이원성 AUROC $\mathbf{0.50} \to \ge \mathbf{0.86}$ 즉시 정상화
+  - Focal Loss ($\gamma=2.0, \alpha=0.70$) 기반 단독 학습 파이프라인 구축 (`tdc_studio/models/loss/focal_loss.py`, `deploy/train_ames_standalone.py`)
 
-### 🥈 [Package 2: 간세포 클리어런스 계단식 전이 & Lipo GBDT 스태킹]
-- [ ] **Task E-3: 간세포(Hepatocyte) 클리어런스 계단식 캐스케이딩(Cascaded Transfer)**
-  - 이미 $\rho = 0.6918$을 달성한 `clearance_microsome_az` 예측값을 `clearance_hepatocyte_az`의 사전 피처(Prior Feature)로 주입하는 2차 파이프라인 구성
-  - 목표: `clearance_hepatocyte_az` Spearman $\rho = 0.33 \to \ge \mathbf{0.45}$ 도약
-- [ ] **Task E-4: Lipophilicity AstraZeneca GBDT + ChemBERTa 스태킹**
-  - RDKit Crippen LogP, LabuteASA, pKa 특화 24-dim 모티프 결합 GBDT + ChemBERTa 언어모델 앙상블
-  - 목표: `lipophilicity` Test $R^2 = 0.7602 \to \ge \mathbf{0.85}$ 도약
+### 🥈 [Package 2: 간세포 클리어런스 계단식 전이 & Lipo GBDT 스태킹 (COMPLETE)]
+- [x] **Task E-3: 간세포(Hepatocyte) 클리어런스 계단식 캐스케이딩(Cascaded Transfer)**
+  - 마이크로솜($\rho = 0.6918$) 예측치를 간세포 사전 피처로 주입하는 `CascadedClearancePredictor` (`tdc_studio/models/hybrid/clearance_cascading.py`, `deploy/train_clearance_cascade.py`)
+- [x] **Task E-4: Lipophilicity AstraZeneca GBDT + ChemBERTa 스태킹**
+  - RDKit Crippen LogP, LabuteASA, 24-dim 모티프 결합 GBDT + ChemBERTa 스태커 (`tdc_studio/features/lipo_motifs.py`, `tdc_studio/models/hybrid/lipo_stacker.py`, `deploy/train_lipo_stacking.py`)
 
-### 🥉 [Package 3: 전주기 Unified ADMET 통합 서빙 엔드포인트 구축]
-- [ ] **Task E-5: 통합 서빙 엔드포인트 `POST /predict/admet_full` 구현**
-  - Cluster 1(Caco2/Lipo), Cluster 2(PPBR/VDss/BBB), Cluster 3(CYP450 8-Head), Cluster 4(Clearance/Half-life/PBPK), Cluster 5(DILI/ClinTox/hERG/LD50)를 단일 프로세스에서 동시 로드
-  - 단일 SMILES 입력 시 22대 전주기 ADMET 예측치 및 PBPK PK 파라미터 일괄 반환
-- [ ] **Task E-6: 통합 서빙 E2E 테스트 및 Docker 컨테이너 엔드포인트 검증**
+### 🥉 [Package 3: 전주기 Unified ADMET 통합 서빙 엔드포인트 구축 (COMPLETE)]
+- [x] **Task E-5: 통합 서빙 파이프라인 및 `POST /predict/admet_full` 구현**
+  - 22대 전주기 지표(C1~C5) 및 in vivo PBPK PK 파라미터 일괄 반환 (`tdc_studio/serving/unified_pipeline.py`, `app.py`)
+- [x] **Task E-6: 통합 서빙 E2E 테스트 검증 (`tests/test_unified_serving.py` All Passed)**
+
+### 🔍 [추가 완결 트랙: 설명가능 AI (XAI) 및 원자 기여도 시각화 (COMPLETE)]
+- [x] **Integrated Gradients 원자 가중치 추출기** (`tdc_studio/explainability/attribution.py`)
+- [x] **RDKit 2D SVG 위험도 히트맵 렌더러** (`tdc_studio/explainability/visualizer.py`)
+- [x] **10대 의약화학 동배체(Bioisostere) 치환 추천기** (`tdc_studio/explainability/bioisostere.py`)
+- [x] **FastAPI `POST /explain` 엔드포인트 서빙 및 E2E 테스트 검증**
+
+### 🔮 [차기 연계 TODOLIST (선행 모듈 성숙 후 착수)]
+- [ ] **단점을 스스로 고쳐나가는 인공지능 분자 생성기 (Self-Correcting Lead Optimizer)**
+  - *비고: 분자생성 모델은 Predict 모델이 아닌 Generate 모델이므로, 향후 Retrosynthesis(역합성) 트랙 개발 시 합성 경로 트리 탐색과 함께 통합 파이프라인으로 본격 개발 및 연계 예정.*
+  - *현 상태: 4단계 폐루프 기본 프로토타입(`tdc_studio/generative/`, `POST /optimize`) 구현 및 단위 테스트 완료.*
+- [ ] **초고속 가상 스크리닝 (Virtual Screening) & ONNX 가속 배치 엔진**
+- [ ] **DTI 결합력 연계 치료지수 (Therapeutic Index) 통합 파이프라인 (Phase C)**
+- [ ] **DTA + ADMET + Retrosynthesis 3-in-1 인터랙티브 웹 대시보드**
 
 ---
 

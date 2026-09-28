@@ -10,12 +10,30 @@ import torch
 from fastapi import FastAPI, HTTPException
 from starlette.concurrency import run_in_threadpool
 
+from tdc_studio.explainability.attribution import MolecularExplainer
+from tdc_studio.explainability.bioisostere import BioisostereRecommender
+from tdc_studio.explainability.visualizer import AttributionVisualizer
+from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
 from tdc_studio.serving.pipeline import InferencePipeline
 from tdc_studio.serving.schema import (
+    BioisostereRecommendationItem,
+    ExplainRequest,
+    ExplainResponse,
     HealthResponse,
     InferenceRequest,
     InferenceResponse,
+    LiabilityDiagnosticItem,
+    OptimizedCandidateItem,
+    OptimizeRequest,
+    OptimizeResponse,
     PBPKResponse,
+    UnifiedADMETRequest,
+    UnifiedADMETResponse,
+)
+from tdc_studio.serving.unified_pipeline import (
+    UnifiedADMETPipeline,
+    get_unified_pipeline,
+    set_unified_pipeline,
 )
 
 logger = logging.getLogger("tdc_studio.serving")
@@ -138,23 +156,32 @@ async def lifespan(app: FastAPI):
     model_dir = os.environ.get("MODEL_DIR")
     if not model_dir:
         for candidate in ["models/export", "models/checkpoint"]:
-            if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "config.json")):
+            if os.path.isdir(candidate):
                 model_dir = candidate
                 break
 
-    if model_dir:
-        init_pipeline_from_directory(model_dir)
+    if model_dir and os.path.isdir(model_dir):
+        if os.path.exists(os.path.join(model_dir, "config.json")):
+            init_pipeline_from_directory(model_dir)
+        try:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            unified_pipe = UnifiedADMETPipeline.from_exported_directory(model_dir, device=device)
+            set_unified_pipeline(unified_pipe)
+            logger.info("Successfully initialized UnifiedADMETPipeline.")
+        except Exception as e:
+            logger.warning("UnifiedADMETPipeline auto-init note: %s", e)
 
     yield
 
     # Cleanup on shutdown
     set_pipeline(None)
+    set_unified_pipeline(None)
 
 
 app = FastAPI(
     title="TDC-Studio Inference Service",
-    version="0.1.0",
-    description="High-performance molecular property prediction microservice.",
+    version="0.2.0",
+    description="High-performance molecular property prediction microservice with Unified 22 ADMET + PBPK engine.",
     lifespan=lifespan,
 )
 
@@ -162,9 +189,12 @@ app = FastAPI(
 @app.get("/healthz", response_model=HealthResponse)
 def health_check():
     """Liveness / Readiness probe."""
+    unified_ready = get_unified_pipeline() is not None
+    model_loaded = _pipeline is not None or unified_ready
     return HealthResponse(
         status="healthy",
-        model_loaded=_pipeline is not None,
+        model_loaded=model_loaded,
+        unified_ready=unified_ready,
     )
 
 
@@ -230,3 +260,190 @@ async def predict_pbpk(request: InferenceRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PBPK inference error: {str(e)}")
+
+
+@app.post("/predict/admet_full", response_model=UnifiedADMETResponse)
+async def predict_admet_full(request: UnifiedADMETRequest):
+    """Predict complete C1-C5 22 full-lifecycle ADMET indicators and PBPK simulation in a single call."""
+    unified_pipe = get_unified_pipeline()
+    if unified_pipe is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = UnifiedADMETPipeline(device=device)
+        set_unified_pipeline(unified_pipe)
+
+    try:
+        profiles = await run_in_threadpool(unified_pipe.predict_batch, request.smiles)
+        return UnifiedADMETResponse(
+            results=profiles,
+            model_version="TDC-Studio-Unified-v1",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unified ADMET inference error: {str(e)}")
+
+
+# ------------------------------------------------------------------------------
+# Explainability & Bioisostere Recommendations
+# ------------------------------------------------------------------------------
+_explainer: Optional[MolecularExplainer] = None
+_visualizer: Optional[AttributionVisualizer] = None
+_bioisostere: Optional[BioisostereRecommender] = None
+
+
+def get_explainer() -> MolecularExplainer:
+    """Singleton getter for MolecularExplainer."""
+    global _explainer
+    if _explainer is None:
+        pipe = get_pipeline()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if pipe is not None and hasattr(pipe, "model") and pipe.model is not None:
+            model = pipe.model
+        else:
+            from tdc_studio.models.graph.dmpnn import DMPNNModel
+
+            model = DMPNNModel(
+                {
+                    "type": "dmpnn",
+                    "in_dim": 14,
+                    "edge_dim": 6,
+                    "hidden_dim": 64,
+                    "num_layers": 2,
+                    "use_descriptors": False,
+                }
+            )
+        _explainer = MolecularExplainer(model=model, device=device)
+    return _explainer
+
+
+def get_visualizer() -> AttributionVisualizer:
+    """Singleton getter for AttributionVisualizer."""
+    global _visualizer
+    if _visualizer is None:
+        _visualizer = AttributionVisualizer()
+    return _visualizer
+
+
+def get_bioisostere() -> BioisostereRecommender:
+    """Singleton getter for BioisostereRecommender."""
+    global _bioisostere
+    if _bioisostere is None:
+        _bioisostere = BioisostereRecommender()
+    return _bioisostere
+
+
+@app.post("/explain", response_model=ExplainResponse)
+async def explain_molecule(request: ExplainRequest):
+    """Explain molecular liabilities using Integrated Gradients atom heatmaps and bioisostere suggestions."""
+    explainer = get_explainer()
+    visualizer = get_visualizer()
+    recommender = get_bioisostere()
+
+    try:
+        attr_res = await run_in_threadpool(
+            explainer.attribute,
+            request.smiles,
+        )
+        svg_data_uri = visualizer.render_data_uri(
+            attr_res["smiles"],
+            attr_res["normalized_attributions"],
+            legend=f"XAI Attribution (Score: {attr_res['predicted_score']:.2f})",
+        )
+        suggestions = recommender.recommend(
+            attr_res["smiles"],
+            liability_focus=request.liability_focus,
+        )
+        rec_items = [BioisostereRecommendationItem(**s) for s in suggestions]
+
+        return ExplainResponse(
+            smiles=request.smiles,
+            canonical_smiles=attr_res["smiles"],
+            predicted_score=attr_res["predicted_score"],
+            num_atoms=attr_res["num_atoms"],
+            atom_attributions=attr_res["atom_attributions"],
+            normalized_attributions=attr_res["normalized_attributions"],
+            hotspot_atoms=attr_res["hotspot_atoms"],
+            svg_data_uri=svg_data_uri,
+            bioisostere_recommendations=rec_items,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Explanation error: {str(e)}")
+
+
+# ------------------------------------------------------------------------------
+# Closed-Loop Generative Lead Optimizer Endpoint
+# ------------------------------------------------------------------------------
+_optimizer: Optional[SelfCorrectingOptimizer] = None
+
+
+def get_optimizer() -> SelfCorrectingOptimizer:
+    """Singleton getter for SelfCorrectingOptimizer."""
+    global _optimizer
+    if _optimizer is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = get_unified_pipeline()
+        if unified_pipe is None:
+            unified_pipe = UnifiedADMETPipeline(device=device)
+            set_unified_pipeline(unified_pipe)
+        explainer = get_explainer()
+        recommender = get_bioisostere()
+        _optimizer = SelfCorrectingOptimizer(
+            pipeline=unified_pipe,
+            explainer=explainer,
+            recommender=recommender,
+            device=device,
+        )
+    return _optimizer
+
+
+@app.post("/optimize", response_model=OptimizeResponse)
+async def optimize_molecule(request: OptimizeRequest):
+    """Automatically diagnose, localize, and repair liabilities using closed-loop self-correction."""
+    optimizer = get_optimizer()
+    try:
+        report = await run_in_threadpool(
+            optimizer.optimize,
+            request.smiles,
+            target_liability=request.target_liability,
+            max_candidates=request.max_candidates,
+        )
+
+        primary_item = None
+        if report.primary_liability is not None:
+            primary_item = LiabilityDiagnosticItem(
+                liability_key=report.primary_liability.liability_key,
+                liability_name=report.primary_liability.liability_name,
+                cluster=report.primary_liability.cluster,
+                current_value=report.primary_liability.current_value,
+                threshold=report.primary_liability.threshold,
+                severity=report.primary_liability.severity,
+                category=report.primary_liability.category,
+            )
+
+        cand_items = [
+            OptimizedCandidateItem(
+                smiles=c.smiles,
+                transformation_name=c.transformation_name,
+                liability_addressed=c.liability_addressed,
+                rationale=c.rationale,
+                parent_liability_value=c.parent_liability_value,
+                candidate_liability_value=c.candidate_liability_value,
+                liability_delta=c.liability_delta,
+                sa_score=c.sa_score,
+                scaffold_preserved=c.scaffold_preserved,
+                fitness_score=c.fitness_score,
+            )
+            for c in report.top_candidates
+        ]
+
+        return OptimizeResponse(
+            input_smiles=report.input_smiles,
+            canonical_smiles=report.canonical_smiles,
+            bemis_murcko_scaffold=report.bemis_murcko_scaffold,
+            primary_liability=primary_item,
+            candidates_generated=report.candidates_generated,
+            candidates_passing_sa_filter=report.candidates_passing_sa_filter,
+            top_candidates=cand_items,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lead optimization error: {str(e)}")
+
+

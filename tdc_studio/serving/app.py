@@ -15,6 +15,7 @@ from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
 from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
+from tdc_studio.serving.exporter import load_model_from_checkpoint
 from tdc_studio.serving.pipeline import DTIInferencePipeline, InferencePipeline
 from tdc_studio.serving.schema import (
     BioisostereRecommendationItem,
@@ -105,10 +106,6 @@ def get_dti_pipeline() -> Optional[DTIInferencePipeline]:
 def get_dti_model_meta() -> dict:
     """Getter for loaded DTI model metadata."""
     return _dti_model_meta
-
-
-from tdc_studio.serving.exporter import load_model_from_checkpoint
-
 
 
 def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:

@@ -9,6 +9,7 @@ from tdc_studio.models.graph.graph_transformer import GraphTransformerModel
 from tdc_studio.serving.app import (
     app,
     init_pipeline_from_directory,
+    set_dti_multi_pipeline,
     set_dti_pipeline,
     set_pipeline,
 )
@@ -18,7 +19,12 @@ from tdc_studio.serving.exporter import (
     export_production_package,
     load_model_from_checkpoint,
 )
-from tdc_studio.serving.pipeline import DTIInferencePipeline, InferencePipeline
+from tdc_studio.serving.pipeline import (
+    DTIInferencePipeline,
+    DTIMultiAffinityPipeline,
+    InferencePipeline,
+)
+from tdc_studio.serving.xai_utils import compute_affinity_consistency_score
 
 
 @pytest.fixture
@@ -361,5 +367,151 @@ def test_concurrent_admet_and_dti_serving(test_client):
     # Cleanup
     set_pipeline(None)
     set_dti_pipeline(None)
+
+
+def test_dti_predict_with_contact_map_and_pymol(test_client):
+    """[Task T-1] Verify that return_contact_map=True returns Top-K residues, atoms, and PyMOL command."""
+    model_cfg = {
+        "type": "graph_dta",
+        "drug_encoder": {"type": "gine", "in_dim": 14, "hidden_dim": 16, "num_layers": 1},
+        "target_encoder": {"type": "protein_cnn", "out_dim": 16, "kernel_sizes": [3]},
+        "fusion": {"type": "cross_attention", "hidden_dim": 16, "num_heads": 2},
+    }
+    model = GraphDTAModel(model_cfg)
+    pipeline = DTIInferencePipeline(model=model, device="cpu")
+    set_dti_pipeline(pipeline, meta=model_cfg)
+
+    payload = {
+        "smiles": ["CC(=O)OC1=CC=CC=C1C(=O)O"],
+        "target_sequences": ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"],
+        "return_contact_map": True,
+        "top_k_residues": 4,
+        "return_full_matrix": True,
+    }
+    resp = test_client.post("/predict/dti", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # 1. Predictions
+    assert "predictions_pkd" in data
+    assert len(data["predictions_pkd"]) == 1
+
+    # 2. XAI Top-K contact residues
+    assert "top_contact_residues" in data
+    assert data["top_contact_residues"] is not None
+    assert len(data["top_contact_residues"]) == 1
+    top_res = data["top_contact_residues"][0]
+    # For Phase A dummy single pooled vector, length may be min(top_k, L)
+    assert len(top_res) >= 1
+    for r in top_res:
+        assert "rank" in r
+        assert "index" in r
+        assert "residue_name" in r
+        assert "residue_code" in r
+        assert "score" in r
+        assert 0.0 <= r["score"] <= 1.0
+
+    # 3. PyMOL selection command
+    assert "pymol_commands" in data
+    assert data["pymol_commands"] is not None
+    assert len(data["pymol_commands"]) == 1
+    cmd = data["pymol_commands"][0]
+    assert "select binding_pocket, resi " in cmd
+    assert "show sticks, binding_pocket" in cmd
+
+    # 4. Top contact atoms
+    assert "top_contact_atoms" in data
+    assert data["top_contact_atoms"] is not None
+
+    # 5. Full matrix
+    assert "contact_maps" in data
+    assert data["contact_maps"] is not None
+
+    # Cleanup
+    set_dti_pipeline(None)
+
+
+def test_dti_predict_multi_affinity_endpoint(test_client):
+    """[Task T-2] Verify /predict/dti/multi-affinity predicts Kd, Ki, IC50 with ACS."""
+    multi_model_cfg = {
+        "type": "graph_dta",
+        "out_dim": 3,
+        "drug_encoder": {"type": "gine", "in_dim": 14, "hidden_dim": 16, "num_layers": 1},
+        "target_encoder": {"type": "protein_cnn", "out_dim": 16, "kernel_sizes": [3]},
+        "fusion": {"type": "cross_attention", "hidden_dim": 16, "num_heads": 2, "out_dim": 3},
+    }
+    model = GraphDTAModel(multi_model_cfg)
+    scaler_meta = {
+        "task_stats": {
+            0: {"name": "Kd", "mean": 7.2, "std": 2.8},
+            1: {"name": "Ki", "mean": 7.0, "std": 2.9},
+            2: {"name": "IC50", "mean": 6.8, "std": 3.0},
+        },
+        "log_transform": True,
+    }
+    pipeline = DTIMultiAffinityPipeline(model=model, device="cpu", scaler_meta=scaler_meta)
+    set_dti_multi_pipeline(pipeline, meta=multi_model_cfg)
+    set_dti_pipeline(pipeline, meta=multi_model_cfg)
+
+    payload = {
+        "smiles": ["CC(=O)NC1=CC=C(O)C=C1"],
+        "target_sequences": ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"],
+        "return_nm": True,
+        "return_contact_maps": True,
+        "top_k_residues": 5,
+    }
+
+    # 1. Test canonical endpoint
+    resp = test_client.post("/predict/dti/multi-affinity", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "predictions_pkd" in data and len(data["predictions_pkd"]) == 1
+    assert "predictions_pki" in data and len(data["predictions_pki"]) == 1
+    assert "predictions_pic50" in data and len(data["predictions_pic50"]) == 1
+
+    assert "kd_nm" in data and len(data["kd_nm"]) == 1
+    assert "ki_nm" in data and len(data["ki_nm"]) == 1
+    assert "ic50_nm" in data and len(data["ic50_nm"]) == 1
+
+    assert "consistency_scores" in data
+    assert len(data["consistency_scores"]) == 1
+    assert 0.0 <= data["consistency_scores"][0] <= 100.0
+
+    assert "consistency_tiers" in data
+    assert data["consistency_tiers"][0] in ("High", "Moderate", "Review Required")
+
+    assert "top_contact_residues" in data
+    assert data["top_contact_residues"] is not None
+
+    assert "pymol_commands" in data
+    assert data["pymol_commands"] is not None
+
+    # 2. Test alias endpoint /predict/dti/multi
+    resp_alias = test_client.post("/predict/dti/multi", json=payload)
+    assert resp_alias.status_code == 200
+
+    # Cleanup
+    set_dti_pipeline(None)
+    set_dti_multi_pipeline(None)
+
+
+def test_affinity_consistency_score_logic():
+    """[Task T-2] Verify biochemical rules in Affinity Consistency Score calculation."""
+    # Case 1: High consistency (Kd ~= Ki, IC50 >= Ki)
+    score1, tier1 = compute_affinity_consistency_score(pkd=8.0, pki=8.1, pic50=7.8)
+    assert score1 >= 80.0
+    assert tier1 == "High"
+
+    # Case 2: Moderate variance
+    score2, tier2 = compute_affinity_consistency_score(pkd=8.0, pki=7.1, pic50=6.9)
+    assert 50.0 <= score2 < 85.0
+    assert tier2 in ("Moderate", "High")
+
+    # Case 3: Severe physics violation (pIC50 >> pKi -> IC50 << Ki contradicts Cheng-Prusoff)
+    score3, tier3 = compute_affinity_consistency_score(pkd=7.0, pki=5.5, pic50=9.0)
+    assert score3 < 60.0
+    assert tier3 == "Review Required"
+
 
 

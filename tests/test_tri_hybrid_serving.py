@@ -8,9 +8,8 @@ import pytest
 import torch
 from fastapi.testclient import TestClient
 
-from api import app
 from tdc_studio.models.graph.dmpnn import DMPNNModel
-from tdc_studio.serving.app import set_pipeline, set_vdss_pipeline
+from tdc_studio.serving.app import app, set_pipeline, set_vdss_pipeline
 from tdc_studio.serving.exporter import export_tri_hybrid_package
 from tdc_studio.serving.tri_hybrid_pipeline import (
     TriHybridInferencePipeline,

@@ -31,7 +31,6 @@ import torch.nn as nn
 
 from tdc_studio.core.registry import MODELS
 from tdc_studio.models.base import BaseTherapeuticsModel
-from tdc_studio.models.dti.fusion import BilinearAttentionFusion
 from tdc_studio.models.dti.protein_encoder import ProteinCNNEncoder
 
 
@@ -51,9 +50,15 @@ def _build_target_encoder(cfg: Dict[str, Any]) -> nn.Module:
     return MODELS.build({**cfg, "type": encoder_type})
 
 
+def _build_fusion(cfg: Dict[str, Any]) -> nn.Module:
+    """Build fusion head from config. Falls back to BilinearAttentionFusion."""
+    fusion_type = cfg.get("type", "bilinear_fusion")
+    return MODELS.build({**cfg, "type": fusion_type})
+
+
 @MODELS.register("graph_dta")
 class GraphDTAModel(BaseTherapeuticsModel):
-    """Drug-Target Affinity model with GNN drug encoder + CNN target encoder.
+    """Drug-Target Affinity model with GNN/LM drug encoder + CNN/LM target encoder.
 
     Config keys (all nested under top-level config dict):
         drug_encoder  : dict — passed to _build_drug_encoder()
@@ -63,9 +68,11 @@ class GraphDTAModel(BaseTherapeuticsModel):
         target_encoder: dict — passed to _build_target_encoder()
             type        : "protein_cnn" (Phase A) | "esm2_encoder" (Phase B)
             out_dim     : 256
-        fusion        : dict — passed to BilinearAttentionFusion
-            hidden_dim  : 512
-        use_domain_adaptation: bool — False (Phase A), True (Phase C)
+        fusion        : dict — passed to _build_fusion()
+            type        : "bilinear_fusion" (Phase A/B) | "cross_attention" (Phase C)
+            hidden_dim  : 256 or 512
+            num_heads   : 4 (for cross_attention)
+        use_domain_adaptation: bool — False (Phase A/B), True (Phase C)
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -73,7 +80,9 @@ class GraphDTAModel(BaseTherapeuticsModel):
         super().__init__({**config, "task_type": "dta"})
 
         # ── Drug encoder (GINEModel or ChemBERTaEncoder) ──
-        drug_enc_cfg = config.get("drug_encoder", {"type": "gine", "hidden_dim": 256, "num_layers": 5})
+        drug_enc_cfg = config.get(
+            "drug_encoder", {"type": "gine", "hidden_dim": 256, "num_layers": 5}
+        )
         self.drug_encoder: nn.Module = _build_drug_encoder(drug_enc_cfg)
         drug_out_dim = getattr(
             self.drug_encoder,
@@ -90,15 +99,17 @@ class GraphDTAModel(BaseTherapeuticsModel):
             target_enc_cfg.get("out_dim", 256),
         )
 
-        # ── Fusion head (BilinearAttentionFusion) ──
+        # ── Fusion head (BilinearAttentionFusion or CrossAttentionFusion) ──
         fusion_cfg = config.get("fusion", {"hidden_dim": 512})
+        out_dim = config.get("out_dim", fusion_cfg.get("out_dim", 1))
         fusion_full_cfg = {
             **fusion_cfg,
-            "drug_dim":   drug_out_dim,
+            "drug_dim": drug_out_dim,
             "target_dim": target_out_dim,
-            "out_dim":    1,
+            "out_dim": out_dim,
         }
-        self.fusion: BilinearAttentionFusion = BilinearAttentionFusion(fusion_full_cfg)
+        self.fusion: nn.Module = _build_fusion(fusion_full_cfg)
+        self.out_dim = out_dim
 
         # ── Phase C placeholder: domain adversarial head ──
         self.use_domain_adaptation: bool = config.get("use_domain_adaptation", False)
@@ -109,7 +120,7 @@ class GraphDTAModel(BaseTherapeuticsModel):
     # ------------------------------------------------------------------
 
     def extract_features(
-        self, batch: Dict[str, Any]
+        self, batch: Dict[str, Any], return_sequence: Optional[bool] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return (h_drug, h_target) before fusion.
 
@@ -118,33 +129,57 @@ class GraphDTAModel(BaseTherapeuticsModel):
         - Interpretability: visualise drug/target representation spaces.
 
         Returns:
-            h_drug   : [B, drug_out_dim]   from drug encoder
-            h_target : [B, target_out_dim] from target encoder
+            h_drug   : [B, drug_out_dim] or [B, L_drug, drug_out_dim]
+            h_target : [B, target_out_dim] or [B, L_target, target_out_dim]
         """
         # Drug encoding — GINEModel reads batch["drug_graph"], ChemBERTa reads batch["drug_smiles_str"]
-        h_drug = self.drug_encoder.extract_features(batch)
+        if hasattr(self.drug_encoder, "extract_features"):
+            try:
+                h_drug = self.drug_encoder.extract_features(batch, return_sequence=return_sequence)
+            except TypeError:
+                h_drug = self.drug_encoder.extract_features(batch)
+        else:
+            h_drug = self.drug_encoder(batch)
 
         # Target encoding — ESM-2 reads batch, ProteinCNN reads batch["target_seq"]
         if hasattr(self.target_encoder, "extract_features"):
-            h_target = self.target_encoder.extract_features(batch)
+            try:
+                h_target = self.target_encoder.extract_features(
+                    batch, return_sequence=return_sequence
+                )
+            except TypeError:
+                h_target = self.target_encoder.extract_features(batch)
         else:
             h_target = self.target_encoder.encode_sequence(batch["target_seq"])
 
         return h_drug, h_target
 
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def forward(
+        self,
+        batch: Dict[str, Any],
+        return_attention: bool = False,
+        return_sequence: Optional[bool] = None,
+    ) -> Any:
         """Predict binding affinity for (Drug, Target) pairs.
 
         Args:
             batch: Dict containing at minimum:
                 "drug_graph"  : torch_geometric.data.Batch (from DTADataModule)
                 "target_seq"  : LongTensor [B, max_len]    (from AminoAcidTokenizer)
+            return_attention: If True and supported, returns (affinity, attention_dict)
+            return_sequence : If True and supported by encoders, uses token-level sequences
 
         Returns:
-            FloatTensor [B, 1] — normalised affinity predictions.
+            FloatTensor [B, out_dim] — normalised affinity predictions,
+            or (affinity, attn_dict) if return_attention=True.
         """
-        h_drug, h_target = self.extract_features(batch)
-        return self.fusion(h_drug, h_target)  # [B, 1]
+        h_drug, h_target = self.extract_features(batch, return_sequence=return_sequence)
+        if return_attention:
+            try:
+                return self.fusion(h_drug, h_target, return_attention=True)
+            except TypeError:
+                pass
+        return self.fusion(h_drug, h_target)  # [B, out_dim]
 
     # ------------------------------------------------------------------
     # Loss
@@ -154,6 +189,7 @@ class GraphDTAModel(BaseTherapeuticsModel):
         self,
         preds: torch.Tensor,
         targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
         domain_logits: Optional[torch.Tensor] = None,
         domain_labels: Optional[torch.Tensor] = None,
         lambda_domain: float = 0.1,
@@ -161,8 +197,9 @@ class GraphDTAModel(BaseTherapeuticsModel):
         """Compute MSE affinity loss (+ optional domain adversarial loss in Phase C).
 
         Args:
-            preds         : [B, 1] or [B] predicted affinity.
-            targets       : [B] ground-truth affinity (normalised).
+            preds         : [B, out_dim] predicted affinity.
+            targets       : [B, out_dim] or [B] ground-truth affinity (normalised).
+            mask          : Optional [B, out_dim] mask for multi-task affinity (Task F-3).
             domain_logits : [B, 2] from DomainAdversarialHead (Phase C only).
             domain_labels : [B] 0=source / 1=target domain (Phase C only).
             lambda_domain : Weight for domain loss (default 0.1).
@@ -170,9 +207,16 @@ class GraphDTAModel(BaseTherapeuticsModel):
         Returns:
             Scalar loss tensor.
         """
-        affinity_loss = nn.functional.mse_loss(
-            preds.squeeze(-1), targets.float()
-        )
+        if mask is not None:
+            preds = preds.view_as(targets)
+            diff_sq = (preds - targets.float()) ** 2
+            masked_diff = diff_sq * mask.float()
+            valid_count = torch.clamp(mask.float().sum(), min=1.0)
+            affinity_loss = masked_diff.sum() / valid_count
+        else:
+            if preds.shape[-1] == 1 and targets.dim() == 1:
+                preds = preds.squeeze(-1)
+            affinity_loss = nn.functional.mse_loss(preds, targets.float())
 
         if domain_logits is not None and domain_labels is not None:
             domain_loss = nn.functional.cross_entropy(domain_logits, domain_labels)

@@ -1,0 +1,10 @@
+best_epoch: 9
+ci_passed: false
+has_xai_attention: true
+mse_passed: false
+phase: Phase C (Cross-Attention + Staged Fine-Tuning)
+test_metrics:
+  ci: 0.7442777885126179
+  mse: 0.6403949188772793
+  pearson: 0.6426865496257851
+  rmse: 0.8002467862336463

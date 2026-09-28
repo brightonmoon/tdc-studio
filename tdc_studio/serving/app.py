@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
@@ -14,9 +15,11 @@ from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
 from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
-from tdc_studio.serving.pipeline import InferencePipeline
+from tdc_studio.serving.pipeline import DTIInferencePipeline, InferencePipeline
 from tdc_studio.serving.schema import (
     BioisostereRecommendationItem,
+    DTIInferenceRequest,
+    DTIInferenceResponse,
     ExplainRequest,
     ExplainResponse,
     HealthResponse,
@@ -38,11 +41,14 @@ from tdc_studio.serving.unified_pipeline import (
 
 logger = logging.getLogger("tdc_studio.serving")
 
-# Global pipeline instance and metadata
+# Global pipeline instances and metadata
 _pipeline: Optional[InferencePipeline] = None
 _vdss_pipeline: Optional[Any] = None
 _pbpk_pipeline: Optional[Any] = None
 _model_meta: dict = {}
+
+_dti_pipeline: Optional[DTIInferencePipeline] = None
+_dti_model_meta: dict = {}
 
 
 def set_pipeline(pipeline: Optional[InferencePipeline], meta: Optional[dict] = None) -> None:
@@ -84,18 +90,68 @@ def get_model_meta() -> dict:
     return _model_meta
 
 
-def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
-    """Load model from directory containing model.pt / best_model.pt and config.json."""
-    if not os.path.isdir(model_dir):
-        return None
+def set_dti_pipeline(pipeline: Optional[DTIInferencePipeline], meta: Optional[dict] = None) -> None:
+    """Setter for global DTI inference pipeline."""
+    global _dti_pipeline, _dti_model_meta
+    _dti_pipeline = pipeline
+    _dti_model_meta = meta or {}
 
+
+def get_dti_pipeline() -> Optional[DTIInferencePipeline]:
+    """Getter for global DTI inference pipeline."""
+    return _dti_pipeline
+
+
+def get_dti_model_meta() -> dict:
+    """Getter for loaded DTI model metadata."""
+    return _dti_model_meta
+
+
+def load_model_from_checkpoint(model_dir: str) -> torch.nn.Module:
+    """Load model architecture and weights from directory containing config.json and model.pt."""
+    from tdc_studio.models import build_model
+
+    config_path = os.path.join(model_dir, "config.json")
+    weights_path = os.path.join(model_dir, "best_model.pt")
+    if not os.path.exists(weights_path):
+        weights_path = os.path.join(model_dir, "model.pt")
+
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Missing config.json in {model_dir}")
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Missing weights (best_model.pt or model.pt) in {model_dir}")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        model_config = json.load(f)
+
+    model = build_model(model_config)
+    checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
+
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+    elif isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+    elif isinstance(checkpoint, dict):
+        state_dict = checkpoint
+    else:
+        raise ValueError("Invalid checkpoint format; expected state_dict mapping.")
+
+    # Strip potential 'module.' prefixes from DataParallel training
+    cleaned_state_dict = {
+        (k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()
+    }
+    model.load_state_dict(cleaned_state_dict, strict=False)
+    model.eval()
+    return model
+
+
+def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
+    """Initialize InferencePipeline from an exported model directory."""
     config_path = os.path.join(model_dir, "config.json")
     if not os.path.exists(config_path):
         return None
 
     try:
-        from tdc_studio.serving.exporter import load_model_from_checkpoint
-
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
@@ -137,51 +193,92 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
                 logger.info("Successfully initialized PBPKServingPipeline.")
             return pipeline
 
-        model = load_model_from_checkpoint(model_dir)
-        is_dta = config.get("type", "").endswith("_dta") or config.get("is_dta", False)
+        scaler_path = os.path.join(model_dir, "scaler.json")
+        scaler_meta = None
+        if os.path.exists(scaler_path):
+            with open(scaler_path, "r", encoding="utf-8") as f:
+                scaler_meta = json.load(f)
 
-        pipeline = InferencePipeline(model=model, device=device, is_dta=is_dta)
-        set_pipeline(pipeline, meta=config)
-        logger.info("Successfully loaded model from '%s' on %s.", model_dir, device)
+        model = load_model_from_checkpoint(model_dir)
+        is_dta = (
+            config.get("type", "").endswith("_dta")
+            or config.get("is_dta", False)
+            or config.get("task_type") == "dta"
+        )
+
+        if is_dta:
+            pipeline = DTIInferencePipeline(
+                model=model, device=device, scaler_meta=scaler_meta
+            )
+            set_dti_pipeline(pipeline, meta=config)
+            if _pipeline is None:
+                set_pipeline(pipeline, meta=config)
+            logger.info("Successfully loaded DTI pipeline from '%s' on %s.", model_dir, device)
+        else:
+            pipeline = InferencePipeline(model=model, device=device, is_dta=False)
+            set_pipeline(pipeline, meta=config)
+            logger.info("Successfully loaded property pipeline from '%s' on %s.", model_dir, device)
+
         return pipeline
     except Exception as e:
         logger.warning("Failed to load model from '%s': %s", model_dir, e)
         return None
 
 
+def load_all_serving_models() -> None:
+    """Discover and load both ADMET and DTI models simultaneously."""
+    admet_env = os.environ.get("ADMET_MODEL_DIR")
+    dti_env = os.environ.get("DTI_MODEL_DIR")
+    generic_env = os.environ.get("MODEL_DIR")
+
+    if generic_env:
+        init_pipeline_from_directory(generic_env)
+    if admet_env:
+        init_pipeline_from_directory(admet_env)
+    if dti_env:
+        init_pipeline_from_directory(dti_env)
+
+    # Autodiscover ADMET pipeline if not yet initialized
+    if get_pipeline() is None or isinstance(get_pipeline(), DTIInferencePipeline):
+        for candidate in ["models/export", "models/checkpoint"]:
+            cfg_p = os.path.join(candidate, "config.json")
+            if os.path.isdir(candidate) and os.path.exists(cfg_p):
+                try:
+                    with open(cfg_p, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    if not (cfg.get("type", "").endswith("_dta") or cfg.get("is_dta", False)):
+                        init_pipeline_from_directory(candidate)
+                        break
+                except Exception:
+                    pass
+
+    # Autodiscover DTI pipeline if not yet initialized
+    if get_dti_pipeline() is None:
+        for candidate in ["models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
+            cfg_p = os.path.join(candidate, "config.json")
+            if os.path.isdir(candidate) and os.path.exists(cfg_p):
+                init_pipeline_from_directory(candidate)
+                if get_dti_pipeline() is not None:
+                    break
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    # 1. Attempt loading model from environment variable or standard default paths
-    model_dir = os.environ.get("MODEL_DIR")
-    if not model_dir:
-        for candidate in ["models/export", "models/checkpoint"]:
-            if os.path.isdir(candidate):
-                model_dir = candidate
-                break
-
-    if model_dir and os.path.isdir(model_dir):
-        if os.path.exists(os.path.join(model_dir, "config.json")):
-            init_pipeline_from_directory(model_dir)
-        try:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            unified_pipe = UnifiedADMETPipeline.from_exported_directory(model_dir, device=device)
-            set_unified_pipeline(unified_pipe)
-            logger.info("Successfully initialized UnifiedADMETPipeline.")
-        except Exception as e:
-            logger.warning("UnifiedADMETPipeline auto-init note: %s", e)
-
+    load_all_serving_models()
     yield
-
     # Cleanup on shutdown
     set_pipeline(None)
+    set_vdss_pipeline(None)
+    set_pbpk_pipeline(None)
+    set_dti_pipeline(None)
     set_unified_pipeline(None)
 
 
 app = FastAPI(
     title="TDC-Studio Inference Service",
     version="0.2.0",
-    description="High-performance molecular property prediction microservice with Unified 22 ADMET + PBPK engine.",
+    description="High-performance molecular property, ADMET, and Drug-Target Interaction (DTI) prediction microservice.",
     lifespan=lifespan,
 )
 
@@ -189,34 +286,46 @@ app = FastAPI(
 @app.get("/healthz", response_model=HealthResponse)
 def health_check():
     """Liveness / Readiness probe."""
+    has_admet = _pipeline is not None and not isinstance(_pipeline, DTIInferencePipeline)
+    has_vdss = _vdss_pipeline is not None
+    has_pbpk = _pbpk_pipeline is not None
+    has_dti = _dti_pipeline is not None or isinstance(_pipeline, DTIInferencePipeline)
     unified_ready = get_unified_pipeline() is not None
-    model_loaded = _pipeline is not None or unified_ready
+    model_loaded = has_admet or has_dti or has_pbpk or unified_ready
     return HealthResponse(
         status="healthy",
         model_loaded=model_loaded,
         unified_ready=unified_ready,
+        admet_model_loaded=has_admet,
+        vdss_model_loaded=has_vdss,
+        pbpk_pipeline_loaded=has_pbpk,
+        dti_model_loaded=has_dti,
     )
 
 
 @app.post("/predict", response_model=InferenceResponse)
 async def predict(request: InferenceRequest):
-    """Predict molecular properties or interactions."""
+    """Predict molecular properties or generic interactions."""
     pipeline = get_pipeline()
     if pipeline is None:
         raise HTTPException(
             status_code=503,
-            detail="Model pipeline is not initialized or loaded yet. Start server with valid MODEL_DIR or load model checkpoint.",
+            detail="Model pipeline is not initialized or exported yet. Start server with valid MODEL_DIR.",
         )
 
     try:
-        # Offload CPU-heavy molecular featurization and PyTorch inference to threadpool
-        preds = await run_in_threadpool(pipeline.predict, request.smiles, request.target_sequences)
-        model_name = _model_meta.get("type", "TDC-Studio-Model")
+        preds = await run_in_threadpool(
+            pipeline.predict,
+            request.smiles,
+            request.target_sequences,
+        )
         return InferenceResponse(
             predictions=preds,
-            unit="score",
-            model_name=model_name,
+            unit=_model_meta.get("unit", "score"),
+            model_name=_model_meta.get("type", "TDC-Studio-Model"),
         )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
 
@@ -447,3 +556,47 @@ async def optimize_molecule(request: OptimizeRequest):
         raise HTTPException(status_code=500, detail=f"Lead optimization error: {str(e)}")
 
 
+# ------------------------------------------------------------------------------
+# Drug-Target Interaction (DTI) Endpoints
+# ------------------------------------------------------------------------------
+
+@app.post("/predict/dti", response_model=DTIInferenceResponse)
+async def predict_dti(request: DTIInferenceRequest):
+    """Predict Drug-Target Interaction (DTI) binding affinities in pKd and Kd (nM)."""
+    dti_pipe = get_dti_pipeline()
+    if dti_pipe is None:
+        gen_pipe = get_pipeline()
+        if isinstance(gen_pipe, DTIInferencePipeline):
+            dti_pipe = gen_pipe
+
+    if dti_pipe is None:
+        raise HTTPException(
+            status_code=503,
+            detail="DTI model pipeline is not initialized or loaded yet. Start server with valid DTI MODEL_DIR.",
+        )
+
+    t0 = time.perf_counter()
+    try:
+        result = await run_in_threadpool(
+            dti_pipe.predict_affinity,
+            request.smiles,
+            request.target_sequences,
+            request.return_kd_nm,
+            request.return_attention,
+        )
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseB"))
+
+        return DTIInferenceResponse(
+            predictions_pkd=result["predictions_pkd"],
+            kd_nm=result.get("kd_nm"),
+            attention_weights=result.get("attention_weights"),
+            unit="pK_d (-log10 Kd)",
+            model_name=model_name,
+            count=len(request.smiles),
+            elapsed_ms=elapsed_ms,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DTI inference error: {str(e)}")

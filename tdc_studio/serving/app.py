@@ -16,11 +16,17 @@ from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
 from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
 from tdc_studio.serving.exporter import load_model_from_checkpoint
-from tdc_studio.serving.pipeline import DTIInferencePipeline, InferencePipeline
+from tdc_studio.serving.pipeline import (
+    DTIInferencePipeline,
+    DTIMultiAffinityPipeline,
+    InferencePipeline,
+)
 from tdc_studio.serving.schema import (
     BioisostereRecommendationItem,
     DTIInferenceRequest,
     DTIInferenceResponse,
+    DTIMultiAffinityInferenceRequest,
+    DTIMultiAffinityInferenceResponse,
     ExplainRequest,
     ExplainResponse,
     HealthResponse,
@@ -49,6 +55,7 @@ _pbpk_pipeline: Optional[Any] = None
 _model_meta: dict = {}
 
 _dti_pipeline: Optional[DTIInferencePipeline] = None
+_dti_multi_pipeline: Optional[DTIMultiAffinityPipeline] = None
 _dti_model_meta: dict = {}
 
 
@@ -101,6 +108,27 @@ def set_dti_pipeline(pipeline: Optional[DTIInferencePipeline], meta: Optional[di
 def get_dti_pipeline() -> Optional[DTIInferencePipeline]:
     """Getter for global DTI inference pipeline."""
     return _dti_pipeline
+
+
+def set_dti_multi_pipeline(pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None) -> None:
+    """Setter for global DTI Multi-Affinity inference pipeline."""
+    global _dti_multi_pipeline, _dti_model_meta
+    _dti_multi_pipeline = pipeline
+    if meta:
+        _dti_model_meta = meta
+
+
+def get_dti_multi_pipeline() -> Optional[DTIMultiAffinityPipeline]:
+    """Getter for global DTI Multi-Affinity inference pipeline with automatic fallback."""
+    if _dti_multi_pipeline is not None:
+        return _dti_multi_pipeline
+    if _dti_pipeline is not None:
+        return DTIMultiAffinityPipeline(
+            model=_dti_pipeline.model,
+            device=_dti_pipeline.device,
+            scaler_meta=_dti_pipeline.scaler_meta,
+        )
+    return None
 
 
 def get_dti_model_meta() -> dict:
@@ -167,13 +195,30 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
             config.get("type", "").endswith("_dta")
             or config.get("is_dta", False)
             or config.get("task_type") == "dta"
+            or config.get("task_type") == "multi_dta"
         )
 
         if is_dta:
-            pipeline = DTIInferencePipeline(
-                model=model, device=device, scaler_meta=scaler_meta
+            is_multi = (
+                config.get("out_dim") == 3
+                or config.get("fusion", {}).get("out_dim") == 3
+                or config.get("task_type") == "multi_dta"
             )
-            set_dti_pipeline(pipeline, meta=config)
+            if is_multi:
+                pipeline = DTIMultiAffinityPipeline(
+                    model=model, device=device, scaler_meta=scaler_meta
+                )
+                set_dti_multi_pipeline(pipeline, meta=config)
+                set_dti_pipeline(pipeline, meta=config)
+            else:
+                pipeline = DTIInferencePipeline(
+                    model=model, device=device, scaler_meta=scaler_meta
+                )
+                set_dti_pipeline(pipeline, meta=config)
+                set_dti_multi_pipeline(
+                    DTIMultiAffinityPipeline(model=model, device=device, scaler_meta=scaler_meta),
+                    meta=config,
+                )
             if _pipeline is None:
                 set_pipeline(pipeline, meta=config)
             logger.info("Successfully loaded DTI pipeline from '%s' on %s.", model_dir, device)
@@ -217,7 +262,7 @@ def load_all_serving_models() -> None:
 
     # Autodiscover DTI pipeline if not yet initialized
     if get_dti_pipeline() is None:
-        for candidate in ["models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
+        for candidate in ["models/dti/phase_c_adv", "models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
             cfg_p = os.path.join(candidate, "config.json")
             if os.path.isdir(candidate) and os.path.exists(cfg_p):
                 init_pipeline_from_directory(candidate)
@@ -235,6 +280,7 @@ async def lifespan(app: FastAPI):
     set_vdss_pipeline(None)
     set_pbpk_pipeline(None)
     set_dti_pipeline(None)
+    set_dti_multi_pipeline(None)
     set_unified_pipeline(None)
 
 
@@ -546,14 +592,21 @@ async def predict_dti(request: DTIInferenceRequest):
             request.target_sequences,
             request.return_kd_nm,
             request.return_attention,
+            request.return_contact_map,
+            request.top_k_residues,
+            request.return_full_matrix,
         )
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-        model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseB"))
+        model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention"))
 
         return DTIInferenceResponse(
             predictions_pkd=result["predictions_pkd"],
             kd_nm=result.get("kd_nm"),
             attention_weights=result.get("attention_weights"),
+            contact_maps=result.get("contact_maps"),
+            top_contact_residues=result.get("top_contact_residues"),
+            top_contact_atoms=result.get("top_contact_atoms"),
+            pymol_commands=result.get("pymol_commands"),
             unit="pK_d (-log10 Kd)",
             model_name=model_name,
             count=len(request.smiles),
@@ -563,3 +616,52 @@ async def predict_dti(request: DTIInferenceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DTI inference error: {str(e)}")
+
+
+@app.post("/predict/dti/multi-affinity", response_model=DTIMultiAffinityInferenceResponse)
+@app.post("/predict/dti/multi", response_model=DTIMultiAffinityInferenceResponse)
+async def predict_dti_multi_affinity(request: DTIMultiAffinityInferenceRequest):
+    """Predict Kd, Ki, and IC50 binding affinities simultaneously with Affinity Consistency Score (ACS)."""
+    multi_pipe = get_dti_multi_pipeline()
+    if multi_pipe is None:
+        raise HTTPException(
+            status_code=503,
+            detail="DTI Multi-Affinity model pipeline is not initialized or loaded yet. Start server with valid DTI MODEL_DIR.",
+        )
+
+    t0 = time.perf_counter()
+    try:
+        result = await run_in_threadpool(
+            multi_pipe.predict_multi_affinity,
+            request.smiles,
+            request.target_sequences,
+            request.return_nm,
+            request.return_contact_maps,
+            request.top_k_residues,
+            request.return_full_matrix,
+        )
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        model_name = _dti_model_meta.get("type", "GraphDTA-MultiAffinity-SOTA")
+
+        return DTIMultiAffinityInferenceResponse(
+            predictions_pkd=result["predictions_pkd"],
+            predictions_pki=result["predictions_pki"],
+            predictions_pic50=result["predictions_pic50"],
+            kd_nm=result.get("kd_nm"),
+            ki_nm=result.get("ki_nm"),
+            ic50_nm=result.get("ic50_nm"),
+            consistency_scores=result.get("consistency_scores"),
+            consistency_tiers=result.get("consistency_tiers"),
+            contact_maps=result.get("contact_maps"),
+            top_contact_residues=result.get("top_contact_residues"),
+            top_contact_atoms=result.get("top_contact_atoms"),
+            pymol_commands=result.get("pymol_commands"),
+            model_name=model_name,
+            count=len(request.smiles),
+            elapsed_ms=elapsed_ms,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DTI multi-affinity inference error: {str(e)}")
+

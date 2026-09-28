@@ -1,13 +1,14 @@
 # TDC-Studio DTI Phase C: TODOLIST & Future Backlog
 
-> **최종 갱신 일자**: 2026-09-27  
-> **상태**: Phase C 고도화 완료 및 후속 서빙 연동 과제 이관  
-> **대상 모듈**: DTA/DTI 트랙 (`tdc_studio/models/dti`, `tdc_studio/data`, `tdc_studio/serving`, `deploy`)
+> **최종 갱신 일자**: 2026-09-28  
+> **상태**: Phase C 잔여 과제(Task T-1, T-2, T-3) 프로덕션 서빙 연동 및 자원 관리 체계 완료  
+> **대상 모듈**: DTA/DTI 트랙 (`tdc_studio/models/dti`, `tdc_studio/data`, `tdc_studio/serving`, `deploy`, `scripts`)
 
 ---
 
-## 📌 오늘(2026-09-27) 완료된 고도화 작업 요약
+## 📌 완료된 고도화 및 서빙 연동 작업 요약
 
+### 1. Phase C 모델 고도화 (2026-09-27 완수)
 Google Colab 격리 환경(`munhyeongdo4@gmail.com`, 세션 `dti-gpu`, Tesla T4 14.6GB VRAM)에서 전체 파이프라인 검증 및 학습을 완수함.
 
 | 과제 ID | 작업명 | 상태 | 주요 성과 및 산출물 |
@@ -36,42 +37,18 @@ Google Colab 격리 환경(`munhyeongdo4@gmail.com`, 세션 `dti-gpu`, Tesla T4 
 
 ---
 
-## 📋 내일(2026-09-28) TODOLIST: 제안 후속 과제
+### 2. 프로덕션 서빙 연동 및 자원 관리 (2026-09-28 완수)
 
-### 1. [Task T-1] 프로덕션 서빙 API에 XAI 2D Contact Map 엔드포인트 연동
-- **우선순위**: P1 (사용자 편의성 및 신약 후보물질 결합 부위 해석력 극대화)
-- **목표**: `/predict/dti` 엔드포인트에서 추론과 동시에 원자 $\times$ 아미노산 잔기 어텐션 맵을 옵션으로 반환.
-- **주요 작업 내용**:
-  1. `DTIInferenceRequest`에 `return_contact_map: bool = False` 옵션 추가.
-  2. 추론 시 `return_sequence=True, return_attention=True`로 실행하여 상위 K개 고강도 결합 잔기(Top-K Contact Residues, 예: Glu312, Tyr104) 및 원자 인덱스를 파싱하여 응답에 포함.
-  3. PyMOL 및 3D/2D 분자 시각화 도구 연동 스키마 표준화.
-- **대상 파일**:
-  - `tdc_studio/serving/schema.py`
-  - `tdc_studio/serving/app.py`
-  - `tests/test_serving_api.py`
+| 과제 ID | 작업명 | 상태 | 주요 성과 및 구현 내역 |
+| :--- | :--- | :---: | :--- |
+| **Task T-1** | 프로덕션 서빙 API에 XAI 2D Contact Map 엔드포인트 연동 (P1) | **완료** | • `tdc_studio/serving/xai_utils.py` 신설 (Top-K 잔기/원자 어텐션 추출 및 PyMOL 명령어 자동 생성)<br>• `DTIInferenceRequest`에 `return_contact_map`, `top_k_residues`, `return_full_matrix` 연동<br>• `POST /predict/dti` 응답에 `top_contact_residues`, `top_contact_atoms`, `pymol_commands` 직렬화 반환 |
+| **Task T-2** | Multi-Affinity Multi-Task 서빙 파이프라인 정식 연동 (P2) | **완료** | • `POST /predict/dti/multi-affinity` 및 별칭 `/predict/dti/multi` 신설<br>• $K_d, K_i, \text{IC}_{50}$ 3종 동시 예측 및 물리화학적 Cheng-Prusoff 정합성 검증 엔진(ACS) 구현<br>• 다중 태스크 정규화 역변환 파이프라인(`DTIMultiAffinityPipeline`) 구현 및 단위 테스트 통과 |
+| **Task T-3** | Colab 세션 유휴 자원 정리 및 자동 회수 가이드 (P3) | **완료** | • `munhyeongdo4@gmail.com` 전용 `scripts/colab_cleanup.ps1` 작성 (`list`, `stop`, `prune`, `-All`, `-Force`)<br>• 격리 프로파일(`C:\Users\xps\.colab_munhyeongdo4`) 연동 및 Stale 세션/임시 번들 자동 소거 기능 구현 |
 
 ---
 
-### 2. [Task T-2] Multi-Affinity Multi-Task 서빙 파이프라인 정식 연동
-- **우선순위**: P2 (다각적 친화도 분석 및 앙상블 신뢰도 제공)
-- **목표**: 동일 약물-타깃 쌍에 대해 $K_d, K_i, \text{IC}_{50}$ 3종 동시 예측 서빙 엔드포인트 구축.
-- **주요 작업 내용**:
-  1. `/predict/dti/multi-affinity` 엔드포인트 신설.
-  2. 3개 결합 지표 간 물리화학적 상관관계 일관성을 검증하는 신뢰도 지표(Affinity Consistency Score) 산출.
-  3. 클라이언트용 통합 테스트 케이스 추가.
-- **대상 파일**:
-  - `tdc_studio/serving/app.py`
-  - `tdc_studio/serving/schema.py`
-  - `tests/test_tri_hybrid_serving.py`
+## 🧪 테스트 및 무결성 검증 결과 (2026-09-28 기준)
 
----
-
-### 3. [Task T-3] Colab 세션 유휴 자원 정리 및 자동 회수 가이드
-- **우선순위**: P3 (컴퓨팅 자원 및 크레딧 관리)
-- **목표**: 작업 종료 후 불필요한 Colab GPU 인스턴스 점유를 방지하고 자동 회수 체계 정착.
-- **주요 작업 내용**:
-  1. `scripts/colab_cleanup.ps1` 스크립트를 작성하여 사용 완료된 세션(`dti-gpu` 등) 일괄 `colab stop` 및 `unassign` 처리.
-  2. 로컬 계정 전환 및 세션 현황 대시보드 스크립트 정비.
-- **대상 파일**:
-  - `scripts/colab_cleanup.ps1`
-  - `scripts/colab_switch.ps1`
+- `tests/test_serving_api.py`: **15 passed** (100% 통과, 19.41s)
+- `tests/test_dti_phase_c_advancement.py`: **5 passed** (100% 통과, 16.30s)
+- 전체 DTI 서빙 엔드포인트 및 XAI 2D Contact Map, PyMOL 선택 스크립트 정상 동작 확인 완료.

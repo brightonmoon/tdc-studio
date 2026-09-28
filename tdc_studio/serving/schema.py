@@ -202,6 +202,25 @@ class OptimizeResponse(BaseModel):
 # Drug-Target Interaction (DTI) Schemas
 # ------------------------------------------------------------------------------
 
+class ResidueContactDetail(BaseModel):
+    """Detailed structural contact information for a protein target residue."""
+
+    rank: int = Field(..., description="Contact intensity rank (1-based).")
+    index: int = Field(..., description="1-based sequence position (PDB/PyMOL compatible).")
+    residue_name: str = Field(..., description="Single-letter amino acid code (e.g. 'E').")
+    residue_code: str = Field(..., description="Standard 3-letter code with index (e.g. 'Glu312').")
+    score: float = Field(..., description="Normalized contact intensity score (0.0 to 1.0).")
+
+
+class AtomContactDetail(BaseModel):
+    """Detailed structural contact information for a drug atom or token."""
+
+    rank: int = Field(..., description="Interaction intensity rank.")
+    atom_index: int = Field(..., description="Atom or subword token index.")
+    token: str = Field(..., description="Atom symbol or ChemBERTa token string.")
+    score: float = Field(..., description="Normalized interaction score (0.0 to 1.0).")
+
+
 class DTIInferenceRequest(BaseModel):
     """Payload for Drug-Target Interaction (DTI) affinity inference."""
 
@@ -217,6 +236,16 @@ class DTIInferenceRequest(BaseModel):
     return_attention: bool = Field(
         default=False,
         description="Whether to include residue/token attention weight maps (for models supporting XAI).",
+    )
+    return_contact_map: bool = Field(
+        default=False,
+        description="Whether to extract 2D contact maps, Top-K binding residues, and PyMOL commands.",
+    )
+    top_k_residues: int = Field(
+        default=10, ge=1, le=50, description="Number of top contact residues to extract for PyMOL."
+    )
+    return_full_matrix: bool = Field(
+        default=False, description="Whether to include raw full 2D float contact map matrix."
     )
 
     @model_validator(mode="after")
@@ -236,6 +265,18 @@ class DTIInferenceResponse(BaseModel):
     kd_nm: Optional[List[float]] = Field(None, description="Predicted Kd values in nanomolar (nM).")
     attention_weights: Optional[List[Dict[str, Any]]] = Field(
         None, description="Attention weight maps per pair (e.g. attn_d2t, attn_t2d)."
+    )
+    contact_maps: Optional[List[Any]] = Field(
+        None, description="2D Contact Maps [L_drug, L_target] if return_full_matrix=True."
+    )
+    top_contact_residues: Optional[List[List[ResidueContactDetail]]] = Field(
+        None, description="Top-K contact residues per drug-target pair for structural pocket analysis."
+    )
+    top_contact_atoms: Optional[List[List[AtomContactDetail]]] = Field(
+        None, description="Top-K interacting drug atoms or tokens per pair."
+    )
+    pymol_commands: Optional[List[str]] = Field(
+        None, description="Ready-to-run PyMOL selection commands for 3D pocket visualization."
     )
     unit: str = Field(
         default="pK_d (-log10 Kd)", description="Measurement unit of primary prediction."
@@ -260,6 +301,12 @@ class DTIMultiAffinityInferenceRequest(BaseModel):
     return_contact_maps: bool = Field(
         default=False, description="Whether to include 2D token-level contact maps (XAI)."
     )
+    top_k_residues: int = Field(
+        default=10, ge=1, le=50, description="Number of top contact residues to extract for PyMOL."
+    )
+    return_full_matrix: bool = Field(
+        default=False, description="Whether to include raw full 2D float contact map matrix."
+    )
 
     @model_validator(mode="after")
     def check_lengths_match(self) -> "DTIMultiAffinityInferenceRequest":
@@ -280,8 +327,23 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
     kd_nm: Optional[List[float]] = Field(None, description="Predicted Kd in nM.")
     ki_nm: Optional[List[float]] = Field(None, description="Predicted Ki in nM.")
     ic50_nm: Optional[List[float]] = Field(None, description="Predicted IC50 in nM.")
+    consistency_scores: Optional[List[float]] = Field(
+        None, description="Affinity Consistency Score (ACS, 0-100) evaluating Kd/Ki/IC50 physical harmony."
+    )
+    consistency_tiers: Optional[List[str]] = Field(
+        None, description="Qualitative consistency tier: 'High', 'Moderate', or 'Review Required'."
+    )
     contact_maps: Optional[List[Any]] = Field(
         None, description="2D Contact Maps [L_drug, L_target]."
+    )
+    top_contact_residues: Optional[List[List[ResidueContactDetail]]] = Field(
+        None, description="Top-K contact residues per drug-target pair."
+    )
+    top_contact_atoms: Optional[List[List[AtomContactDetail]]] = Field(
+        None, description="Top-K interacting drug atoms or tokens."
+    )
+    pymol_commands: Optional[List[str]] = Field(
+        None, description="Ready-to-run PyMOL selection commands for 3D pocket visualization."
     )
     model_name: str = Field(
         default="GraphDTA-MultiAffinity", description="Serving model identifier."

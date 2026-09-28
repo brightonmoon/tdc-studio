@@ -107,42 +107,8 @@ def get_dti_model_meta() -> dict:
     return _dti_model_meta
 
 
-def load_model_from_checkpoint(model_dir: str) -> torch.nn.Module:
-    """Load model architecture and weights from directory containing config.json and model.pt."""
-    from tdc_studio.models import build_model
+from tdc_studio.serving.exporter import load_model_from_checkpoint
 
-    config_path = os.path.join(model_dir, "config.json")
-    weights_path = os.path.join(model_dir, "best_model.pt")
-    if not os.path.exists(weights_path):
-        weights_path = os.path.join(model_dir, "model.pt")
-
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Missing config.json in {model_dir}")
-    if not os.path.exists(weights_path):
-        raise FileNotFoundError(f"Missing weights (best_model.pt or model.pt) in {model_dir}")
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        model_config = json.load(f)
-
-    model = build_model(model_config)
-    checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
-
-    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-    elif isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-        state_dict = checkpoint["model_state_dict"]
-    elif isinstance(checkpoint, dict):
-        state_dict = checkpoint
-    else:
-        raise ValueError("Invalid checkpoint format; expected state_dict mapping.")
-
-    # Strip potential 'module.' prefixes from DataParallel training
-    cleaned_state_dict = {
-        (k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()
-    }
-    model.load_state_dict(cleaned_state_dict, strict=False)
-    model.eval()
-    return model
 
 
 def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:

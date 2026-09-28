@@ -47,7 +47,11 @@ class ThresholdDecisionEngine:
                 return {"probability": prob_rounded, "decision": decision, "unit": "probability"}
 
             if clean_name == "dili":
-                decision = "Low Hepatotoxicity Risk (Safe)" if prob < 0.5 else "High Hepatotoxicity Risk (DILI+)"
+                decision = (
+                    "Low Hepatotoxicity Risk (Safe)"
+                    if prob < 0.5
+                    else "High Hepatotoxicity Risk (DILI+)"
+                )
                 return {"probability": prob_rounded, "decision": decision, "unit": "probability"}
 
             if clean_name == "ames":
@@ -94,11 +98,15 @@ class ThresholdDecisionEngine:
             # Low: VDss < 0.7 L/kg (log10 < -0.155), Mod: 0.7 - 2.0 L/kg, High: > 2.0 L/kg (log10 > 0.301)
             real_vdss = round(10.0**val, 3) if val < 5.0 else round(val, 3)
             if val < -0.155:
-                decision = f"Low Distribution (VDss ~ {real_vdss} L/kg, confined to plasma/extracellular)"
+                decision = (
+                    f"Low Distribution (VDss ~ {real_vdss} L/kg, confined to plasma/extracellular)"
+                )
             elif val <= 0.301:
                 decision = f"Moderate Distribution (VDss ~ {real_vdss} L/kg, extracellular fluids & tissues)"
             else:
-                decision = f"High Distribution (VDss ~ {real_vdss} L/kg, extensive tissue/cellular uptake)"
+                decision = (
+                    f"High Distribution (VDss ~ {real_vdss} L/kg, extensive tissue/cellular uptake)"
+                )
             return {
                 "value": val,
                 "real_vdss_L_kg": real_vdss,
@@ -155,9 +163,7 @@ class MultiTaskInferencePipeline:
         self.decision_engine = ThresholdDecisionEngine()
 
     @classmethod
-    def from_pretrained(
-        cls, model_dir: str, device: str = "cpu"
-    ) -> "MultiTaskInferencePipeline":
+    def from_pretrained(cls, model_dir: str, device: str = "cpu") -> "MultiTaskInferencePipeline":
         """Load trained multi-task pipeline from exported directory."""
         config_path = os.path.join(model_dir, "config.json")
         weights_path = os.path.join(model_dir, "model.pt")

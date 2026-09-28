@@ -18,6 +18,7 @@ from tdc_studio.serving.schema import (
     HealthResponse,
     InferenceRequest,
     InferenceResponse,
+    PBPKResponse,
 )
 
 logger = logging.getLogger("tdc_studio.serving")
@@ -25,6 +26,7 @@ logger = logging.getLogger("tdc_studio.serving")
 # Global pipeline instances and metadata
 _pipeline: Optional[InferencePipeline] = None
 _vdss_pipeline: Optional[Any] = None
+_pbpk_pipeline: Optional[Any] = None
 _model_meta: dict = {}
 
 _dti_pipeline: Optional[DTIInferencePipeline] = None
@@ -44,6 +46,12 @@ def set_vdss_pipeline(pipeline: Optional[Any]) -> None:
     _vdss_pipeline = pipeline
 
 
+def set_pbpk_pipeline(pipeline: Optional[Any]) -> None:
+    """Setter for global PBPK inference pipeline."""
+    global _pbpk_pipeline
+    _pbpk_pipeline = pipeline
+
+
 def get_pipeline() -> Optional[InferencePipeline]:
     """Getter for global inference pipeline."""
     return _pipeline
@@ -52,6 +60,11 @@ def get_pipeline() -> Optional[InferencePipeline]:
 def get_vdss_pipeline() -> Optional[Any]:
     """Getter for global VDss inference pipeline."""
     return _vdss_pipeline
+
+
+def get_pbpk_pipeline() -> Optional[Any]:
+    """Getter for global PBPK inference pipeline."""
+    return _pbpk_pipeline
 
 
 def get_model_meta() -> dict:
@@ -119,6 +132,14 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[InferencePipeline]:
                     model_dir,
                     device,
                 )
+                from tdc_studio.serving.pbpk_pipeline import PBPKServingPipeline
+
+                pbpk_pipe = PBPKServingPipeline(
+                    ppbr_pipeline=pipeline,
+                    vdss_pipeline=vdss_pipe,
+                )
+                set_pbpk_pipeline(pbpk_pipe)
+                logger.info("Successfully initialized PBPKServingPipeline.")
             return pipeline
 
         scaler_path = os.path.join(model_dir, "scaler.json")
@@ -200,6 +221,7 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     set_pipeline(None)
     set_vdss_pipeline(None)
+    set_pbpk_pipeline(None)
     set_dti_pipeline(None)
 
 
@@ -216,12 +238,14 @@ def health_check():
     """Liveness / Readiness probe."""
     has_admet = _pipeline is not None and not isinstance(_pipeline, DTIInferencePipeline)
     has_vdss = _vdss_pipeline is not None
+    has_pbpk = _pbpk_pipeline is not None
     has_dti = _dti_pipeline is not None or isinstance(_pipeline, DTIInferencePipeline)
     return HealthResponse(
         status="healthy",
-        model_loaded=has_admet or has_dti,
+        model_loaded=has_admet or has_dti or has_pbpk,
         admet_model_loaded=has_admet,
         vdss_model_loaded=has_vdss,
+        pbpk_pipeline_loaded=has_pbpk,
         dti_model_loaded=has_dti,
     )
 
@@ -270,6 +294,26 @@ async def predict_vdss(request: InferenceRequest):
         raise HTTPException(status_code=500, detail=f"VDss inference error: {str(e)}")
 
 
+@app.post("/predict/pbpk", response_model=PBPKResponse)
+async def predict_pbpk(request: InferenceRequest):
+    """Predict in vivo pharmacokinetic profile (CL_total, t1/2, Vdss, fu, extraction ratio) via PBPK."""
+    pbpk_pipe = get_pbpk_pipeline()
+    if pbpk_pipe is None:
+        raise HTTPException(
+            status_code=503,
+            detail="PBPK pipeline is not initialized. Ensure PPBR and VDss models are loaded.",
+        )
+
+    try:
+        results = await run_in_threadpool(pbpk_pipe.predict_pbpk, request.smiles)
+        return PBPKResponse(
+            results=results,
+            model_name="TDC-Studio-PBPK-Pipeline",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PBPK inference error: {str(e)}")
+
+
 @app.post("/predict/dti", response_model=DTIInferenceResponse)
 async def predict_dti(request: DTIInferenceRequest):
     """Predict Drug-Target Interaction (DTI) binding affinities in pKd and Kd (nM)."""
@@ -311,4 +355,3 @@ async def predict_dti(request: DTIInferenceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DTI inference error: {str(e)}")
-

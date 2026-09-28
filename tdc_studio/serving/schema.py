@@ -31,7 +31,17 @@ class HealthResponse(BaseModel):
     model_loaded: bool = False
     admet_model_loaded: bool = False
     vdss_model_loaded: bool = False
+    pbpk_pipeline_loaded: bool = False
     dti_model_loaded: bool = False
+
+
+class PBPKResponse(BaseModel):
+    """PBPK prediction response payload."""
+
+    results: List[dict] = Field(..., description="Calculated in vivo pharmacokinetic profiles.")
+    model_name: str = Field(
+        default="TDC-Studio-PBPK-Pipeline", description="Serving model identifier."
+    )
 
 
 class DTIInferenceRequest(BaseModel):
@@ -120,3 +130,4 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
     )
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
+

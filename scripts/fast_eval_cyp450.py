@@ -96,7 +96,9 @@ def evaluate_test_only(config_path: str, checkpoint_path: str):
             "mcc": round(mcc, 4),
             "f1": round(f1, 4),
         }
-        print(f"Task: {t_name:38s} | N={len(y_true):4d} | AUC={auc:.4f} | ACC={acc:.4f} | B-ACC={bacc:.4f} | MCC={mcc:.4f} | F1={f1:.4f}")
+        print(
+            f"Task: {t_name:38s} | N={len(y_true):4d} | AUC={auc:.4f} | ACC={acc:.4f} | B-ACC={bacc:.4f} | MCC={mcc:.4f} | F1={f1:.4f}"
+        )
 
     return results
 

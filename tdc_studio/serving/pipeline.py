@@ -200,12 +200,14 @@ class DTIInferencePipeline(InferencePipeline):
             # Target sequence tensor
             target_tensor = self.aa_tokenizer(clean_seq)
 
-            batch_items.append({
-                "drug_graph":      g,
-                "drug_smiles_str": clean_smiles,   # for HuggingFace / ChemBERTa encoder
-                "target_seq":      target_tensor,  # for ProteinCNN encoder
-                "target_seq_str":  clean_seq,      # for ESM-2 encoder (avoids decode fallback)
-            })
+            batch_items.append(
+                {
+                    "drug_graph": g,
+                    "drug_smiles_str": clean_smiles,  # for HuggingFace / ChemBERTa encoder
+                    "target_seq": target_tensor,  # for ProteinCNN encoder
+                    "target_seq_str": clean_seq,  # for ESM-2 encoder (avoids decode fallback)
+                }
+            )
 
         collated = molecule_collate_fn(batch_items)
         for k, v in collated.items():
@@ -514,5 +516,3 @@ class DTIMultiAffinityPipeline(DTIInferencePipeline):
                 res["contact_maps"] = contact_maps_batch
 
         return res
-
-

@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import torch
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from starlette.concurrency import run_in_threadpool
 
 from tdc_studio.explainability.attribution import MolecularExplainer
@@ -110,7 +111,9 @@ def get_dti_pipeline() -> Optional[DTIInferencePipeline]:
     return _dti_pipeline
 
 
-def set_dti_multi_pipeline(pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None) -> None:
+def set_dti_multi_pipeline(
+    pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None
+) -> None:
     """Setter for global DTI Multi-Affinity inference pipeline."""
     global _dti_multi_pipeline, _dti_model_meta
     _dti_multi_pipeline = pipeline
@@ -211,9 +214,7 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
                 set_dti_multi_pipeline(pipeline, meta=config)
                 set_dti_pipeline(pipeline, meta=config)
             else:
-                pipeline = DTIInferencePipeline(
-                    model=model, device=device, scaler_meta=scaler_meta
-                )
+                pipeline = DTIInferencePipeline(model=model, device=device, scaler_meta=scaler_meta)
                 set_dti_pipeline(pipeline, meta=config)
                 set_dti_multi_pipeline(
                     DTIMultiAffinityPipeline(model=model, device=device, scaler_meta=scaler_meta),
@@ -262,7 +263,12 @@ def load_all_serving_models() -> None:
 
     # Autodiscover DTI pipeline if not yet initialized
     if get_dti_pipeline() is None:
-        for candidate in ["models/dti/phase_c_adv", "models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
+        for candidate in [
+            "models/dti/phase_c_adv",
+            "models/dti/phase_c",
+            "models/dti/phase_b",
+            "models/export/dti",
+        ]:
             cfg_p = os.path.join(candidate, "config.json")
             if os.path.isdir(candidate) and os.path.exists(cfg_p):
                 init_pipeline_from_directory(candidate)
@@ -290,6 +296,20 @@ app = FastAPI(
     description="High-performance molecular property, ADMET, and Drug-Target Interaction (DTI) prediction microservice.",
     lifespan=lifespan,
 )
+
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
+async def serve_dashboard():
+    """Serve the 3-in-1 interactive drug discovery cockpit dashboard."""
+    dashboard_path = os.path.join(TEMPLATES_DIR, "dashboard.html")
+    if os.path.exists(dashboard_path):
+        with open(dashboard_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return HTMLResponse(content=content)
+    return HTMLResponse("<h1>TDC-Studio API</h1><p>Dashboard template not found.</p>")
 
 
 @app.get("/healthz", response_model=HealthResponse)
@@ -569,6 +589,7 @@ async def optimize_molecule(request: OptimizeRequest):
 # Drug-Target Interaction (DTI) Endpoints
 # ------------------------------------------------------------------------------
 
+
 @app.post("/predict/dti", response_model=DTIInferenceResponse)
 async def predict_dti(request: DTIInferenceRequest):
     """Predict Drug-Target Interaction (DTI) binding affinities in pKd and Kd (nM)."""
@@ -597,7 +618,9 @@ async def predict_dti(request: DTIInferenceRequest):
             request.return_full_matrix,
         )
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-        model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention"))
+        model_name = _dti_model_meta.get(
+            "type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention")
+        )
 
         return DTIInferenceResponse(
             predictions_pkd=result["predictions_pkd"],
@@ -664,4 +687,3 @@ async def predict_dti_multi_affinity(request: DTIMultiAffinityInferenceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DTI multi-affinity inference error: {str(e)}")
-

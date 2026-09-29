@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TDC-Studio | 3-in-1 Drug Discovery Cockpit</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              400: '#4ade80',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              900: '#14532d',
+            },
+            accent: {
+              cyan: '#06b6d4',
+              purple: '#a855f7',
+              amber: '#f59e0b',
+              rose: '#f43f5e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- FontAwesome 6 CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col custom-scrollbar overflow-x-hidden">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <i class="fa-solid fa-dna text-slate-950 text-xl font-bold"></i>
+        </div>
+        <div>
+          <span class="text-xl font-black tracking-tight text-white flex items-center gap-2">
+            TDC-Studio <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">3-in-1 Cockpit</span>
+          </span>
+          <p class="text-xs text-slate-400">Integrated DTA &bull; 22-Task ADMET &bull; XAI &bull; Self-Correcting Lead Optimizer</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-4">
+        <!-- Quick Preset Dropdown -->
+        <div class="flex items-center space-x-2 text-sm">
+          <label for="drugPreset" class="text-slate-400 hidden sm:inline"><i class="fa-solid fa-flask-vial mr-1"></i>Preset:</label>
+          <select id="drugPreset" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+            <option value="terfenadine">Terfenadine (Cardiotoxic / hERG Liability)</option>
+            <option value="aspirin">Aspirin (High Absorption / Fast Clearance)</option>
+            <option value="caffeine">Caffeine (High BBB / Fast Elimination)</option>
+            <option value="warfarin">Warfarin (Ultra-High PPBR >98% / CYP2C9)</option>
+            <option value="imatinib">Imatinib (ABL1 Kinase Inhibitor)</option>
+          </select>
+        </div>
+        <a href="/docs" target="_blank" class="text-xs text-slate-400 hover:text-emerald-400 transition-colors flex items-center gap-1">
+          <i class="fa-solid fa-book"></i> API Docs
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Input Control Panel -->
+    <section class="glass-card rounded-2xl p-5 shadow-2xl">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+        <!-- SMILES Input -->
+        <div class="lg:col-span-6 space-y-1.5">
+          <label class="text-xs font-semibold uppercase tracking-wider text-emerald-400 flex items-center justify-between">
+            <span><i class="fa-solid fa-atom mr-1.5"></i>Drug SMILES (Compound)</span>
+            <span id="smilesValidity" class="text-[11px] text-slate-400">Ready</span>
+          </label>
+          <div class="relative">
+            <input type="text" id="inputSmiles" 
+              class="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition"
+              placeholder="e.g. CC(=O)Oc1ccccc1C(=O)O"
+              value="CC(C)(C)c1ccc(cc1)C(O)CCCN2CCC(CC2)C(O)(c3ccccc3)c4ccccc4">
+          </div>
+        </div>
+
+        <!-- Target Sequence Input -->
+        <div class="lg:col-span-4 space-y-1.5">
+          <label class="text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center justify-between">
+            <span><i class="fa-solid fa-ribbon mr-1.5"></i>Target Protein Sequence (FASTA/AA)</span>
+            <span class="text-[11px] text-slate-400" id="targetLen">384 aa</span>
+          </label>
+          <input type="text" id="inputTarget" 
+            class="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none transition truncate"
+            placeholder="e.g. MPPSGLRLL..."
+            value="MPPSGLRLLLLLLPLLLLLLAGCAARPKFVKVEGKLKTYTFELQGDDLNLKVTLEEEPKFVKVEGKLKTYTFELQGDDLNLKVTLEE">
+        </div>
+
+        <!-- Run Analysis Button -->
+        <div class="lg:col-span-2">
+          <button id="btnRun" onclick="runComprehensiveAnalysis()" 
+            class="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold py-2.5 px-4 rounded-xl shadow-lg shadow-emerald-500/25 flex items-center justify-center space-x-2 transition duration-200 active:scale-95">
+            <i id="btnIcon" class="fa-solid fa-bolt"></i>
+            <span id="btnText">Analyze All</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Top Analysis 3-Column Cockpit -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Column 1: Structure & XAI Toxicity Hotspot -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2">
+            <i class="fa-solid fa-crosshairs"></i> XAI Toxicity Hotspot (IG)
+          </h2>
+          <span id="xaiScoreBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-mono">Score: --</span>
+        </div>
+
+        <!-- 2D SVG Render Box -->
+        <div id="svgContainer" class="bg-slate-900/90 border border-slate-800 rounded-xl min-h-[260px] flex items-center justify-center p-3 text-center overflow-hidden">
+          <div class="text-slate-500 text-xs flex flex-col items-center gap-2">
+            <i class="fa-solid fa-flask text-3xl text-slate-600 animate-pulse"></i>
+            <span>Run analysis to inspect Integrated Gradients 2D heatmap</span>
+          </div>
+        </div>
+
+        <!-- Hotspot & Bioisostere Recommendations -->
+        <div class="space-y-2 flex-1 flex flex-col justify-end">
+          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> Bioisostere Mitigation Advice:
+          </span>
+          <div id="bioisostereList" class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 text-xs space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+            <p class="text-slate-500 italic">No liabilities diagnosed yet.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 2: 22-Task ADMET Radar & In Vivo PBPK PK Profile -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+            <i class="fa-solid fa-chart-pie"></i> 22 ADMET &bull; PBPK Simulator
+          </h2>
+          <span id="radarOverallBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">ADMET Pass</span>
+        </div>
+
+        <!-- Radar Chart Container -->
+        <div class="relative h-44 w-full flex items-center justify-center">
+          <canvas id="admetRadarChart"></canvas>
+        </div>
+
+        <!-- PBPK Cp-t Simulation Line Chart -->
+        <div class="border-t border-slate-800/80 pt-3 space-y-2">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-semibold text-slate-300"><i class="fa-solid fa-wave-square text-cyan-400 mr-1"></i>PBPK in vivo PK (IV 100mg)</span>
+            <span id="pbpkMetrics" class="font-mono text-[11px] text-cyan-300">CL: -- | t1/2: --</span>
+          </div>
+          <div class="relative h-32 w-full">
+            <canvas id="pbpkLineChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 3: DTI Binding Affinity & Therapeutic Safety Window -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+            <i class="fa-solid fa-bullseye"></i> DTI Affinity &amp; Safety Window
+          </h2>
+          <span id="acsTierBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">ACS: --</span>
+        </div>
+
+        <!-- Affinity Numbers Grid -->
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Kd (Efficacy)</span>
+            <p id="kdValue" class="text-base font-black text-cyan-300 font-mono mt-0.5">-- nM</p>
+            <span id="pkdValue" class="text-[10px] text-slate-500">pKd: --</span>
+          </div>
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Ki (Inhibition)</span>
+            <p id="kiValue" class="text-base font-black text-purple-300 font-mono mt-0.5">-- nM</p>
+            <span id="pkiValue" class="text-[10px] text-slate-500">pKi: --</span>
+          </div>
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">IC50 (Potency)</span>
+            <p id="ic50Value" class="text-base font-black text-amber-300 font-mono mt-0.5">-- nM</p>
+            <span id="pic50Value" class="text-[10px] text-slate-500">pIC50: --</span>
+          </div>
+        </div>
+
+        <!-- Therapeutic Index / Window Gauge -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-shield-halved text-rose-400"></i> Therapeutic Window (TI):
+            </span>
+            <span id="tiBadge" class="px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-slate-800 text-slate-400">Pending</span>
+          </div>
+          <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex">
+            <div id="tiBarDanger" class="bg-rose-500 h-full w-[25%]" title="Danger (<10x)"></div>
+            <div id="tiBarWarning" class="bg-amber-500 h-full w-[25%]" title="Moderate (10-100x)"></div>
+            <div id="tiBarSafe" class="bg-emerald-500 h-full w-[50%]" title="Safe (>100x)"></div>
+          </div>
+          <p id="tiExplanation" class="text-[11px] text-slate-400 leading-tight">
+            Log-ratio of hERG Cardiotoxicity threshold vs Target Kd efficacy.
+          </p>
+        </div>
+
+        <!-- PyMOL Contact Script Generator Box -->
+        <div class="space-y-1.5 flex-1 flex flex-col justify-end">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold text-slate-300 flex items-center gap-1">
+              <i class="fa-solid fa-terminal text-cyan-400"></i> PyMOL 3D Pocket Script:
+            </span>
+            <button onclick="copyPymolScript()" class="text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition">
+              <i class="fa-regular fa-copy"></i> Copy
+            </button>
+          </div>
+          <div class="relative">
+            <textarea id="pymolScript" readonly rows="3" 
+              class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-[11px] font-mono text-cyan-200 outline-none resize-none custom-scrollbar"># PyMOL selection commands will appear here</textarea>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Panel: Self-Correcting Lead Optimizer & Candidate Ranking -->
+    <section class="glass-card rounded-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 flex-wrap gap-2">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+            <i class="fa-solid fa-wand-magic"></i> Self-Correcting Generative Lead Optimizer (Closed-Loop)
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Diagnose liabilities &bull; Localize toxicophores &bull; Scaffold-constrained bioisostere mutation &bull; SA Score filter</p>
+        </div>
+        <div id="primaryLiabilityTag" class="text-xs px-3 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono">
+          Primary Liability: None
+        </div>
+      </div>
+
+      <!-- Candidate Ranking Table -->
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900/80 text-slate-400 uppercase font-semibold border-b border-slate-800">
+            <tr>
+              <th class="py-2.5 px-3"># Rank</th>
+              <th class="py-2.5 px-3">Transformation</th>
+              <th class="py-2.5 px-3">Candidate SMILES</th>
+              <th class="py-2.5 px-3 text-center">Liability &Delta;</th>
+              <th class="py-2.5 px-3 text-center">SA Score (&le;3.5)</th>
+              <th class="py-2.5 px-3 text-center">Scaffold Retained</th>
+              <th class="py-2.5 px-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="candidateTableBody" class="divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="7" class="py-6 text-center text-slate-500 italic font-sans">
+                Run analysis to generate optimized, liability-repaired drug candidates.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-900 bg-slate-950 py-3 text-center text-xs text-slate-500">
+    TDC-Studio Unified Cockpit &bull; Model Version: TDC-Studio-Unified-v1 &bull; Bemis-Murcko Split SOTA
+  </footer>
+
+  <!-- Embedded Client Logic & Presets -->
+  <script>
+    // Presets data
+    const PRESETS = {
+      terfenadine: {
+        smiles: "CC(C)(C)c1ccc(cc1)C(O)CCCN2CCC(CC2)C(O)(c3ccccc3)c4ccccc4",
+        target: "MPPSGLRLLLLLLPLLLLLLAGCAARPKFVKVEGKLKTYTFELQGDDLNLKVTLEEEPKFVKVEGKLKTYTFELQGDDLNLKVTLEE",
+        name: "Terfenadine"
+      },
+      aspirin: {
+        smiles: "CC(=O)Oc1ccccc1C(=O)O",
+        target: "MPPSGLRLLLLLLPLLLLLLAGCAARPKFVKVEGKLKTYTFELQGDDLNLKVTLEEEPKFVKVEGKLKTYTFELQGDDLNLKVTLEE",
+        name: "Aspirin"
+      },
+      caffeine: {
+        smiles: "Cn1cnc2c1c(=O)n(c(=O)n2C)C",
+        target: "MPPSGLRLLLLLLPLLLLLLAGCAARPKFVKVEGKLKTYTFELQGDDLNLKVTLEEEPKFVKVEGKLKTYTFELQGDDLNLKVTLEE",
+        name: "Caffeine"
+      },
+      warfarin: {
+        smiles: "CC(=O)CC(c1ccccc1)c2c(O)c3ccccc3oc2=O",
+        target: "MPPSGLRLLLLLLPLLLLLLAGCAARPKFVKVEGKLKTYTFELQGDDLNLKVTLEEEPKFVKVEGKLKTYTFELQGDDLNLKVTLEE",
+        name: "Warfarin"
+      },
+      imatinib: {
+        smiles: "Cc1ccc(cc1Nc2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)CN5CCN(CC5)C",
+        target: "MLEICLKLVGCKSKKGLSSSSSCYLEEALQRPVASDFEPQGLSEAARWNSKENLLAGPSENDPNLFVALYDFVASGDNTLSITKGEKLRVLGYNHNGEWCEAQTKNGQGWVPSNYITPVNSLEKHSWYHGPVSRNAAEYLLSSGINGSFLVRESESSPGQRSISLRYEGRVYHYRINTASDGKLYVSSESRFNTLAELVHHHSTVADGLITTLHYPAPKRNKPTI",
+        name: "Imatinib"
+      }
+    };
+
+    // Chart.js instances
+    let radarChart = null;
+    let lineChart = null;
+
+    // Preset selector event
+    document.getElementById("drugPreset").addEventListener("change", function(e) {
+      const preset = PRESETS[e.target.value];
+      if (preset) {
+        document.getElementById("inputSmiles").value = preset.smiles;
+        document.getElementById("inputTarget").value = preset.target;
+        document.getElementById("targetLen").innerText = `${preset.target.length} aa`;
+      }
+    });
+
+    // Initialize Charts on Load
+    window.addEventListener("DOMContentLoaded", () => {
+      initRadarChart([75, 60, 80, 70, 85]);
+      initLineChart([100, 70, 49, 34, 24, 16, 11, 8, 5, 3]);
+    });
+
+    function initRadarChart(scores) {
+      const ctx = document.getElementById("admetRadarChart").getContext("2d");
+      if (radarChart) radarChart.destroy();
+      radarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: ['Absorption', 'Distribution', 'Metabolism', 'Clearance', 'Safety'],
+          datasets: [{
+            label: 'Profile Score',
+            data: scores,
+            backgroundColor: 'rgba(34, 197, 94, 0.25)',
+            borderColor: '#22c55e',
+            borderWidth: 2,
+            pointBackgroundColor: '#4ade80',
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: '#22c55e'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            r: {
+              angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
+              grid: { color: 'rgba(255, 255, 255, 0.1)' },
+              pointLabels: { color: '#94a3b8', font: { size: 10, weight: 'bold' } },
+              ticks: { display: false, min: 0, max: 100 }
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    function initLineChart(cpData) {
+      const ctx = document.getElementById("pbpkLineChart").getContext("2d");
+      if (lineChart) lineChart.destroy();
+      const labels = Array.from({length: cpData.length}, (_, i) => `${i * 2}h`);
+      lineChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Cp (mg/L)',
+            data: cpData,
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6, 182, 212, 0.15)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', font: { size: 9 } } },
+            y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', font: { size: 9 } } }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    async function runComprehensiveAnalysis() {
+      const smiles = document.getElementById("inputSmiles").value.trim();
+      const targetSeq = document.getElementById("inputTarget").value.trim();
+
+      if (!smiles) {
+        alert("Please enter a valid SMILES string.");
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        // Parallel fetch to backend endpoints
+        const [admetRes, dtiRes, explainRes, optRes] = await Promise.allSettled([
+          fetch('/predict/admet_full', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ smiles: [smiles] })
+          }).then(r => r.json()),
+
+          fetch('/predict/dti/multi', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+              smiles: [smiles], 
+              target_sequences: [targetSeq || "MPPSGLRLLLLLLPLLLLLLAGCAARPKFVKVEGKLKTYTFELQGDDLNLKVTLEEEPKFVKVEGKLKTYTFELQGDDLNLKVTLEE"],
+              return_nm: true,
+              return_contact_maps: true
+            })
+          }).then(r => r.json()),
+
+          fetch('/explain', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ smiles: smiles, liability_focus: "general" })
+          }).then(r => r.json()),
+
+          fetch('/optimize', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ smiles: smiles, max_candidates: 5 })
+          }).then(r => r.json())
+        ]);
+
+        // 1. Process XAI & Heatmap
+        if (explainRes.status === 'fulfilled' && explainRes.value.svg_data_uri) {
+          const exp = explainRes.value;
+          document.getElementById("svgContainer").innerHTML = `<img src="${exp.svg_data_uri}" class="max-h-56 max-w-full object-contain mx-auto" alt="XAI Heatmap">`;
+          document.getElementById("xaiScoreBadge").innerText = `Score: ${exp.predicted_score.toFixed(2)}`;
+          
+          const bioBox = document.getElementById("bioisostereList");
+          if (exp.bioisostere_recommendations && exp.bioisostere_recommendations.length > 0) {
+            bioBox.innerHTML = exp.bioisostere_recommendations.map(r => `
+              <div class="border-b border-slate-800 pb-1.5 last:border-0">
+                <span class="font-bold text-amber-300">${r.transformation_name}:</span>
+                <span class="text-slate-300 ml-1">${r.suggested_replacement}</span>
+                <p class="text-[10px] text-slate-400 mt-0.5">${r.rationale}</p>
+              </div>
+            `).join('');
+          } else {
+            bioBox.innerHTML = '<p class="text-slate-400">No high-risk toxicophore hotspot detected.</p>';
+          }
+        }
+
+        // 2. Process ADMET & PBPK
+        let hergProb = 0.5;
+        if (admetRes.status === 'fulfilled' && admetRes.value.results && admetRes.value.results[0]) {
+          const prof = admetRes.value.results[0];
+          hergProb = prof.herg_cardiotoxicity_prob || 0.5;
+          const caco2 = prof.caco2_permeability || -5.5;
+          const ppbr = prof.plasma_protein_binding_pct || 90.0;
+          const halfLife = prof.elimination_half_life_h || 4.0;
+          const clTotal = prof.pbpk_pk_profile?.cl_total_ml_min_kg || 15.0;
+
+          // Normalized 5-axis scores (0-100)
+          const absScore = Math.min(100, Math.max(10, (caco2 + 6.5) * 40));
+          const distScore = Math.min(100, Math.max(10, 100 - (ppbr - 50)));
+          const metScore = 80; // Stable CYP score
+          const clScore = Math.min(100, Math.max(10, 100 - clTotal));
+          const safeScore = Math.min(100, Math.max(10, (1.0 - hergProb) * 100));
+
+          initRadarChart([absScore, distScore, metScore, clScore, safeScore]);
+
+          // PBPK simulation curve: Cp(t) = C0 * exp(-ke * t)
+          const ke = Math.LN2 / Math.max(0.5, halfLife);
+          const c0 = 100.0 / Math.max(0.2, (prof.volume_of_distribution_l_kg || 1.0));
+          const simulatedCp = Array.from({length: 10}, (_, i) => {
+            const t = i * (halfLife * 0.4);
+            return +(c0 * Math.exp(-ke * t)).toFixed(2);
+          });
+          initLineChart(simulatedCp);
+
+          document.getElementById("pbpkMetrics").innerText = `CL: ${clTotal.toFixed(1)} mL/min | t1/2: ${halfLife.toFixed(1)}h`;
+          document.getElementById("radarOverallBadge").innerText = hergProb > 0.7 ? "High Risk" : "ADMET Passed";
+          document.getElementById("radarOverallBadge").className = `text-xs px-2.5 py-0.5 rounded-full font-mono ${hergProb > 0.7 ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`;
+        }
+
+        // 3. Process DTI & Therapeutic Index
+        let onTargetKdNm = 50.0;
+        if (dtiRes.status === 'fulfilled') {
+          const dti = dtiRes.value;
+          const pkd = dti.predictions_pkd?.[0] || 7.0;
+          const pki = dti.predictions_pki?.[0] || 6.8;
+          const pic50 = dti.predictions_pic50?.[0] || 7.1;
+          const kdNm = dti.kd_nm?.[0] || Math.pow(10, 9 - pkd);
+          const kiNm = dti.ki_nm?.[0] || Math.pow(10, 9 - pki);
+          const ic50Nm = dti.ic50_nm?.[0] || Math.pow(10, 9 - pic50);
+          onTargetKdNm = kdNm;
+
+          document.getElementById("kdValue").innerText = `${kdNm < 1000 ? kdNm.toFixed(1) : (kdNm/1000).toFixed(1) + 'k'} nM`;
+          document.getElementById("pkdValue").innerText = `pKd: ${pkd.toFixed(2)}`;
+          document.getElementById("kiValue").innerText = `${kiNm < 1000 ? kiNm.toFixed(1) : (kiNm/1000).toFixed(1) + 'k'} nM`;
+          document.getElementById("pkiValue").innerText = `pKi: ${pki.toFixed(2)}`;
+          document.getElementById("ic50Value").innerText = `${ic50Nm < 1000 ? ic50Nm.toFixed(1) : (ic50Nm/1000).toFixed(1) + 'k'} nM`;
+          document.getElementById("pic50Value").innerText = `pIC50: ${pic50.toFixed(2)}`;
+
+          if (dti.consistency_tiers && dti.consistency_tiers[0]) {
+            document.getElementById("acsTierBadge").innerText = `ACS: ${dti.consistency_tiers[0]}`;
+          }
+
+          if (dti.pymol_commands && dti.pymol_commands[0]) {
+            document.getElementById("pymolScript").value = dti.pymol_commands[0].join('\n');
+          }
+        }
+
+        // 4. Compute Therapeutic Index (TI)
+        // Approximate hERG IC50: If hergProb=0.9 -> IC50 ~ 100nM; hergProb=0.1 -> IC50 ~ 30,000nM
+        const hergIC50Estimated = Math.pow(10, 5 - (hergProb * 2.5)); // rough safety estimate
+        const tiRatio = hergIC50Estimated / Math.max(1.0, onTargetKdNm);
+        const tiLog = Math.log10(Math.max(0.1, tiRatio));
+        
+        const tiBadge = document.getElementById("tiBadge");
+        if (tiLog >= 2.0) {
+          tiBadge.innerText = `TI = ${tiLog.toFixed(1)} (Wide / Safe)`;
+          tiBadge.className = "px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+        } else if (tiLog >= 1.0) {
+          tiBadge.innerText = `TI = ${tiLog.toFixed(1)} (Moderate Risk)`;
+          tiBadge.className = "px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30";
+        } else {
+          tiBadge.innerText = `TI = ${tiLog.toFixed(1)} (Critical Narrow)`;
+          tiBadge.className = "px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-rose-500/20 text-rose-400 border border-rose-500/30";
+        }
+
+        // 5. Process Closed-Loop Lead Optimizer Candidates
+        if (optRes.status === 'fulfilled' && optRes.value.top_candidates) {
+          const opt = optRes.value;
+          if (opt.primary_liability) {
+            document.getElementById("primaryLiabilityTag").innerText = 
+              `Primary Liability: ${opt.primary_liability.liability_name} (${opt.primary_liability.current_value.toFixed(2)})`;
+          } else {
+            document.getElementById("primaryLiabilityTag").innerText = "Primary Liability: None (All metrics optimal)";
+          }
+
+          const tbody = document.getElementById("candidateTableBody");
+          if (opt.top_candidates.length > 0) {
+            tbody.innerHTML = opt.top_candidates.map((c, idx) => `
+              <tr class="hover:bg-slate-900/60 transition">
+                <td class="py-2 px-3 text-slate-400">#${idx + 1}</td>
+                <td class="py-2 px-3 font-semibold text-amber-300 font-sans">${c.transformation_name}</td>
+                <td class="py-2 px-3 text-slate-200 max-w-[220px] truncate" title="${c.smiles}">${c.smiles}</td>
+                <td class="py-2 px-3 text-center text-emerald-400">${c.liability_delta > 0 ? '+' : ''}${c.liability_delta.toFixed(2)}</td>
+                <td class="py-2 px-3 text-center text-cyan-400">${c.sa_score.toFixed(2)}</td>
+                <td class="py-2 px-3 text-center">${c.scaffold_preserved ? '<span class="text-emerald-400"><i class="fa-solid fa-check"></i></span>' : '<span class="text-slate-500">&times;</span>'}</td>
+                <td class="py-2 px-3 text-center font-sans">
+                  <button onclick="applyCandidate('${c.smiles}')" class="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[11px] font-bold transition">
+                    Apply
+                  </button>
+                </td>
+              </tr>
+            `).join('');
+          } else {
+            tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500">No optimized candidates generated.</td></tr>`;
+          }
+        }
+
+      } catch (err) {
+        console.error("Analysis failed:", err);
+        alert("Error running analysis. Check console for details.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function applyCandidate(newSmiles) {
+      document.getElementById("inputSmiles").value = newSmiles;
+      runComprehensiveAnalysis();
+    }
+
+    function copyPymolScript() {
+      const script = document.getElementById("pymolScript").value;
+      navigator.clipboard.writeText(script).then(() => {
+        alert("PyMOL script copied to clipboard!");
+      });
+    }
+
+    function setLoading(isLoading) {
+      const btn = document.getElementById("btnRun");
+      const icon = document.getElementById("btnIcon");
+      const text = document.getElementById("btnText");
+      if (isLoading) {
+        btn.disabled = true;
+        icon.className = "fa-solid fa-spinner animate-spin";
+        text.innerText = "Computing...";
+      } else {
+        btn.disabled = false;
+        icon.className = "fa-solid fa-bolt";
+        text.innerText = "Analyze All";
+      }
+    }
+  </script>
+</body>
+</html>

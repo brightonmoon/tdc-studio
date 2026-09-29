@@ -220,6 +220,7 @@
 | **ADMET 실전** | **Task F-4** | **Cluster 4 (Clearance & Half-life) 생체 연계 학습**<br/>• `half_life_obach`, `clearance_hepatocyte_az`, `clearance_microsome_az` 학습<br/>• Cluster 2의 $f_u$ (PPBR) 및 $V_{\text{dss}}$ 예측값을 생리학적 입력($CL = \frac{V_{\text{dss}} \cdot \ln 2}{t_{1/2}}$)으로 연계 | • 간 클리어런스 및 생체 반감기 정밀 예측<br/>• 생리학 기반 약동학(PBPK) 파이프라인 완성 |
 | **ADMET 실전** | **Task F-5** | **Cluster 5 (hERG Central 306k & DILI) 안전성 방어벽 학습**<br/>• 306k hERG Central 3-Head Multi-Task 학습<br/>• DILI (약물유도간손상) 이진분류 모델 결합 | • hERG ROC-AUC $\ge 0.88$, DILI ROC-AUC $\ge 0.82$<br/>• 초기 독성 스크리닝 필터 확립 |
 | **엔지니어링** | **Task F-6** | **Docker 프로덕션 컨테이너화 및 W&B Model Registry 자동 동기화**<br/>• FastAPI 기반 경량 배포 Dockerfile 작성<br/>• SOTA 모델 아티팩트 자동 버전 태깅 및 CI/CD 롤백 체계 구축 | • 배포 환경 일관성 및 재현성 100% 보장 |
+| **역합성/합성성** | **Task F-7** | **TDC 기반 역합성(Retrosynthesis) 엔진 및 다단계 경로 탐색**<br/>• TDC `RetroSyn (USPTO-50K)` 기반 단일단계 예측 및 순방향 검증<br/>• 상용 시약(Stock) 연계 Retro* A* 다단계 트리 탐색<br/>• `lead_optimizer.py` 실전 합성가능성(Synthesizability) 필터 결합 | • USPTO-50K Top-1 $\ge 55\%$, Top-10 $\ge 88\%$<br/>• 가용 시약 경로 탐색 성공률 $\ge 75\%$<br/>• 상세 명세: [`docs/retrosynthesis/retrosynthesis_todolist.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/docs/retrosynthesis/retrosynthesis_todolist.md) |
 
 ## 🚨 [긴급 점검 및 조치] 코드 리뷰 발견 핵심 결함 및 패치 완료 (Critical Bugs & Immediate Fixes - COMPLETE)
 
@@ -249,4 +250,6 @@
 | **CYP450 Stage 2 설정** | [`configs/config_cyp450_stage2_substrates.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/configs/config_cyp450_stage2_substrates.yaml) |
 | **DTI Phase C 설정** | [`configs/config_dti_phase_c.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/configs/config_dti_phase_c.yaml) |
 | **ChEMBL HSA 큐레이션 데이터** | [`data/external/chembl_hsa_processed.csv`](file:///C:/Users/xps/orca/workspaces/tdc-studio/data/external/chembl_hsa_processed.csv) |
+| **역합성 기술 조사 보고서** | [`docs/retrosynthesis/technical_survey.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/docs/retrosynthesis/technical_survey.md) |
+| **역합성 실행 TODOLIST** | [`docs/retrosynthesis/retrosynthesis_todolist.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/docs/retrosynthesis/retrosynthesis_todolist.md) |
 

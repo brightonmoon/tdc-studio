@@ -146,13 +146,19 @@ flowchart TD
 
 ### 📌 [Task 4] DTI 결합력 연계 치료지수 (Therapeutic Index) 통합 (Phase C)
 
-- **현재 상태:** DTA 및 ADMET 모델 각각의 고도화 완료 후 연계 / TODOLIST 등록.
-- **선행 충족 조건:**
-  - DTI Phase B (BindingDB Kd Cold-Drug CI=0.7464)의 추가 에포크 및 Pocket 특성 주입을 통한 $CI \ge 0.76$ 달성.
-  - ADMET Cluster 5 hERG/DILI 챔피언 모델 Colab GPU 학습 완료.
-- **통합 설계안 (Preview):**
-  $$\text{Therapeutic Window} = \log_{10}\left( \frac{\text{Predicted } IC_{50}(\text{hERG Cardiotoxicity})}{\text{Predicted } K_d(\text{On-Target Efficacy})} \right)$$
-  - 안전역(Window) $> 2.0$ ($100$배 이상 농도 격차) 화합물만 임상 진입 후보로 자동 판정.
+- **현재 상태:** **완료 (COMPLETE) ✅** (`feature/therapeutic-index`)
+- **구현 산출물:**
+  1. `tdc_studio/evaluation/therapeutic_index.py`:
+     - $TI = \log_{10}(IC_{50,\text{hERG}} / K_d) = pK_d - pIC_{50}$ (Safe $\ge 2.0$, Moderate $1.0 \sim 2.0$, Hazard $< 1.0$)
+     - 약리학적 Log-logistic 기반 hERG $IC_{50}$ (nM) 보정 엔진
+     - DILI 간독성 계단식 감점 모델 (최대 -40점)
+     - 종합 임상 진입 점수 (Clinical Progression Score, 0 ~ 100점)
+  2. `tdc_studio/serving/therapeutic_index_pipeline.py`:
+     - DTI 모델(온타깃 $K_d$)과 Unified ADMET(hERG, DILI, Drug-Likeness) 결합 오케스트레이터
+  3. `tdc_studio/serving/app.py` & `schema.py`:
+     - `POST /predict/therapeutic-index` 고성능 서빙 엔드포인트 및 `/healthz` 연동
+  4. `tests/test_therapeutic_index.py`:
+     - 수식 검증, 경계값 안전성, FastAPI 엔드포인트 8/8 테스트 통과
 
 ---
 
@@ -179,5 +185,5 @@ flowchart TD
 | **Step 1** | **[트랙 1] XAI 설명가능 AI 엔진** | - Integrated Gradients 기여도 추출기<br>- 2D 히트맵 시각화 및 Bioisostere 추천<br>- `POST /explain` 서빙 엔드포인트 구축 | **완료 (COMPLETE) ✅** |
 | **Step 2** | **[트랙 2] 단점 자가교정 분자 생성기** | - 4단계 Closed-Loop 아키텍처 및 알고리즘 구현 (프로토타입 완료 ✅)<br>- Retrosynthesis(역합성) 트랙 개발 시 생성 모델 학습 및 통합 파이프라인으로 본격 연계 | **TODOLIST (Retrosynthesis 연계)** |
 | **Step 3** | **[트랙 3] VS 엔진 & ONNX 가속** | - ONNX 변환 및 대용량 배치 스트리밍 설계안 확정 | **TODOLIST / 검토** |
-| **Step 4** | **[트랙 4] DTI 연계 치료지수 (Phase C)** | - DTA 모델 성숙 후 hERG/CYP 연계 치료창 산출 | **TODOLIST** |
+| **Step 4** | **[트랙 4] DTI 연계 치료지수 (Phase C)** | - DTI 온타깃 $K_d$ + hERG $IC_{50}$ + DILI 결합 치료역 정량화<br>- `POST /predict/therapeutic-index` 엔드포인트 및 단위 테스트 구축 | **완료 (COMPLETE) ✅** |
 | **Step 5** | **[트랙 5] 3-in-1 통합 웹 대시보드** | - DTA + ADMET + Retrosynthesis 완성 후 단일 웹 UI 통합 | **TODOLIST** |

@@ -17,7 +17,8 @@ def unified_pipeline():
     """Create a lightweight UnifiedADMETPipeline instance for fast zero-training testing."""
     pipe = UnifiedADMETPipeline(device="cpu")
     set_unified_pipeline(pipe)
-    return pipe
+    yield pipe
+    set_unified_pipeline(None)
 
 
 def test_unified_pipeline_predict_single(unified_pipeline):

@@ -37,8 +37,15 @@ from tdc_studio.serving.schema import (
     OptimizeRequest,
     OptimizeResponse,
     PBPKResponse,
+    TherapeuticIndexRequest,
+    TherapeuticIndexResponse,
     UnifiedADMETRequest,
     UnifiedADMETResponse,
+)
+from tdc_studio.serving.therapeutic_index_pipeline import (
+    TherapeuticIndexPipeline,
+    get_therapeutic_index_pipeline,
+    set_therapeutic_index_pipeline,
 )
 from tdc_studio.serving.unified_pipeline import (
     UnifiedADMETPipeline,
@@ -134,6 +141,26 @@ def get_dti_multi_pipeline() -> Optional[DTIMultiAffinityPipeline]:
 def get_dti_model_meta() -> dict:
     """Getter for loaded DTI model metadata."""
     return _dti_model_meta
+
+
+def get_ti_pipeline() -> Optional[TherapeuticIndexPipeline]:
+    """Getter for global TherapeuticIndexPipeline with on-demand fallback."""
+    pipe = get_therapeutic_index_pipeline()
+    if pipe is not None:
+        return pipe
+    # Auto-initialize from loaded DTI and UnifiedADMET pipelines if available
+    admet_p = get_unified_pipeline()
+    dti_p = get_dti_multi_pipeline() or get_dti_pipeline()
+    if admet_p is not None or dti_p is not None:
+        ti_pipe = TherapeuticIndexPipeline(dti_pipeline=dti_p, admet_pipeline=admet_p, device="cpu")
+        set_therapeutic_index_pipeline(ti_pipe)
+        return ti_pipe
+    return None
+
+
+def set_ti_pipeline(pipeline: Optional[TherapeuticIndexPipeline]) -> None:
+    """Setter for global TherapeuticIndexPipeline."""
+    set_therapeutic_index_pipeline(pipeline)
 
 
 def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
@@ -282,6 +309,7 @@ async def lifespan(app: FastAPI):
     set_dti_pipeline(None)
     set_dti_multi_pipeline(None)
     set_unified_pipeline(None)
+    set_ti_pipeline(None)
 
 
 app = FastAPI(
@@ -300,6 +328,7 @@ def health_check():
     has_pbpk = _pbpk_pipeline is not None
     has_dti = _dti_pipeline is not None or isinstance(_pipeline, DTIInferencePipeline)
     unified_ready = get_unified_pipeline() is not None
+    ti_ready = get_therapeutic_index_pipeline() is not None or unified_ready
     model_loaded = has_admet or has_dti or has_pbpk or unified_ready
     return HealthResponse(
         status="healthy",
@@ -309,6 +338,7 @@ def health_check():
         vdss_model_loaded=has_vdss,
         pbpk_pipeline_loaded=has_pbpk,
         dti_model_loaded=has_dti,
+        therapeutic_index_ready=ti_ready,
     )
 
 
@@ -664,4 +694,41 @@ async def predict_dti_multi_affinity(request: DTIMultiAffinityInferenceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DTI multi-affinity inference error: {str(e)}")
+
+
+@app.post("/predict/therapeutic-index", response_model=TherapeuticIndexResponse)
+async def predict_therapeutic_index(request: TherapeuticIndexRequest):
+    """Evaluate Drug-Target Interaction (DTI) linked Therapeutic Index and safety margins.
+
+    Combines On-Target Efficacy (Kd) with hERG Cardiotoxicity (IC50) and DILI Hepatotoxicity
+    to compute logarithmic safety margin (TI), penalty adjustments, and overall clinical progression score.
+    """
+    ti_pipe = get_ti_pipeline()
+    if ti_pipe is None:
+        dti_p = get_dti_multi_pipeline() or get_dti_pipeline()
+        admet_p = get_unified_pipeline()
+        ti_pipe = TherapeuticIndexPipeline(dti_pipeline=dti_p, admet_pipeline=admet_p)
+        set_therapeutic_index_pipeline(ti_pipe)
+
+    t0 = time.perf_counter()
+    try:
+        items = await run_in_threadpool(
+            ti_pipe.evaluate_batch,
+            request.smiles,
+            request.target_sequences,
+            request.herg_source,
+            request.herg_cutoff_nm,
+            request.include_admet_details,
+        )
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        return TherapeuticIndexResponse(
+            results=items,
+            count=len(items),
+            elapsed_ms=elapsed_ms,
+            pipeline_version="TDC-Studio-TI-v1",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Therapeutic Index evaluation error: {str(e)}")
 

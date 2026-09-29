@@ -34,6 +34,7 @@ class HealthResponse(BaseModel):
     vdss_model_loaded: bool = False
     pbpk_pipeline_loaded: bool = False
     dti_model_loaded: bool = False
+    therapeutic_index_ready: bool = False
 
 
 class PBPKResponse(BaseModel):
@@ -350,3 +351,89 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
     )
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
+
+
+# ------------------------------------------------------------------------------
+# Therapeutic Index (TI) Linked Schemas
+# ------------------------------------------------------------------------------
+
+
+class TherapeuticIndexRequest(BaseModel):
+    """Payload for Drug-Target Interaction linked Therapeutic Index prediction."""
+
+    smiles: List[str] = Field(
+        ..., description="List of drug SMILES strings to evaluate.", min_length=1
+    )
+    target_sequences: List[str] = Field(
+        ..., description="List of on-target protein amino acid sequences.", min_length=1
+    )
+    herg_source: str = Field(
+        default="admet",
+        description="Source of hERG cardiotoxicity prediction: 'admet' (calibrated) or 'dti' (target seq).",
+    )
+    herg_cutoff_nm: float = Field(
+        default=10000.0,
+        description="Assay threshold for hERG blocker classification in nM (default 10,000 nM = 10 uM).",
+    )
+    include_admet_details: bool = Field(
+        default=False,
+        description="Whether to include full 22-task ADMET indicator profiles in response items.",
+    )
+
+    @model_validator(mode="after")
+    def check_lengths_match(self) -> "TherapeuticIndexRequest":
+        if len(self.smiles) != len(self.target_sequences):
+            raise ValueError(
+                f"Mismatch between number of SMILES ({len(self.smiles)}) "
+                f"and target sequences ({len(self.target_sequences)}). They must be equal."
+            )
+        return self
+
+
+class TherapeuticIndexItem(BaseModel):
+    """Single compound-target therapeutic index and clinical progression profile."""
+
+    smiles: str
+    target_sequence: str
+    kd_nm: float = Field(..., description="Predicted On-Target binding affinity Kd in nM.")
+    pkd: float = Field(..., description="Predicted On-Target pKd (-log10 Kd).")
+    herg_ic50_nm: float = Field(..., description="Predicted hERG cardiotoxicity IC50 in nM.")
+    herg_prob: float = Field(..., description="Predicted hERG blocker probability (0.0 to 1.0).")
+    herg_decision: str = Field(..., description="hERG cardiotoxicity risk decision tier.")
+    therapeutic_index: float = Field(
+        ..., description="Therapeutic Index TI = log10(IC50_hERG / Kd) = pKd - pIC50."
+    )
+    ti_tier: str = Field(
+        ..., description="TI tier: 'Safe (Wide Window)', 'Moderate Risk', or 'Critical Hazard'."
+    )
+    dili_prob: float = Field(..., description="Predicted hepatotoxicity DILI probability.")
+    dili_decision: str = Field(..., description="DILI classification decision tier.")
+    dili_penalty: float = Field(..., description="DILI penalty points deducted from clinical score.")
+    drug_likeness_score: float = Field(
+        ..., description="Composite ADMET drug-likeness score (0 to 100)."
+    )
+    clinical_progression_score: float = Field(
+        ..., description="Comprehensive clinical progression score (0 to 100)."
+    )
+    clinical_decision: str = Field(
+        ...,
+        description="Clinical suitability decision: 'Recommended (Pass)', 'Caution (Moderate Risk)', or 'Rejected (Critical Hazard)'.",
+    )
+    safety_radar: Dict[str, float] = Field(
+        ..., description="Normalized 0-100 radar chart coordinates for therapeutic dimensions."
+    )
+    admet_profile: Optional[Dict[str, Any]] = Field(
+        None, description="Detailed ADMET indicator results if requested."
+    )
+    elapsed_ms: float = Field(..., description="Evaluation latency in milliseconds.")
+
+
+class TherapeuticIndexResponse(BaseModel):
+    """Response payload for Therapeutic Index evaluation."""
+
+    results: List[TherapeuticIndexItem]
+    count: int = Field(..., description="Number of evaluated compound-target pairs.")
+    elapsed_ms: float = Field(..., description="Total pipeline latency in milliseconds.")
+    pipeline_version: str = Field(
+        default="TDC-Studio-TI-v1", description="Serving pipeline identifier."
+    )

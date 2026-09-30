@@ -13,6 +13,7 @@ from tdc_studio.serving.app import (
     set_dti_pipeline,
     set_pbpk_pipeline,
     set_pipeline,
+    set_unified_pipeline,
     set_vdss_pipeline,
 )
 from tdc_studio.serving.exporter import (
@@ -39,11 +40,20 @@ def test_healthz_endpoint_initial(test_client):
     set_vdss_pipeline(None)
     set_pbpk_pipeline(None)
     set_dti_pipeline(None)
+    set_unified_pipeline(None)
     resp = test_client.get("/healthz")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "healthy"
     assert data["model_loaded"] is False
+
+
+def test_index_dashboard_endpoint(test_client):
+    resp = test_client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "TDC-Studio" in resp.text
+    assert "Full ADMET" in resp.text
 
 
 def test_predict_endpoint_with_pipeline(test_client):

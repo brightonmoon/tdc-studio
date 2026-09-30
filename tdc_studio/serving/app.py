@@ -9,12 +9,14 @@ from typing import Any, Optional
 
 import torch
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from starlette.concurrency import run_in_threadpool
 
 from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
 from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
+from tdc_studio.serving.dashboard_html import DASHBOARD_HTML
 from tdc_studio.serving.exporter import load_model_from_checkpoint
 from tdc_studio.serving.pipeline import (
     DTIInferencePipeline,
@@ -290,6 +292,12 @@ app = FastAPI(
     description="High-performance molecular property, ADMET, and Drug-Target Interaction (DTI) prediction microservice.",
     lifespan=lifespan,
 )
+
+
+@app.get("/", response_class=HTMLResponse)
+def index_dashboard():
+    """Interactive Biomedical Web Dashboard for ADMET & DTI prediction."""
+    return DASHBOARD_HTML
 
 
 @app.get("/healthz", response_model=HealthResponse)

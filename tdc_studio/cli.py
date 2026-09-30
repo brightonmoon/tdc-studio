@@ -1617,10 +1617,20 @@ def serve(
     if model_dir:
         abs_model_dir = str(Path(model_dir).resolve())
         os.environ["MODEL_DIR"] = abs_model_dir
-        console.print(f"Configured MODEL_DIR: [yellow]{abs_model_dir}[/yellow]")
-
-    console.print(f"[bold green]Starting TDC-Studio Serving API[/bold green] on {host}:{port}...")
+        console.print(f"[bold green]Starting TDC-Studio Serving API & Biomedical Dashboard[/bold green] on http://{host}:{port}...")
+    console.print(f"  👉 [bold cyan]Interactive Web Dashboard[/bold cyan]: http://localhost:{port}/")
+    console.print(f"  👉 [bold dim]Swagger API Documentation[/bold dim]: http://localhost:{port}/docs")
     uvicorn.run("tdc_studio.serving.app:app", host=host, port=port, workers=workers)
+
+
+@app.command("ui")
+def ui_serve(
+    host: str = typer.Option("127.0.0.1", help="Host address"),
+    port: int = typer.Option(8000, help="Port to listen on"),
+    model_dir: Optional[str] = typer.Option(None, "--model-dir", help="Path to exported model directory"),
+):
+    """Launch the interactive biomedical web dashboard."""
+    serve(host=host, port=port, workers=1, model_dir=model_dir)
 
 
 switch_app = typer.Typer(help="Manage and switch Colab CLI accounts (tokens)")

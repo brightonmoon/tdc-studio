@@ -22,6 +22,7 @@ models/checkpoint*/
 *.pt
 *.pth
 *.onnx
+*.joblib
 
 # Data caches
 /data/*

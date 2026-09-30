@@ -15,9 +15,6 @@ if (-not (Test-Path $FilePath)) {
     exit 1
 }
 
-# Isolate colab-cli profile to munhyeongdo4 account
-$env:USERPROFILE = "C:\Users\xps\.colab_munhyeongdo4"
-
 # 1. Read original python script content
 $originalCode = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
 
@@ -39,7 +36,7 @@ import zipfile, os
 from pathlib import Path
 root = Path.cwd().resolve()
 zip_file = Path(r'$zipPath')
-targets = ['tdc_studio', 'configs', 'deploy', 'pyproject.toml', 'README.md']
+targets = ['tdc_studio', 'configs', 'deploy', 'data', 'pyproject.toml', 'README.md']
 with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
     for t in targets:
         tp = root / t
@@ -47,9 +44,9 @@ with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.write(tp, arcname=t)
         elif tp.is_dir():
             for item in tp.rglob('*'):
-                if '__pycache__' in item.parts or item.suffix in ('.pyc', '.pt', '.pth', '.log', '.npz', '.tab'):
+                if '__pycache__' in item.parts or item.suffix in ('.pyc', '.pt', '.pth', '.log', '.npz'):
                     continue
-                if item.is_file() and item.stat().st_size <= 2 * 1024 * 1024:
+                if item.is_file() and item.stat().st_size <= 5 * 1024 * 1024:
                     rel_path = item.relative_to(root)
                     zf.write(item, arcname=str(rel_path).replace('\\', '/'))
 "@

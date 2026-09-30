@@ -48,6 +48,10 @@ class UnifiedADMETPipeline:
         c4_model: Optional[torch.nn.Module] = None,
         c5_model: Optional[torch.nn.Module] = None,
         pbpk_engine: Optional[PBPKEngine] = None,
+        ames_champion: Optional[Any] = None,
+        clearance_cascade: Optional[Any] = None,
+        lipo_stacker: Optional[Any] = None,
+        herg_champion: Optional[torch.nn.Module] = None,
         device: str = "cpu",
     ):
         self.device = device
@@ -58,6 +62,11 @@ class UnifiedADMETPipeline:
         self.c4_model = c4_model.to(device) if c4_model is not None else None
         self.c5_model = c5_model.to(device) if c5_model is not None else None
         self.pbpk_engine = pbpk_engine or PBPKEngine()
+
+        self.ames_champion = ames_champion
+        self.clearance_cascade = clearance_cascade
+        self.lipo_stacker = lipo_stacker
+        self.herg_champion = herg_champion.to(device) if herg_champion is not None else None
 
         self.normalizer = CanonicalSmilesNormalizer(remove_salts=True)
         self.graph_transform = SmilesToGraphTransform()
@@ -76,6 +85,10 @@ class UnifiedADMETPipeline:
         c5_model = None
         c2_ppbr = None
         c2_vdss = None
+        ames_champion = None
+        clearance_cascade = None
+        lipo_stacker = None
+        herg_champion = None
 
         # Try loading Cluster 3
         c3_dir = os.path.join(export_dir, "cluster_3_cyp450")
@@ -108,12 +121,67 @@ class UnifiedADMETPipeline:
         except Exception as e:
             logger.warning("Cluster 2 tri-hybrid loading note: %s", e)
 
+        # Try loading standalone Champion models
+        import joblib
+
+        # 1. AMES Mutagenicity Champion
+        ames_path = os.path.join(export_dir, "ames_champion", "ames_model.joblib")
+        if os.path.exists(ames_path):
+            try:
+                ames_champion = joblib.load(ames_path)
+                logger.info("Loaded AMES Champion model from %s", ames_path)
+            except Exception as e:
+                logger.warning("Could not load AMES champion: %s", e)
+
+        # 2. Clearance Cascaded Transfer Champion
+        cl_path = os.path.join(export_dir, "clearance_cascade", "clearance_cascade_model.joblib")
+        if os.path.exists(cl_path):
+            try:
+                clearance_cascade = joblib.load(cl_path)
+                logger.info("Loaded Clearance Cascade model from %s", cl_path)
+            except Exception as e:
+                logger.warning("Could not load Clearance Cascade model: %s", e)
+
+        # 3. Lipophilicity Dual Stacker Champion
+        lipo_path = os.path.join(export_dir, "lipophilicity_stacker", "lipo_stacker_model.joblib")
+        if os.path.exists(lipo_path):
+            try:
+                lipo_stacker = joblib.load(lipo_path)
+                logger.info("Loaded Lipophilicity Stacker model from %s", lipo_path)
+            except Exception as e:
+                logger.warning("Could not load Lipophilicity Stacker: %s", e)
+
+        # 4. hERG 2-Stage Champion
+        herg_path = os.path.join(export_dir, "herg_champion", "herg_wang_finetuned.pt")
+        if os.path.exists(herg_path):
+            try:
+                model_cfg = {
+                    "type": "dmpnn",
+                    "in_dim": 14,
+                    "edge_dim": 6,
+                    "hidden_dim": 512,
+                    "num_layers": 4,
+                    "dropout": 0.20,
+                    "use_descriptors": False,
+                }
+                herg_m = MODELS.get("dmpnn")(model_cfg)
+                herg_m.load_state_dict(torch.load(herg_path, map_location=device))
+                herg_m.eval()
+                herg_champion = herg_m
+                logger.info("Loaded hERG 2-Stage Champion model from %s", herg_path)
+            except Exception as e:
+                logger.warning("Could not load hERG champion: %s", e)
+
         return cls(
             c2_ppbr_pipeline=c2_ppbr,
             c2_vdss_pipeline=c2_vdss,
             c3_model=c3_model,
             c4_model=c4_model,
             c5_model=c5_model,
+            ames_champion=ames_champion,
+            clearance_cascade=clearance_cascade,
+            lipo_stacker=lipo_stacker,
+            herg_champion=herg_champion,
             device=device,
         )
 
@@ -151,6 +219,65 @@ class UnifiedADMETPipeline:
         arr = np.array(vals, dtype=np.float32)
         arr = np.nan_to_num(arr, nan=0.0, posinf=1e6, neginf=-1e6)
         return arr
+
+    def _extract_ames_features(self, mol: Chem.Mol) -> np.ndarray:
+        """Extract 1,129-dim biophysical features for AMES champion predictor."""
+        try:
+            from rdkit.Chem import AllChem
+            alerts = self.alert_extractor.extract(mol, return_counts=True)
+            fp = np.array(
+                AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=1024),
+                dtype=np.float32,
+            )
+            logp = float(Descriptors.MolLogP(mol))
+            mw = float(Descriptors.MolWt(mol))
+            tpsa = float(Descriptors.TPSA(mol))
+            hbd = float(rdMolDescriptors.CalcNumHBD(mol))
+            hba = float(rdMolDescriptors.CalcNumHBA(mol))
+            phys = np.array([logp, mw, tpsa, hbd, hba], dtype=np.float32)
+            row = np.concatenate([alerts, fp, phys])
+            return row.reshape(1, -1)
+        except Exception as e:
+            logger.warning("AMES feature extraction error: %s", e)
+            return np.zeros((1, 100 + 1024 + 5), dtype=np.float32)
+
+    def _predict_model_heads(
+        self,
+        model: Optional[torch.nn.Module],
+        graph: Data,
+        desc_tensor: torch.Tensor,
+    ) -> Dict[str, float]:
+        """Execute forward pass on a multi-task DMPNN model and return head predictions."""
+        if model is None:
+            return {}
+
+        try:
+            model.eval()
+            with torch.no_grad():
+                g = graph.clone()
+                if not hasattr(g, "batch") or g.batch is None:
+                    g.batch = torch.zeros(g.x.size(0), dtype=torch.long, device=self.device)
+                else:
+                    g.batch = g.batch.to(self.device)
+
+                batch = {
+                    "drug_graph": g.to(self.device),
+                    "descriptors": desc_tensor.to(self.device),
+                }
+
+                h = model.extract_features(batch)
+                preds = {}
+                if hasattr(model, "task_heads") and model.task_heads is not None:
+                    for task_name, head_module in model.task_heads.items():
+                        out = head_module(h).squeeze().item()
+                        preds[task_name] = float(out)
+                elif hasattr(model, "head") and model.head is not None:
+                    out = model.head(h).squeeze().item()
+                    preds["default"] = float(out)
+                return preds
+        except Exception as e:
+            logger.warning("Error running model forward: %s", e)
+            return {}
 
     def predict_single(self, smiles: str) -> UnifiedADMETProfile:
         """Execute full 22-task ADMET + PBPK pipeline on a single SMILES."""
@@ -190,7 +317,14 @@ class UnifiedADMETPipeline:
         caco2_val = round(float(caco2_val), 3)
 
         # Lipophilicity logD7.4
-        lipo_val = round(float(lipo_24d[0] if lipo_24d[4] < 0.8 else lipo_24d[0] - 1.2), 3)
+        if self.lipo_stacker is not None:
+            try:
+                lipo_val = round(float(self.lipo_stacker.predict([canon_s])[0]), 3)
+            except Exception as e:
+                logger.warning("Lipo stacker prediction fallback: %s", e)
+                lipo_val = round(float(lipo_24d[0] if lipo_24d[4] < 0.8 else lipo_24d[0] - 1.2), 3)
+        else:
+            lipo_val = round(float(lipo_24d[0] if lipo_24d[4] < 0.8 else lipo_24d[0] - 1.2), 3)
 
         # Aqueous Solubility logS
         logs_val = round(float(0.5 - 0.01 * (mw - 100) - 0.7 * lipo_val), 3)
@@ -290,17 +424,31 @@ class UnifiedADMETPipeline:
         # ----------------------------------------------------------------------
         # Cluster 3: CYP450 8-Head Metabolism Matrix (8 Tasks)
         # ----------------------------------------------------------------------
+        c3_preds = self._predict_model_heads(self.c3_model, graph, graph.descriptors)
         cyp_names = [
             "cyp1a2_veith", "cyp2c9_veith", "cyp2c19_veith", "cyp2d6_veith", "cyp3a4_veith",
             "cyp2c9_substrate", "cyp2d6_substrate", "cyp3a4_substrate",
         ]
         metabolism_dict: Dict[str, ADMETIndicatorResult] = {}
 
-        # Default heuristic probabilities
         for name in cyp_names:
-            prob = round(float(1.0 / (1.0 + math.exp(-(0.3 * logp - 0.005 * mw)))), 4)
             is_sub = "substrate" in name
-            decision = ("Substrate Turnover" if prob >= 0.5 else "Non-Substrate") if is_sub else ("Inhibitor" if prob >= 0.5 else "Non-Inhibitor")
+            raw_logit = None
+            if name in c3_preds:
+                raw_logit = c3_preds[name]
+            elif f"{name}_carbonmangels" in c3_preds:
+                raw_logit = c3_preds[f"{name}_carbonmangels"]
+
+            if raw_logit is not None:
+                prob = round(float(torch.sigmoid(torch.tensor(raw_logit)).item()), 4)
+            else:
+                prob = round(float(1.0 / (1.0 + math.exp(-(0.3 * logp - 0.005 * mw)))), 4)
+
+            decision = (
+                ("Substrate Turnover" if prob >= 0.5 else "Non-Substrate")
+                if is_sub
+                else ("Inhibitor" if prob >= 0.5 else "Non-Inhibitor")
+            )
             metabolism_dict[name] = ADMETIndicatorResult(
                 name=name,
                 category="metabolism",
@@ -312,9 +460,38 @@ class UnifiedADMETPipeline:
         # ----------------------------------------------------------------------
         # Cluster 4: Elimination & Clearance (3 Tasks)
         # ----------------------------------------------------------------------
-        cl_mic_val = round(float(max(1.0, 15.0 + 8.0 * logp - 0.05 * tpsa)), 2)
-        cl_hep_val = round(float(max(1.0, 0.6 * cl_mic_val + 4.0 * (caco2_val + 5.0))), 2)
-        half_life_val = round(float(max(0.5, (vdss_real * 0.693) / max(0.05, 0.001 * cl_hep_val * 60.0))), 2)
+        c4_preds = self._predict_model_heads(self.c4_model, graph, graph.descriptors)
+
+        if "clearance_microsome_az" in c4_preds:
+            cl_mic_val = round(float(c4_preds["clearance_microsome_az"]), 2)
+        else:
+            cl_mic_val = round(float(max(1.0, 15.0 + 8.0 * logp - 0.05 * tpsa)), 2)
+
+        if self.clearance_cascade is not None:
+            try:
+                cl_hep_val = round(
+                    float(
+                        self.clearance_cascade.predict(
+                            [canon_s], mic_preds=np.array([cl_mic_val], dtype=np.float32)
+                        )[0]
+                    ),
+                    2,
+                )
+            except Exception as e:
+                logger.warning("Clearance cascade prediction fallback: %s", e)
+                if "clearance_hepatocyte_az" in c4_preds:
+                    cl_hep_val = round(float(c4_preds["clearance_hepatocyte_az"]), 2)
+                else:
+                    cl_hep_val = round(float(max(1.0, 0.6 * cl_mic_val + 4.0 * (caco2_val + 5.0))), 2)
+        elif "clearance_hepatocyte_az" in c4_preds:
+            cl_hep_val = round(float(c4_preds["clearance_hepatocyte_az"]), 2)
+        else:
+            cl_hep_val = round(float(max(1.0, 0.6 * cl_mic_val + 4.0 * (caco2_val + 5.0))), 2)
+
+        if "half_life_obach" in c4_preds:
+            half_life_val = round(float(max(0.1, c4_preds["half_life_obach"])), 2)
+        else:
+            half_life_val = round(float(max(0.5, (vdss_real * 0.693) / max(0.05, 0.001 * cl_hep_val * 60.0))), 2)
 
         excretion_dict = {
             "clearance_microsome_az": ADMETIndicatorResult(
@@ -343,17 +520,65 @@ class UnifiedADMETPipeline:
         # ----------------------------------------------------------------------
         # Cluster 5: Cardiotoxicity & Safety Profile (5 Tasks)
         # ----------------------------------------------------------------------
-        # hERG cardiotoxicity (basic amine + aromatic hydrophobic interaction)
-        has_basic_amine = float(lipo_24d[19]) > 0
-        herg_prob = round(float(1.0 / (1.0 + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5)))), 4)
+        c5_preds = self._predict_model_heads(self.c5_model, graph, graph.descriptors)
 
-        # AMES mutagenicity (driven directly by Ashby-Tennant 100-dim alert triggers)
+        # hERG Cardiotoxicity (Champion 2-Stage D-MPNN -> Multi-task Cluster 5 -> Mechanistic Fallback)
+        if self.herg_champion is not None:
+            try:
+                herg_out = self._predict_model_heads(self.herg_champion, graph, graph.descriptors)
+                raw_h = herg_out.get("default", None)
+                if raw_h is not None:
+                    herg_prob = round(float(torch.sigmoid(torch.tensor(raw_h)).item()), 4)
+                else:
+                    herg_prob = 0.5
+            except Exception as e:
+                logger.warning("hERG champion prediction fallback: %s", e)
+                if "herg" in c5_preds:
+                    herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg"])).item()), 4)
+                elif "herg_karim" in c5_preds:
+                    herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg_karim"])).item()), 4)
+                else:
+                    has_basic_amine = float(lipo_24d[19]) > 0
+                    herg_prob = round(float(1.0 / (1.0 + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5)))), 4)
+        elif "herg" in c5_preds:
+            herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg"])).item()), 4)
+        elif "herg_karim" in c5_preds:
+            herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg_karim"])).item()), 4)
+        else:
+            has_basic_amine = float(lipo_24d[19]) > 0
+            herg_prob = round(float(1.0 / (1.0 + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5)))), 4)
+
+        # AMES Mutagenicity (Champion GBDT Pipeline -> Multi-task Cluster 5 -> Alert Fallback)
         n_alerts = float(alerts_100d.sum())
-        ames_prob = round(float(1.0 / (1.0 + math.exp(-(1.5 * n_alerts - 1.2)))), 4)
+        if self.ames_champion is not None:
+            try:
+                feat = self._extract_ames_features(mol)
+                ames_prob = round(float(self.ames_champion.predict_proba(feat)[0, 1]), 4)
+            except Exception as e:
+                logger.warning("AMES champion prediction fallback: %s", e)
+                if "ames" in c5_preds:
+                    ames_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["ames"])).item()), 4)
+                else:
+                    ames_prob = round(float(1.0 / (1.0 + math.exp(-(1.5 * n_alerts - 1.2)))), 4)
+        elif "ames" in c5_preds:
+            ames_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["ames"])).item()), 4)
+        else:
+            ames_prob = round(float(1.0 / (1.0 + math.exp(-(1.5 * n_alerts - 1.2)))), 4)
 
-        dili_prob = round(float(1.0 / (1.0 + math.exp(-(0.4 * logp - 0.01 * tpsa - 0.5)))), 4)
-        clintox_prob = round(float(1.0 / (1.0 + math.exp(-(0.3 * herg_prob + 0.4 * ames_prob + 0.3 * dili_prob - 0.5)))), 4)
-        ld50_val = round(float(3.2 - 0.3 * logp + 0.005 * tpsa), 3)
+        if "dili" in c5_preds:
+            dili_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["dili"])).item()), 4)
+        else:
+            dili_prob = round(float(1.0 / (1.0 + math.exp(-(0.4 * logp - 0.01 * tpsa - 0.5)))), 4)
+
+        if "clintox" in c5_preds:
+            clintox_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["clintox"])).item()), 4)
+        else:
+            clintox_prob = round(float(1.0 / (1.0 + math.exp(-(0.3 * herg_prob + 0.4 * ames_prob + 0.3 * dili_prob - 0.5)))), 4)
+
+        if "ld50_zhu" in c5_preds:
+            ld50_val = round(float(c5_preds["ld50_zhu"]), 3)
+        else:
+            ld50_val = round(float(3.2 - 0.3 * logp + 0.005 * tpsa), 3)
 
         toxicity_dict = {
             "herg": ADMETIndicatorResult(

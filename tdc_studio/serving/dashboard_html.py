@@ -9,6 +9,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script type="text/javascript" language="javascript" src="https://peter-ertl.com/jsme/JSME_2020-06-11/jsme/jsme.nocache.js"></script>
   <style>
     :root {
       --bg-primary: #0a0f1d;
@@ -35,6 +36,83 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+    }
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: none; justify-content: center; align-items: center;
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      width: 92%; max-width: 950px;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      padding: 1.5rem;
+    }
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem; margin-bottom: 1rem;
+    }
+    .modal-title { font-size: 1.1rem; font-weight: 600; color: #93c5fd; }
+    .modal-close {
+      background: none; border: none; color: var(--text-muted); font-size: 1.5rem;
+      cursor: pointer; line-height: 1;
+    }
+    .modal-close:hover { color: var(--text-main); }
+    .btn-action-nav {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      color: #60a5fa;
+      padding: 0.35rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s;
+    }
+    .btn-action-nav:hover {
+      background: rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+    }
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      max-height: 320px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+    .screening-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      text-align: left;
+    }
+    .screening-table th {
+      background: var(--bg-card);
+      color: #93c5fd;
+      padding: 0.5rem 0.6rem;
+      position: sticky;
+      top: 0;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+    .screening-table td {
+      padding: 0.45rem 0.6rem;
+      border-bottom: 1px solid rgba(55, 65, 81, 0.4);
+      white-space: nowrap;
+    }
+    .screening-table tr:hover {
+      background: rgba(255, 255, 255, 0.02);
     }
     header {
       background: linear-gradient(180deg, #111827 0%, rgba(17, 24, 39, 0.8) 100%);
@@ -232,6 +310,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
     <div class="status-bar">
+      <button class="btn-action-nav" onclick="openModal('batch-modal')">
+        <span>📂 Batch Screening</span>
+      </button>
       <div class="status-pill">
         <span class="pulse-dot"></span>
         <span id="service-status">Engine Active (SOTA)</span>
@@ -245,7 +326,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <!-- Input Sidebar -->
       <div>
         <div class="card">
-          <div class="card-title">🧪 Molecule Specification</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div class="card-title" style="margin-bottom: 0;">🧪 Molecule Specification</div>
+            <button class="pill-btn" style="color: #60a5fa; border-color: rgba(59, 130, 246, 0.4);" onclick="openJsmeModal()">
+              ✏️ 2D Editor
+            </button>
+          </div>
           <div class="input-group">
             <label for="smiles-input">SMILES String</label>
             <textarea id="smiles-input" rows="3" placeholder="Enter valid SMILES string...">CC(=O)Oc1ccccc1C(=O)O</textarea>
@@ -256,6 +342,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
               <span class="pill-btn" onclick="setSmiles('COc1cc2ncnc(c2cc1OCCCN3CCOCC3)Nc4ccc(c(c4)Cl)F')">Gefitinib</span>
               <span class="pill-btn" onclick="setSmiles('CCC(CC)COC(=O)C(C)NP(=O)(OCC1C(C(C(O1)(C#N)C2=CC=C3N2N=CN=C3N)O)O)OC4=CC=CC=C4')">Remdesivir</span>
             </div>
+            <button class="btn-secondary" style="margin-top: 0.6rem; display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.5rem;" onclick="openJsmeModal()">
+              <span>✏️ Draw / Edit 2D Structure (JSME)</span>
+            </button>
           </div>
 
           <button id="btn-analyze" class="btn-primary" onclick="runFullPipeline()">
@@ -362,6 +451,45 @@ DASHBOARD_HTML = """<!DOCTYPE html>
               <div class="pbpk-stat-sub">First-Pass Limit</div>
             </div>
           </div>
+
+          <!-- Virtual Population Sub-panel -->
+          <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #93c5fd;">👥 Virtual Population Monte Carlo (IIV)</div>
+              <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <select id="vpop-subgroup" style="background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.8rem;">
+                  <option value="healthy_adults">Healthy Adults (70kg standard)</option>
+                  <option value="renal_mild">Renal Impairment: Mild (eGFR 60-89)</option>
+                  <option value="renal_moderate">Renal Impairment: Moderate (eGFR 30-59)</option>
+                  <option value="renal_severe">Renal Impairment: Severe (eGFR &lt; 30)</option>
+                  <option value="hepatic_child_pugh_a">Hepatic Impairment: Child-Pugh A (Mild)</option>
+                  <option value="hepatic_child_pugh_b">Hepatic Impairment: Child-Pugh B (Mod)</option>
+                  <option value="hepatic_child_pugh_c">Hepatic Impairment: Child-Pugh C (Severe)</option>
+                  <option value="geriatric">Geriatric (Elderly &ge; 65yo)</option>
+                </select>
+                <div style="display: flex; align-items: center; gap: 0.25rem;">
+                  <input type="number" id="vpop-dose" value="100" min="1" max="2000" style="width: 70px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.3rem; font-size: 0.8rem;" title="Dose (mg)" />
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">mg</span>
+                </div>
+                <button id="btn-vpop-run" class="pill-btn" style="background: #2563eb; color: white; border: none; font-weight: 600;" onclick="runVirtualPopulation()">Simulate (N=500)</button>
+              </div>
+            </div>
+            <div id="vpop-results-area" style="display: none; background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 1rem;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.5rem; margin-bottom: 0.75rem;">
+                <div class="pbpk-stat"><div class="pbpk-stat-title">C_max (Median [90% CI])</div><div class="pbpk-stat-val" id="vpop-cmax" style="font-size: 0.9rem;">--</div><div class="pbpk-stat-sub">ug/mL</div></div>
+                <div class="pbpk-stat"><div class="pbpk-stat-title">T_max (Median)</div><div class="pbpk-stat-val" id="vpop-tmax" style="font-size: 0.9rem;">--</div><div class="pbpk-stat-sub">hours</div></div>
+                <div class="pbpk-stat"><div class="pbpk-stat-title">AUC_inf (Median [90% CI])</div><div class="pbpk-stat-val" id="vpop-auc" style="font-size: 0.9rem;">--</div><div class="pbpk-stat-sub">ug*h/mL</div></div>
+                <div class="pbpk-stat"><div class="pbpk-stat-title">t_1/2 (Median [90% CI])</div><div class="pbpk-stat-val" id="vpop-thalf" style="font-size: 0.9rem;">--</div><div class="pbpk-stat-sub">hours</div></div>
+              </div>
+              <div id="vpop-chart-container" style="background: #111827; border-radius: 6px; padding: 0.75rem; text-align: center;">
+                <svg id="vpop-svg-chart" viewBox="0 0 600 180" style="width: 100%; height: 180px; overflow: visible;"></svg>
+                <div style="display: flex; justify-content: center; gap: 1.5rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+                  <div style="display: flex; align-items: center; gap: 0.3rem;"><span style="display: inline-block; width: 12px; height: 12px; background: rgba(59, 130, 246, 0.3); border-radius: 2px;"></span> 90% Confidence Interval (5th - 95th Percentile)</div>
+                  <div style="display: flex; align-items: center; gap: 0.3rem;"><span style="display: inline-block; width: 14px; height: 3px; background: #60a5fa;"></span> Median In Vivo Concentration</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- XAI / Optimization Dynamic Panel -->
@@ -372,6 +500,80 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </main>
+
+  <!-- JSME 2D Molecular Drawing Modal -->
+  <div id="jsme-modal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title">✏️ 2D Molecular Structure Editor (JSME)</div>
+        <button class="modal-close" onclick="closeModal('jsme-modal')">&times;</button>
+      </div>
+      <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+        Draw or modify chemical structures interactively. Click "Apply to Input" to transfer the SMILES to the main analysis pipeline.
+      </div>
+      <div id="jsme_container" style="width: 100%; height: 380px; background: white; border-radius: 8px; overflow: hidden; display: flex; justify-content: center; align-items: center;">
+        <div id="jsme-loading" style="color: #4b5563; font-size: 0.9rem;">Initializing 2D Chemical Canvas...</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+        <div id="jsme-smiles-preview" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #60a5fa; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="pill-btn" onclick="clearJsmeCanvas()">Clear</button>
+          <button class="btn-primary" style="width: auto; padding: 0.5rem 1.25rem;" onclick="applyJsmeToInput()">Apply to Input &rarr;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- High-Throughput Batch Molecular Screening Modal -->
+  <div id="batch-modal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 1000px;">
+      <div class="modal-header">
+        <div class="modal-title">📂 High-Throughput Batch Molecular Screening (CSV / TSV / SDF)</div>
+        <button class="modal-close" onclick="closeModal('batch-modal')">&times;</button>
+      </div>
+      <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Upload a chemical library to batch-screen <strong>Lipinski Rule of 5</strong>, <strong>22+ ADMET endpoints</strong>, and <strong>PBPK parameters</strong>. Download the enriched dataset in CSV or Excel format.
+      </div>
+      
+      <!-- Upload Dropzone -->
+      <div style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 1.5rem; text-align: center; background: var(--bg-card); margin-bottom: 1rem; cursor: pointer;" onclick="document.getElementById('batch-file-input').click()">
+        <input type="file" id="batch-file-input" accept=".csv,.tsv,.sdf,.txt" style="display: none;" onchange="handleBatchFileSelect(event)" />
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📁</div>
+        <div id="file-name-label" style="font-weight: 500; margin-bottom: 0.3rem;">Drag & drop your molecular library file here, or click to browse</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">Supports .csv, .tsv (auto-detects 'smiles' column), or .sdf (multi-molecule)</div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+        <button id="btn-batch-preview" class="btn-primary" style="flex: 1;" onclick="runBatchPreview()" disabled>
+          <span>🔍 Screen & Preview Library</span>
+        </button>
+        <button id="btn-batch-download-csv" class="btn-secondary" style="flex: 1; margin-top: 0;" onclick="downloadBatchFile('csv')" disabled>
+          <span>📥 Export Enriched CSV</span>
+        </button>
+        <button id="btn-batch-download-xlsx" class="btn-secondary" style="flex: 1; margin-top: 0;" onclick="downloadBatchFile('xlsx')" disabled>
+          <span>📊 Export Excel (.xlsx)</span>
+        </button>
+      </div>
+
+      <!-- Batch Screening Results Area -->
+      <div id="batch-results-area" style="display: none;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem;">
+          <div class="pbpk-stat"><div class="pbpk-stat-title">Screened Total</div><div class="pbpk-stat-val" id="batch-stat-total">0</div></div>
+          <div class="pbpk-stat"><div class="pbpk-stat-title">Ro5 Pass Rate</div><div class="pbpk-stat-val" id="batch-stat-ro5" style="color: #34d399;">0%</div></div>
+          <div class="pbpk-stat"><div class="pbpk-stat-title">hERG Safe Rate</div><div class="pbpk-stat-val" id="batch-stat-herg" style="color: #60a5fa;">0%</div></div>
+          <div class="pbpk-stat"><div class="pbpk-stat-title">AMES Non-Mutagenic</div><div class="pbpk-stat-val" id="batch-stat-ames" style="color: #f59e0b;">0%</div></div>
+        </div>
+        <div class="table-container">
+          <table class="screening-table">
+            <thead>
+              <tr id="batch-table-header"></tr>
+            </thead>
+            <tbody id="batch-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <footer>
     TDC-Studio Bio-MLOps &copy; 2026 | Therapeutics Data Commons (TDC) SOTA Benchmark Engine | FastAPI + PyTorch + RDKit
@@ -645,6 +847,272 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       } catch (e) {
         panel.innerHTML = `<div style="color: var(--danger); font-size: 0.8rem;">DTI Error: ${e}</div>`;
       }
+    }
+
+    // Modal Control
+    function openModal(id) {
+      document.getElementById(id).classList.add('active');
+      if (id === 'jsme-modal') {
+        initJsmeIfNeeded();
+      }
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+      }
+    });
+
+    // JSME 2D Editor
+    let jsmeApplet = null;
+    function initJsmeIfNeeded() {
+      const container = document.getElementById('jsme_container');
+      if (!jsmeApplet && typeof JSApplet !== 'undefined' && JSApplet.JSME) {
+        container.innerHTML = '';
+        jsmeApplet = new JSApplet.JSME("jsme_container", "100%", "380px");
+        const currSmiles = document.getElementById('smiles-input').value.trim();
+        if (currSmiles) {
+          try { jsmeApplet.readGenericMolecularInput(currSmiles); } catch (e) {}
+        }
+      } else if (!jsmeApplet) {
+        setTimeout(initJsmeIfNeeded, 400);
+      }
+    }
+
+    function openJsmeModal() {
+      openModal('jsme-modal');
+    }
+
+    function applyJsmeToInput() {
+      if (jsmeApplet) {
+        const smiles = jsmeApplet.smiles();
+        if (smiles) {
+          setSmiles(smiles);
+          closeModal('jsme-modal');
+        } else {
+          alert('Please draw a valid molecule on canvas.');
+        }
+      } else {
+        alert('JSME molecular editor is initializing. Please wait a moment.');
+      }
+    }
+
+    function clearJsmeCanvas() {
+      if (jsmeApplet) {
+        jsmeApplet.reset();
+        document.getElementById('jsme-smiles-preview').innerText = '';
+      }
+    }
+
+    // Batch Molecular Screening
+    let selectedBatchFile = null;
+
+    function handleBatchFileSelect(event) {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      selectedBatchFile = files[0];
+      document.getElementById('file-name-label').innerHTML = `Selected: <strong>${selectedBatchFile.name}</strong> (${(selectedBatchFile.size / 1024).toFixed(1)} KB)`;
+      document.getElementById('btn-batch-preview').disabled = false;
+      document.getElementById('btn-batch-download-csv').disabled = false;
+      document.getElementById('btn-batch-download-xlsx').disabled = false;
+    }
+
+    async function runBatchPreview() {
+      if (!selectedBatchFile) { alert('Please select a file first.'); return; }
+      const btn = document.getElementById('btn-batch-preview');
+      btn.innerHTML = '<span class="loading-spinner"></span> Screening Library...';
+      btn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('file', selectedBatchFile);
+
+      try {
+        const resp = await fetch('/predict/batch_preview', {
+          method: 'POST',
+          body: formData
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Batch screening error: ' + (err.detail || 'Failed'));
+          return;
+        }
+        const data = await resp.json();
+        const summary = data.summary;
+        document.getElementById('batch-results-area').style.display = 'block';
+        document.getElementById('batch-stat-total').innerText = summary.total_molecules;
+        document.getElementById('batch-stat-ro5').innerText = summary.ro5_pass_rate_pct.toFixed(1) + '%';
+        document.getElementById('batch-stat-herg').innerText = summary.herg_safe_rate_pct.toFixed(1) + '%';
+        document.getElementById('batch-stat-ames').innerText = summary.ames_non_mutagenic_rate_pct.toFixed(1) + '%';
+
+        const preview = data.preview_rows;
+        if (preview && preview.length > 0) {
+          const cols = Object.keys(preview[0]);
+          const priorityCols = ['mol_id', 'smiles', 'MW', 'LogP', 'Ro5_Pass', 'C5_hERG_cardiotox_proba', 'C5_AMES_mutagenic_proba', 'PBPK_CL_total_L_h_kg', 'PBPK_t_half_h'];
+          const displayCols = priorityCols.filter(c => cols.includes(c)).concat(cols.filter(c => !priorityCols.includes(c))).slice(0, 10);
+
+          let headerHtml = '';
+          for (const c of displayCols) {
+            headerHtml += `<th>${c}</th>`;
+          }
+          document.getElementById('batch-table-header').innerHTML = headerHtml;
+
+          let bodyHtml = '';
+          for (const row of preview) {
+            bodyHtml += '<tr>';
+            for (const c of displayCols) {
+              let val = row[c];
+              if (typeof val === 'number') val = Number.isInteger(val) ? val : val.toFixed(3);
+              if (val === true) val = '<span style="color:#34d399;font-weight:600;">PASS</span>';
+              if (val === false) val = '<span style="color:#ef4444;font-weight:600;">FAIL</span>';
+              bodyHtml += `<td>${val !== null && val !== undefined ? val : '-'}</td>`;
+            }
+            bodyHtml += '</tr>';
+          }
+          document.getElementById('batch-table-body').innerHTML = bodyHtml;
+        }
+      } catch (e) {
+        alert('Preview failed: ' + e);
+      } finally {
+        btn.innerHTML = '<span>🔍 Screen & Preview Library</span>';
+        btn.disabled = false;
+      }
+    }
+
+    async function downloadBatchFile(format) {
+      if (!selectedBatchFile) { alert('Please select a file first.'); return; }
+      const btn = document.getElementById(format === 'csv' ? 'btn-batch-download-csv' : 'btn-batch-download-xlsx');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<span class="loading-spinner"></span> Generating...';
+      btn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('file', selectedBatchFile);
+
+      try {
+        const resp = await fetch(`/predict/batch_file?export_format=${format}`, {
+          method: 'POST',
+          body: formData
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Download error: ' + (err.detail || 'Failed'));
+          return;
+        }
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const stem = selectedBatchFile.name.replace(/\.[^/.]+$/, "");
+        a.download = `${stem}_admet_screened.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Export failed: ' + e);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    // Virtual Population Simulation
+    async function runVirtualPopulation() {
+      const smiles = document.getElementById('smiles-input').value.trim();
+      if (!smiles) { alert('Please enter SMILES.'); return; }
+
+      const subgroup = document.getElementById('vpop-subgroup').value;
+      const dose = parseFloat(document.getElementById('vpop-dose').value) || 100.0;
+      const btn = document.getElementById('btn-vpop-run');
+      btn.innerHTML = '<span class="loading-spinner"></span> Simulating...';
+      btn.disabled = true;
+
+      try {
+        const resp = await fetch('/pbpk/virtual_population', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            smiles: smiles,
+            subgroup: subgroup,
+            n_subjects: 500,
+            dose_mg: dose,
+            t_max_sim_hours: 48.0
+          })
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Virtual population error: ' + (err.detail || 'Failed'));
+          return;
+        }
+        const data = await resp.json();
+        const m = data.metrics;
+        document.getElementById('vpop-results-area').style.display = 'block';
+
+        document.getElementById('vpop-cmax').innerText = `${m.cmax_ug_ml.median.toFixed(2)} [${m.cmax_ug_ml.p5.toFixed(2)}-${m.cmax_ug_ml.p95.toFixed(2)}]`;
+        document.getElementById('vpop-tmax').innerText = `${m.tmax_hours.median.toFixed(2)}`;
+        document.getElementById('vpop-auc').innerText = `${m.auc_inf_ug_h_ml.median.toFixed(1)} [${m.auc_inf_ug_h_ml.p5.toFixed(1)}-${m.auc_inf_ug_h_ml.p95.toFixed(1)}]`;
+        document.getElementById('vpop-thalf').innerText = `${m.half_life_hours.median.toFixed(2)} [${m.half_life_hours.p5.toFixed(2)}-${m.half_life_hours.p95.toFixed(2)}]`;
+
+        renderVpopSvgChart(data.trajectory);
+      } catch (e) {
+        alert('Simulation failed: ' + e);
+      } finally {
+        btn.innerHTML = 'Simulate (N=500)';
+        btn.disabled = false;
+      }
+    }
+
+    function renderVpopSvgChart(traj) {
+      const svg = document.getElementById('vpop-svg-chart');
+      const times = traj.time_hours;
+      const p5 = traj.p5_ug_ml;
+      const med = traj.median_ug_ml;
+      const p95 = traj.p95_ug_ml;
+
+      const maxT = Math.max(...times) || 48.0;
+      const maxC = Math.max(...p95) * 1.15 || 1.0;
+
+      const W = 600, H = 180, padL = 45, padR = 20, padT = 15, padB = 25;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+
+      const x = (t) => padL + (t / maxT) * plotW;
+      const y = (c) => padT + plotH - (c / maxC) * plotH;
+
+      let polyPts = [];
+      for (let i = 0; i < times.length; i++) {
+        polyPts.push(`${x(times[i]).toFixed(1)},${y(p95[i]).toFixed(1)}`);
+      }
+      for (let i = times.length - 1; i >= 0; i--) {
+        polyPts.push(`${x(times[i]).toFixed(1)},${y(p5[i]).toFixed(1)}`);
+      }
+
+      let medPath = `M ${x(times[0]).toFixed(1)} ${y(med[0]).toFixed(1)}`;
+      for (let i = 1; i < times.length; i++) {
+        medPath += ` L ${x(times[i]).toFixed(1)} ${y(med[i]).toFixed(1)}`;
+      }
+
+      let gridLines = '';
+      for (let i = 0; i <= 4; i++) {
+        const yVal = padT + (plotH / 4) * i;
+        const concVal = (maxC * (1 - i / 4)).toFixed(1);
+        gridLines += `<line x1="${padL}" y1="${yVal}" x2="${W - padR}" y2="${yVal}" stroke="#374151" stroke-dasharray="3 3" opacity="0.6"/>`;
+        gridLines += `<text x="${padL - 6}" y="${yVal + 3}" fill="#9ca3af" font-size="9" text-anchor="end">${concVal}</text>`;
+      }
+      for (let i = 0; i <= 4; i++) {
+        const xVal = padL + (plotW / 4) * i;
+        const timeVal = ((maxT / 4) * i).toFixed(0);
+        gridLines += `<line x1="${xVal}" y1="${padT}" x2="${xVal}" y2="${H - padB}" stroke="#374151" stroke-dasharray="3 3" opacity="0.4"/>`;
+        gridLines += `<text x="${xVal}" y="${H - 8}" fill="#9ca3af" font-size="9" text-anchor="middle">${timeVal}h</text>`;
+      }
+
+      svg.innerHTML = `
+        ${gridLines}
+        <polygon points="${polyPts.join(' ')}" fill="rgba(59, 130, 246, 0.25)" stroke="none" />
+        <path d="${medPath}" fill="none" stroke="#60a5fa" stroke-width="2.5" />
+      `;
     }
   </script>
 </body>

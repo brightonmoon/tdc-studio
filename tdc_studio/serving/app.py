@@ -7,9 +7,10 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
+import io
 import torch
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from tdc_studio.explainability.attribution import MolecularExplainer
@@ -41,6 +42,8 @@ from tdc_studio.serving.schema import (
     PBPKResponse,
     UnifiedADMETRequest,
     UnifiedADMETResponse,
+    VirtualPopulationRequest,
+    VirtualPopulationResponse,
 )
 from tdc_studio.serving.unified_pipeline import (
     UnifiedADMETPipeline,
@@ -388,9 +391,66 @@ async def predict_pbpk(request: InferenceRequest):
         raise HTTPException(status_code=500, detail=f"PBPK inference error: {str(e)}")
 
 
+@app.post("/pbpk/virtual_population", response_model=VirtualPopulationResponse)
+async def simulate_virtual_population(request: VirtualPopulationRequest):
+    """Simulate Monte Carlo virtual population pharmacokinetics across clinical sub-populations."""
+    from tdc_studio.pbpk.engine import PBPKProfile
+    from tdc_studio.pbpk.virtual_population import PopulationSubgroup, VirtualPopulationEngine
+
+    unified_pipe = get_unified_pipeline()
+    if unified_pipe is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = UnifiedADMETPipeline(device=device)
+        set_unified_pipeline(unified_pipe)
+
+    profiles = await run_in_threadpool(unified_pipe.predict_batch, [request.smiles])
+    if not profiles or profiles[0].pbpk is None:
+        raise HTTPException(status_code=400, detail="Failed to derive baseline PBPK profile for the provided SMILES.")
+
+    prof = profiles[0]
+    p = prof.pbpk
+
+    base_profile = PBPKProfile(
+        smiles=request.smiles,
+        vdss_l_kg=p.vdss_l_kg,
+        half_life_hr=p.half_life_hours,
+        ppbr_percent=prof.distribution["ppbr"].value if prof.distribution.get("ppbr") and prof.distribution["ppbr"].value is not None else (1.0 - p.fraction_unbound) * 100.0,
+        unbound_fraction_fu=p.fraction_unbound,
+        cl_total_l_hr_kg=p.cl_total_l_h_kg,
+        cl_total_ml_min_kg=p.cl_total_l_h_kg * (1000.0 / 60.0),
+        cl_total_l_hr=p.cl_total_l_h_kg * 70.0,
+        ke_hr_inv=0.693147 / max(p.half_life_hours, 1e-4),
+        mrt_hr=max(p.half_life_hours, 1e-4) / 0.693147,
+        cl_hepatic_ml_min_kg=p.hepatic_clearance_l_h_kg * (1000.0 / 60.0),
+        extraction_ratio_eh=p.hepatic_extraction_ratio,
+        extraction_class=p.extraction_tier,
+        f_max_oral=p.max_oral_bioavailability,
+    )
+
+    try:
+        sub_enum = PopulationSubgroup(request.subgroup.lower())
+    except ValueError:
+        sub_enum = PopulationSubgroup.HEALTHY_ADULTS
+
+    engine = VirtualPopulationEngine(random_seed=42)
+    sim_res = await run_in_threadpool(
+        engine.simulate,
+        smiles=request.smiles,
+        baseline_profile=base_profile,
+        subgroup=sub_enum,
+        n_subjects=request.n_subjects,
+        dose_mg=request.dose_mg,
+        ka_per_h=request.ka_per_h,
+        t_max_sim_hours=request.t_max_sim_hours,
+    )
+    return VirtualPopulationResponse(**sim_res.to_dict())
+
+
 @app.post("/predict/admet_full", response_model=UnifiedADMETResponse)
 async def predict_admet_full(request: UnifiedADMETRequest):
     """Predict complete C1-C5 22 full-lifecycle ADMET indicators and PBPK simulation in a single call."""
+    from tdc_studio.uncertainty.conformal import ConformalADMETShield
+
     unified_pipe = get_unified_pipeline()
     if unified_pipe is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -399,12 +459,144 @@ async def predict_admet_full(request: UnifiedADMETRequest):
 
     try:
         profiles = await run_in_threadpool(unified_pipe.predict_batch, request.smiles)
+        if request.include_conformal:
+            shield = ConformalADMETShield(alpha=request.conformal_alpha)
+            for prof in profiles:
+                prof_dict = prof.model_dump()
+                prof.conformal_uncertainty = shield.evaluate_profile(prof_dict, alpha=request.conformal_alpha)
+
         return UnifiedADMETResponse(
             results=profiles,
             model_version="TDC-Studio-Unified-v1",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unified ADMET inference error: {str(e)}")
+
+
+@app.post("/predict/conformal")
+async def predict_conformal_uncertainty(request: UnifiedADMETRequest):
+    """Evaluate Conformal Prediction uncertainty quantification across all 22 ADMET endpoints."""
+    from tdc_studio.uncertainty.conformal import ConformalADMETShield
+
+    unified_pipe = get_unified_pipeline()
+    if unified_pipe is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = UnifiedADMETPipeline(device=device)
+        set_unified_pipeline(unified_pipe)
+
+    try:
+        profiles = await run_in_threadpool(unified_pipe.predict_batch, request.smiles)
+        shield = ConformalADMETShield(alpha=request.conformal_alpha)
+        results = []
+        for prof in profiles:
+            prof_dict = prof.model_dump()
+            conf_data = shield.evaluate_profile(prof_dict, alpha=request.conformal_alpha)
+            results.append({
+                "smiles": prof.smiles,
+                "canonical_smiles": prof.canonical_smiles,
+                "conformal_alpha": request.conformal_alpha,
+                "confidence_level": round(1.0 - request.conformal_alpha, 3),
+                "uncertainty_by_task": conf_data,
+            })
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Conformal evaluation error: {str(e)}")
+
+
+@app.post("/predict/batch_file")
+async def predict_batch_file(
+    file: UploadFile = File(..., description="Molecular library file (.csv, .tsv, .sdf)"),
+    export_format: str = Query("csv", pattern="^(csv|xlsx)$", description="Export format: 'csv' or 'xlsx'"),
+):
+    """Screen molecular file (CSV/TSV/SDF) across 22+ ADMET, Lipinski Rule of 5, and PBPK parameters."""
+    from tdc_studio.serving.batch_engine import BatchScreeningEngine
+
+    unified_pipe = get_unified_pipeline()
+    if unified_pipe is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = UnifiedADMETPipeline(device=device)
+        set_unified_pipeline(unified_pipe)
+
+    engine = BatchScreeningEngine(pipeline=unified_pipe)
+
+    try:
+        content = await file.read()
+        df, summary = await run_in_threadpool(
+            engine.screen_file, content, file.filename or "compounds.csv"
+        )
+
+        buf = io.BytesIO()
+        if export_format == "xlsx":
+            try:
+                with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                    df.to_excel(writer, index=False, sheet_name="ADMET_Screening")
+                    pd.DataFrame([summary]).to_excel(writer, index=False, sheet_name="Summary")
+            except Exception:
+                # Fallback to CSV if openpyxl is not installed
+                df.to_csv(buf, index=False)
+                export_format = "csv"
+
+            if export_format == "xlsx":
+                buf.seek(0)
+                media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                filename = "admet_batch_results.xlsx"
+            else:
+                buf.seek(0)
+                media_type = "text/csv"
+                filename = "admet_batch_results.csv"
+        else:
+            df.to_csv(buf, index=False)
+            buf.seek(0)
+            media_type = "text/csv"
+            filename = "admet_batch_results.csv"
+
+        return StreamingResponse(
+            buf,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Total-Compounds": str(summary["total_molecules"]),
+                "X-Ro5-Pass-Rate": f"{summary['ro5_pass_rate']}%",
+            },
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch screening error: {str(e)}")
+
+
+@app.post("/predict/batch_preview")
+async def predict_batch_preview(
+    file: UploadFile = File(..., description="Molecular library file (.csv, .tsv, .sdf)"),
+    preview_rows: int = Query(20, ge=1, le=100, description="Max preview rows to return"),
+):
+    """Screen molecular file and return summary statistics with top preview rows (for UI)."""
+    import pandas as pd
+    from tdc_studio.serving.batch_engine import BatchScreeningEngine
+
+    unified_pipe = get_unified_pipeline()
+    if unified_pipe is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = UnifiedADMETPipeline(device=device)
+        set_unified_pipeline(unified_pipe)
+
+    engine = BatchScreeningEngine(pipeline=unified_pipe)
+
+    try:
+        content = await file.read()
+        df, summary = await run_in_threadpool(
+            engine.screen_file, content, file.filename or "compounds.csv"
+        )
+        preview = df.head(preview_rows).to_dict(orient="records")
+        return {
+            "summary": summary,
+            "columns": list(df.columns),
+            "preview_data": preview,
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch preview error: {str(e)}")
 
 
 # ------------------------------------------------------------------------------

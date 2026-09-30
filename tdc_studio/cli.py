@@ -1633,6 +1633,75 @@ def ui_serve(
     serve(host=host, port=port, workers=1, model_dir=model_dir)
 
 
+@app.command("batch-predict")
+def batch_predict_cli(
+    input_file: str = typer.Argument(..., help="Path to input file (CSV, TSV, or SDF)"),
+    output_file: Optional[str] = typer.Option(None, "-o", "--output", help="Path to output file (default: <input>_admet_results.<format>)"),
+    export_format: str = typer.Option("csv", "--format", help="Output format ('csv' or 'xlsx')"),
+    model_dir: Optional[str] = typer.Option("models/export", "--model-dir", help="Path to exported model directory"),
+):
+    """Run batch 22+ ADMET, Lipinski Rule of 5, and PBPK screening on molecular libraries."""
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+    from rich.table import Table
+
+    from tdc_studio.serving.batch_engine import BatchScreeningEngine
+    from tdc_studio.serving.unified_pipeline import UnifiedADMETPipeline
+
+    in_path = Path(input_file).resolve()
+    if not in_path.exists():
+        console.print(f"[bold red]Error:[/bold red] Input file '{in_path}' does not exist.")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold cyan]TDC-Studio High-Throughput Batch Screening[/bold cyan]")
+    console.print(f"  📁 Reading molecular library from: [yellow]{in_path}[/yellow]")
+
+    pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
+    engine = BatchScreeningEngine(pipeline=pipeline)
+
+    with open(in_path, "rb") as f:
+        content = f.read()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[green]Screening compounds...", total=100)
+        df, summary = engine.screen_file(content, in_path.name)
+        progress.update(task, completed=100)
+
+    # Determine output path
+    if output_file is None:
+        stem = in_path.stem
+        out_ext = ".xlsx" if export_format.lower() == "xlsx" else ".csv"
+        out_path = in_path.parent / f"{stem}_admet_results{out_ext}"
+    else:
+        out_path = Path(output_file).resolve()
+
+    if str(out_path).lower().endswith(".xlsx"):
+        df.to_excel(out_path, index=False)
+    else:
+        df.to_csv(out_path, index=False)
+
+    console.print(f"\n[bold green]✅ Batch screening complete![/bold green]")
+    console.print(f"  💾 Results exported to: [bold underline]{out_path}[/bold underline]")
+
+    # Print summary table
+    table = Table(title="Batch Screening Summary Statistics", show_header=True)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_column("Percentage", justify="right", style="green")
+
+    total = summary["total_molecules"]
+    table.add_row("Total Compounds Screened", str(total), "100.0%")
+    table.add_row("Lipinski Rule of 5 Compliant", str(summary["ro5_passed"]), f"{summary['ro5_pass_rate']}%")
+    table.add_row("Low Cardiotoxicity (hERG < 0.5)", str(summary["herg_safe_count"]), f"{summary['herg_safe_rate']}%")
+    table.add_row("Non-Mutagenic (AMES < 0.5)", str(summary["ames_safe_count"]), f"{summary['ames_safe_rate']}%")
+    console.print(table)
+
+
 switch_app = typer.Typer(help="Manage and switch Colab CLI accounts (tokens)")
 remote_app.add_typer(switch_app, name="switch")
 

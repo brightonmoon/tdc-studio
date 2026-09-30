@@ -87,6 +87,9 @@ class UnifiedADMETProfile(BaseModel):
     excretion: Dict[str, ADMETIndicatorResult] = Field(..., description="C4: Elimination & Clearance (3 tasks).")
     toxicity: Dict[str, ADMETIndicatorResult] = Field(..., description="C5: Cardiotoxicity & Safety Profile (2+ tasks).")
     pbpk: Optional[PBPKProfileResult] = Field(None, description="Integrated in vivo PBPK PK profile.")
+    conformal_uncertainty: Optional[Dict[str, Any]] = Field(
+        None, description="Calibrated conformal prediction sets and intervals (coverage 1 - alpha)."
+    )
 
 
 class UnifiedADMETRequest(BaseModel):
@@ -94,6 +97,12 @@ class UnifiedADMETRequest(BaseModel):
 
     smiles: List[str] = Field(
         ..., description="List of drug SMILES strings to evaluate.", min_length=1
+    )
+    include_conformal: bool = Field(
+        default=False, description="Whether to include conformal uncertainty quantification."
+    )
+    conformal_alpha: float = Field(
+        default=0.10, ge=0.01, le=0.50, description="Significance level alpha for conformal coverage (default 0.10 for 90% confidence)."
     )
 
 
@@ -350,3 +359,57 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
     )
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
+
+
+# ------------------------------------------------------------------------------
+# PBPK Virtual Population Monte Carlo Simulation Schemas
+# ------------------------------------------------------------------------------
+
+class PKMetricSummarySchema(BaseModel):
+    mean: float
+    sd: float
+    cv_pct: float
+    median: float
+    p5: float
+    p25: float
+    p75: float
+    p95: float
+
+
+class ConcentrationTimeTrajectorySchema(BaseModel):
+    time_hours: List[float]
+    p5_ug_ml: List[float]
+    median_ug_ml: List[float]
+    p95_ug_ml: List[float]
+    mean_ug_ml: List[float]
+
+
+class VirtualPopulationRequest(BaseModel):
+    smiles: str = Field(..., description="Molecular SMILES identifier.")
+    subgroup: str = Field(
+        default="healthy_adults",
+        description="Target population: healthy_adults, renal_mild, renal_moderate, renal_severe, hepatic_child_pugh_a, hepatic_child_pugh_b, hepatic_child_pugh_c, geriatric",
+    )
+    n_subjects: int = Field(default=500, ge=10, le=5000, description="Virtual population subject count.")
+    dose_mg: float = Field(default=100.0, gt=0, description="Single oral dose in mg.")
+    ka_per_h: float = Field(default=1.2, gt=0, description="Oral absorption rate constant ka (1/h).")
+    t_max_sim_hours: float = Field(default=48.0, gt=0, description="Concentration trajectory simulation window in hours.")
+
+
+class VirtualPopulationMetricsSchema(BaseModel):
+    vdss_l_kg: PKMetricSummarySchema
+    cl_total_l_h_kg: PKMetricSummarySchema
+    half_life_hours: PKMetricSummarySchema
+    cmax_ug_ml: PKMetricSummarySchema
+    tmax_hours: PKMetricSummarySchema
+    auc_inf_ug_h_ml: PKMetricSummarySchema
+    fraction_unbound: PKMetricSummarySchema
+
+
+class VirtualPopulationResponse(BaseModel):
+    subgroup: str
+    n_subjects: int
+    dose_mg: float
+    metrics: VirtualPopulationMetricsSchema
+    trajectory: ConcentrationTimeTrajectorySchema
+

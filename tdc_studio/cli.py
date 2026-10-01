@@ -115,6 +115,15 @@ def train(
     console.print(f"[bold green]Starting Training Pipeline[/bold green] with config: {config}")
 
     data_cfg = cfg.get("data", {})
+    if not data_cfg and "dataset" in cfg:
+        data_cfg = dict(cfg["dataset"])
+        if "type" not in data_cfg:
+            data_cfg["type"] = "dta_loader"
+        if "dataset_name" not in data_cfg and "name" in data_cfg:
+            data_cfg["dataset_name"] = data_cfg["name"]
+        if "split_type" not in data_cfg and "split" in data_cfg:
+            data_cfg["split_type"] = data_cfg["split"]
+
     model_cfg = cfg.get("model", {})
     dataset_name = data_cfg.get("dataset_name", data_cfg.get("name", "dataset"))
 
@@ -130,8 +139,13 @@ def train(
     data_module = data_cls(**data_params)
 
     data_module.prepare_data()
+    batch_size = int(
+        data_cfg.get("batch_size")
+        or cfg.get("training", {}).get("batch_size")
+        or 32
+    )
     train_loader, val_loader, test_loader = data_module.setup_loaders(
-        batch_size=data_cfg.get("batch_size", 32)
+        batch_size=batch_size
     )
 
     task_type = data_module.task_type
@@ -147,7 +161,7 @@ def train(
         or (
             "val_loss"
             if task_type == "multi_task"
-            else ("mae" if task_type == "regression" else "roc_auc")
+            else ("ci" if task_type in ("dta", "multi_dta") else ("mae" if task_type == "regression" else "roc_auc"))
         )
     )
     higher_is_better = (
@@ -186,8 +200,8 @@ def train(
             f"[bold yellow]Backbone weights frozen for first {freeze_epochs} epoch(s). Training task heads only.[/bold yellow]"
         )
 
-    lr = float(cfg.get("lr", 1e-3))
-    weight_decay = float(cfg.get("weight_decay", 1e-4))
+    lr = float(cfg.get("lr", cfg.get("training", {}).get("learning_rate", 1e-3)))
+    weight_decay = float(cfg.get("weight_decay", cfg.get("training", {}).get("weight_decay", 1e-4)))
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay
     )
@@ -205,12 +219,15 @@ def train(
         group=f"{dataset_name}_train",
     )
 
-    max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", 5))
+    if checkpoint_dir == "./models/checkpoint" and "export" in cfg and "save_dir" in cfg["export"]:
+        checkpoint_dir = cfg["export"]["save_dir"]
+
+    max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", cfg.get("training", {}).get("max_epochs", 5)))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(1, max_epochs), eta_min=float(cfg.get("min_lr", 1e-6))
     )
     early_stopping_patience = (
-        early_stopping if early_stopping is not None else cfg.get("early_stopping", None)
+        early_stopping if early_stopping is not None else cfg.get("early_stopping", cfg.get("training", {}).get("early_stopping_patience", None))
     )
     best_metric = -float("inf") if higher_is_better else float("inf")
     best_epoch = 0
@@ -220,16 +237,36 @@ def train(
 
     try:
         for epoch in range(max_epochs):
-            # Unfreeze backbone if scheduled
-            if freeze_epochs > 0 and epoch == freeze_epochs:
+            # Staged Training support (e.g. for ChemBERTa top-layers in DTI Phase C)
+            staged_cfg = cfg.get("staged_training", {})
+            s1_epochs = int(staged_cfg.get("stage1_epochs", 0))
+            if (
+                s1_epochs > 0
+                and epoch == s1_epochs
+                and hasattr(model, "drug_encoder")
+                and hasattr(model.drug_encoder, "unfreeze")
+            ):
+                s2_layers = int(staged_cfg.get("stage2_unfreeze_layers", 2))
+                s2_bb_lr = float(staged_cfg.get("stage2_backbone_lr", 1e-6))
+                s2_head_lr = float(staged_cfg.get("stage2_head_lr", 5e-5))
+                s2_wd = float(staged_cfg.get("stage2_weight_decay", 0.05))
+
                 console.print(
-                    f"[bold green]Unfreezing all backbone weights at epoch {epoch} for full network fine-tuning...[/bold green]"
+                    f"[bold green]★ Stage 2 Transition: Unfreezing Drug Encoder top {s2_layers} layers at epoch {epoch + 1} (LR: {s2_bb_lr:.2e}, WD: {s2_wd})[/bold green]"
                 )
-                for param in model.parameters():
-                    param.requires_grad = True
-                optimizer = torch.optim.AdamW(model.parameters(), lr=lr * 0.5, weight_decay=weight_decay)
+                model.drug_encoder.unfreeze(last_n_layers=s2_layers)
+                existing_params = {p for pg in optimizer.param_groups for p in pg["params"]}
+                new_params = [
+                    p for p in model.drug_encoder.parameters() if p.requires_grad and p not in existing_params
+                ]
+                if new_params:
+                    optimizer.add_param_group(
+                        {"params": new_params, "lr": s2_bb_lr, "weight_decay": s2_wd}
+                    )
+                for pg in optimizer.param_groups[:-1]:
+                    pg["lr"] = s2_head_lr
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, T_max=max(1, max_epochs - epoch), eta_min=float(cfg.get("min_lr", 1e-6))
+                    optimizer, T_max=max(1, max_epochs - epoch), eta_min=float(cfg.get("min_lr", 1e-7))
                 )
 
             # --- Train Epoch ---
@@ -691,6 +728,25 @@ def train(
                     f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"
                 )
                 console.print(f"Detailed Test Metrics: {all_test_metrics}")
+
+                if task_type in ("dta", "drug_target_affinity"):
+                    from rich.table import Table
+
+                    d_ci = all_test_metrics.get("ci", 0.0)
+                    d_mse = all_test_metrics.get("mse", 0.0)
+                    d_rmse = all_test_metrics.get("rmse", 0.0)
+                    d_pr = all_test_metrics.get("pearson", 0.0)
+
+                    table = Table(title="★ DTA (Drug-Target Affinity) Benchmark Results")
+                    table.add_column("Metric", style="bold")
+                    table.add_column("Our Model (Test)", style="bold cyan")
+                    table.add_column("Target Threshold", style="bold green")
+                    table.add_row("Concordance Index (CI)", f"{d_ci:.4f}", ">= 0.7700")
+                    table.add_row("Mean Squared Error (MSE)", f"{d_mse:.4f}", "<= 0.5500")
+                    table.add_row("Root MSE (RMSE)", f"{d_rmse:.4f}", "~ 0.74")
+                    table.add_row("Pearson (r)", f"{d_pr:.4f}", "~ 0.69")
+                    console.print(table)
+
                 tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
 
     finally:

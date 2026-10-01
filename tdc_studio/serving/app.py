@@ -17,7 +17,6 @@ from starlette.concurrency import run_in_threadpool
 from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
-from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
 from tdc_studio.serving.batch_engine import BatchScreeningEngine
 from tdc_studio.serving.dashboard_html import DASHBOARD_HTML
 from tdc_studio.serving.exporter import load_model_from_checkpoint
@@ -42,6 +41,10 @@ from tdc_studio.serving.schema import (
     OptimizeRequest,
     OptimizeResponse,
     PBPKResponse,
+    RetroPlanRequest,
+    RetroPlanResponse,
+    RetroSingleStepRequest,
+    RetroSingleStepResponse,
     UnifiedADMETRequest,
     UnifiedADMETResponse,
     VirtualPopulationRequest,
@@ -686,13 +689,15 @@ async def explain_molecule(request: ExplainRequest):
 # ------------------------------------------------------------------------------
 # Closed-Loop Generative Lead Optimizer Endpoint
 # ------------------------------------------------------------------------------
-_optimizer: Optional[SelfCorrectingOptimizer] = None
+_optimizer: Optional[Any] = None
 
 
-def get_optimizer() -> SelfCorrectingOptimizer:
+def get_optimizer() -> Any:
     """Singleton getter for SelfCorrectingOptimizer."""
     global _optimizer
     if _optimizer is None:
+        from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         unified_pipe = get_unified_pipeline()
         if unified_pipe is None:
@@ -861,4 +866,68 @@ async def predict_dti_multi_affinity(request: DTIMultiAffinityInferenceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DTI multi-affinity inference error: {str(e)}")
+
+
+# ------------------------------------------------------------------------------
+# Retrosynthesis Endpoints
+# ------------------------------------------------------------------------------
+_retro_pipeline: Optional[Any] = None
+
+
+def get_retro_pipeline() -> Any:
+    """Singleton getter for RetrosynthesisInferencePipeline."""
+    global _retro_pipeline
+    if _retro_pipeline is None:
+        from tdc_studio.serving.retrosynthesis_pipeline import RetrosynthesisInferencePipeline
+
+        _retro_pipeline = RetrosynthesisInferencePipeline()
+    return _retro_pipeline
+
+
+def set_retro_pipeline(pipeline: Any) -> None:
+    """Setter for RetrosynthesisInferencePipeline (for tests and dependency injection)."""
+    global _retro_pipeline
+    _retro_pipeline = pipeline
+
+
+@app.post("/retrosynthesis/single-step", response_model=RetroSingleStepResponse)
+async def retrosynthesis_single_step(request: RetroSingleStepRequest):
+    """Predict candidate precursor reactant sets for a target product molecule."""
+    pipe = get_retro_pipeline()
+    try:
+        response = await run_in_threadpool(
+            pipe.predict_single_step,
+            request.smiles,
+            request.top_k,
+            request.reaction_type,
+        )
+        return response
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retrosynthesis prediction error: {str(e)}")
+
+
+@app.post("/retrosynthesis/plan", response_model=RetroPlanResponse)
+async def retrosynthesis_plan_route(request: RetroPlanRequest):
+    """Plan a multi-step synthetic pathway from target to commercial stock reagents."""
+    pipe = get_retro_pipeline()
+    try:
+        response = await run_in_threadpool(
+            pipe.plan_route,
+            smiles=request.smiles,
+            top_k=request.top_k,
+            min_diversity=request.min_diversity,
+            banned_smiles=request.banned_smiles,
+            max_depth=request.max_depth,
+            timeout_sec=request.timeout_sec,
+            render_mermaid=request.render_mermaid,
+        )
+        return response
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retrosynthesis planning error: {str(e)}")
+
+
 

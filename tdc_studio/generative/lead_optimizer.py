@@ -51,6 +51,9 @@ class OptimizedCandidate:
     scaffold_preserved: bool
     admet_profile: Optional[Dict[str, Any]] = None
     fitness_score: float = 0.0
+    retrosynthesis_solved: Optional[bool] = None
+    retrosynthesis_steps: Optional[int] = None
+    cumulative_yield: Optional[float] = None
 
 
 @dataclass
@@ -90,6 +93,8 @@ class SelfCorrectingOptimizer:
         explainer: Optional[MolecularExplainer] = None,
         recommender: Optional[BioisostereRecommender] = None,
         sa_threshold: float = 4.0,
+        synthesizability_gate: Optional[Any] = None,
+        verify_retrosynthesis: bool = False,
         device: str = "cpu",
     ):
         """Initialize the Self-Correcting Lead Optimizer."""
@@ -97,6 +102,12 @@ class SelfCorrectingOptimizer:
         self.pipeline = pipeline or UnifiedADMETPipeline(device=device)
         self.recommender = recommender or BioisostereRecommender()
         self.sa_threshold = sa_threshold
+        self.verify_retrosynthesis = verify_retrosynthesis
+        self.gate = synthesizability_gate
+        if self.verify_retrosynthesis and self.gate is None:
+            from tdc_studio.generative.synthesizability_gate import SynthesizabilityGate
+
+            self.gate = SynthesizabilityGate(sa_threshold=self.sa_threshold)
 
         if explainer is not None:
             self.explainer = explainer
@@ -296,6 +307,18 @@ class SelfCorrectingOptimizer:
             # Fitness: delta - 0.1 * SA penalty + bonus for scaffold preservation
             fitness = delta - 0.05 * (sa - 2.0) + (0.2 if scaffold_ok else -0.5)
 
+            retro_solved = None
+            retro_steps = None
+            cum_yield = None
+            if self.verify_retrosynthesis and self.gate is not None:
+                rep = self.gate.evaluate_candidate(cand_smi, require_deep_route=False)
+                retro_solved = rep.passed
+                if rep.route:
+                    retro_steps = rep.route.total_depth
+                    cum_yield = rep.route.cumulative_yield
+                if not rep.passed:
+                    fitness -= 0.5  # Penalize synthetic infeasibility
+
             candidate_obj = OptimizedCandidate(
                 smiles=cand_smi,
                 transformation_name=sug["transformation_name"],
@@ -307,6 +330,9 @@ class SelfCorrectingOptimizer:
                 sa_score=sa,
                 scaffold_preserved=scaffold_ok,
                 fitness_score=fitness,
+                retrosynthesis_solved=retro_solved,
+                retrosynthesis_steps=retro_steps,
+                cumulative_yield=cum_yield,
             )
             evaluated_candidates.append(candidate_obj)
 

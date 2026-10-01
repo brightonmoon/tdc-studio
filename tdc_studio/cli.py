@@ -1641,7 +1641,7 @@ def batch_predict_cli(
     model_dir: Optional[str] = typer.Option("models/export", "--model-dir", help="Path to exported model directory"),
 ):
     """Run batch 22+ ADMET, Lipinski Rule of 5, and PBPK screening on molecular libraries."""
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
     from rich.table import Table
 
     from tdc_studio.serving.batch_engine import BatchScreeningEngine
@@ -1652,7 +1652,7 @@ def batch_predict_cli(
         console.print(f"[bold red]Error:[/bold red] Input file '{in_path}' does not exist.")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold cyan]TDC-Studio High-Throughput Batch Screening[/bold cyan]")
+    console.print("[bold cyan]TDC-Studio High-Throughput Batch Screening[/bold cyan]")
     console.print(f"  📁 Reading molecular library from: [yellow]{in_path}[/yellow]")
 
     pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
@@ -1685,7 +1685,7 @@ def batch_predict_cli(
     else:
         df.to_csv(out_path, index=False)
 
-    console.print(f"\n[bold green]✅ Batch screening complete![/bold green]")
+    console.print("\n[bold green]✅ Batch screening complete![/bold green]")
     console.print(f"  💾 Results exported to: [bold underline]{out_path}[/bold underline]")
 
     # Print summary table

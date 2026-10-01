@@ -13,13 +13,13 @@ and Monte Carlo concentration-time PK profiles (Cmax, Tmax, AUC_inf).
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from tdc_studio.pbpk.engine import HumanPhysiologicalParams, PBPKEngine, PBPKProfile
+from tdc_studio.pbpk.engine import PBPKProfile
 
 
 class PopulationSubgroup(str, Enum):
@@ -201,14 +201,12 @@ class VirtualPopulationEngine:
         mod = SUBGROUP_MODIFIERS.get(subgroup, SubgroupModifier())
 
         # 1. Sample Log-Normal Inter-Individual Variations
-        # CV: BW ~ 18%, QH ~ 22%, Vdss ~ 25%, MPPGL ~ 20%
+        # CV: BW ~ 18%, Vdss ~ 25%, MPPGL ~ 20%
         sigma_bw = math.sqrt(math.log(1.0 + 0.18**2))
-        sigma_qh = math.sqrt(math.log(1.0 + 0.22**2))
         sigma_vd = math.sqrt(math.log(1.0 + 0.25**2))
         sigma_cl = math.sqrt(math.log(1.0 + 0.28**2))
 
         bw_samples = 70.0 * mod.bw_factor * np.exp(self.rng.normal(-0.5 * sigma_bw**2, sigma_bw, n_subjects))
-        qh_samples = 20.7 * mod.qh_factor * np.exp(self.rng.normal(-0.5 * sigma_qh**2, sigma_qh, n_subjects))
         vd_samples = (
             baseline_profile.vdss_l_kg
             * mod.vdss_factor

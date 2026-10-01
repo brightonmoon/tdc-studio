@@ -1,5 +1,6 @@
 """FastAPI serving application with lifespan management and non-blocking inference."""
 
+import io
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-import io
+import pandas as pd
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -17,6 +18,7 @@ from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
 from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
+from tdc_studio.serving.batch_engine import BatchScreeningEngine
 from tdc_studio.serving.dashboard_html import DASHBOARD_HTML
 from tdc_studio.serving.exporter import load_model_from_checkpoint
 from tdc_studio.serving.pipeline import (
@@ -509,8 +511,6 @@ async def predict_batch_file(
     export_format: str = Query("csv", pattern="^(csv|xlsx)$", description="Export format: 'csv' or 'xlsx'"),
 ):
     """Screen molecular file (CSV/TSV/SDF) across 22+ ADMET, Lipinski Rule of 5, and PBPK parameters."""
-    from tdc_studio.serving.batch_engine import BatchScreeningEngine
-
     unified_pipe = get_unified_pipeline()
     if unified_pipe is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -571,9 +571,6 @@ async def predict_batch_preview(
     preview_rows: int = Query(20, ge=1, le=100, description="Max preview rows to return"),
 ):
     """Screen molecular file and return summary statistics with top preview rows (for UI)."""
-    import pandas as pd
-    from tdc_studio.serving.batch_engine import BatchScreeningEngine
-
     unified_pipe = get_unified_pipeline()
     if unified_pipe is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"

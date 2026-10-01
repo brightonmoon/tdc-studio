@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from tdc_studio.pbpk.engine import HumanPhysiologicalParams, PBPKEngine, PBPKProfile
+from tdc_studio.pbpk.engine import PBPKEngine, PBPKProfile
 from tdc_studio.pbpk.virtual_population import (
     PopulationSubgroup,
     VirtualPopulationEngine,

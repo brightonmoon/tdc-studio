@@ -54,6 +54,10 @@ def test_index_dashboard_endpoint(test_client):
     assert "text/html" in resp.headers["content-type"]
     assert "TDC-Studio" in resp.text
     assert "Full ADMET" in resp.text
+    assert "Retrosynthesis" in resp.text
+    assert "mermaid" in resp.text.lower()
+    assert "retro-section" in resp.text
+    assert "retro-top-k" in resp.text
 
 
 def test_predict_endpoint_with_pipeline(test_client):

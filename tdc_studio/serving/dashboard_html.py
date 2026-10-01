@@ -10,6 +10,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script type="text/javascript" language="javascript" src="https://peter-ertl.com/jsme/JSME_2020-06-11/jsme/jsme.nocache.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
     :root {
       --bg-primary: #0a0f1d;
@@ -298,6 +299,59 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       border-top: 1px solid var(--border-color); padding: 1rem 2rem;
       text-align: center; font-size: 0.8rem; color: var(--text-muted); background: var(--bg-secondary);
     }
+    .retro-badge-champion {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+    .retro-badge-alt {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 500;
+      font-size: 0.75rem;
+    }
+    .retro-tab-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .retro-tab-btn.active {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: #3b82f6;
+      color: #93c5fd;
+      font-weight: 600;
+    }
+    .retro-tab-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+    }
+    .nav-tab-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .nav-tab-link:hover, .nav-tab-link.active {
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+    }
   </style>
 </head>
 <body>
@@ -306,8 +360,13 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       <div class="logo-badge">TDC</div>
       <div>
         <div class="logo-title">TDC-Studio</div>
-        <div class="logo-subtitle">Next-Gen ADMET & DTI Foundation Platform</div>
+        <div class="logo-subtitle">Next-Gen ADMET, DTI & Retrosynthesis Platform</div>
       </div>
+    </div>
+    <div style="display: flex; gap: 0.4rem; align-items: center;">
+      <a class="nav-tab-link" onclick="scrollToSection('clusters-container')">🧪 ADMET & PBPK</a>
+      <a class="nav-tab-link" onclick="scrollToSection('dti-card')">🎯 DTI Affinity</a>
+      <a class="nav-tab-link" onclick="scrollToSection('retro-section')">🧭 Retrosynthesis Studio</a>
     </div>
     <div class="status-bar">
       <button class="btn-action-nav" onclick="openModal('batch-modal')">
@@ -356,9 +415,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
           <button class="btn-secondary" onclick="runOptimizer()">
             <span>🛠️ Closed-Loop Lead Self-Optimization</span>
           </button>
+          <button class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.4); color: #34d399;" onclick="runRetroPlanner()">
+            <span>🧭 Plan Retrosynthesis Routes (Retro*)</span>
+          </button>
         </div>
 
-        <div class="card">
+        <div class="card" id="dti-card">
           <div class="card-title">🎯 DTI Target Affinity Prediction</div>
           <div class="input-group">
             <label for="target-seq">Target Amino Acid Sequence (FASTA)</label>
@@ -369,6 +431,51 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
           </button>
           <div id="dti-result-panel" style="margin-top: 1rem; display: none;"></div>
         </div>
+
+        <div class="card" id="retro-sidebar-card">
+          <div class="card-title">🧭 Retrosynthesis Search Config</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div>
+              <label for="retro-top-k">Top-K Routes</label>
+              <select id="retro-top-k" style="width: 100%; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem; font-size: 0.85rem;">
+                <option value="1">1 (Optimal Champion)</option>
+                <option value="2">2 Routes (Top 2)</option>
+                <option value="3" selected>3 Routes (Top 3)</option>
+                <option value="4">4 Routes (Top 4)</option>
+                <option value="5">5 Routes (Top 5)</option>
+              </select>
+            </div>
+            <div>
+              <label for="retro-max-depth">Max Depth</label>
+              <select id="retro-max-depth" style="width: 100%; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem; font-size: 0.85rem;">
+                <option value="3">3 Steps</option>
+                <option value="5" selected>5 Steps</option>
+                <option value="7">7 Steps</option>
+                <option value="10">10 Steps</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+              <label for="retro-diversity" style="margin-bottom: 0;">Min Route Diversity (Jaccard)</label>
+              <span id="retro-diversity-val" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #60a5fa;">0.25</span>
+            </div>
+            <input type="range" id="retro-diversity" min="0.0" max="0.8" step="0.05" value="0.25" oninput="document.getElementById('retro-diversity-val').innerText = this.value" style="width: 100%; accent-color: var(--primary);" />
+          </div>
+          <div class="input-group">
+            <label for="retro-banned">Banned Building Blocks (Blacklist / Supply Disruption)</label>
+            <textarea id="retro-banned" rows="2" placeholder="Comma-separated SMILES to ban from commercial stock..."></textarea>
+            <div style="display: flex; gap: 0.4rem; margin-top: 0.4rem;">
+              <button type="button" class="pill-btn" onclick="clearBannedBuildingBlocks()">Clear Banned</button>
+            </div>
+          </div>
+          <button class="btn-primary" style="background: linear-gradient(135deg, #059669 0%, #047857 100%);" onclick="runRetroPlanner()">
+            <span>🚀 Plan Multi-Step Pathways (Retro*)</span>
+          </button>
+          <button class="btn-secondary" style="margin-top: 0.5rem;" onclick="runSingleStepDisconnection()">
+            <span>⚡ Single-Step Disconnection Preview</span>
+          </button>
+        </div>
       </div>
 
       <!-- Results Main Panel -->
@@ -378,6 +485,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
           <div>
             <div style="font-size: 0.85rem; color: #93c5fd; font-weight: 600;">COMPOSITE DRUG-LIKENESS SCORE</div>
             <div id="summary-meta" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">Canonical SMILES: -</div>
+            <div style="margin-top: 0.5rem;">
+              <button class="pill-btn" style="color: #34d399; border-color: rgba(16, 185, 129, 0.4);" onclick="planRouteForCurrentMolecule()">
+                🧭 Plan Synthesis Route &rarr;
+              </button>
+            </div>
           </div>
           <div style="text-align: right;">
             <div class="score-val" id="score-val">--</div>
@@ -488,6 +600,145 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
                   <div style="display: flex; align-items: center; gap: 0.3rem;"><span style="display: inline-block; width: 14px; height: 3px; background: #60a5fa;"></span> Median In Vivo Concentration</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Retrosynthesis & Route Feasibility Studio -->
+        <div id="retro-section" class="card" style="margin-top: 1.5rem; display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <div class="card-title" style="margin-bottom: 0.2rem;">🧭 Retrosynthesis & Multi-Route Pathway Explorer</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Neural A* (Retro*) Search & USPTO Single-Step Disconnection | Multi-Objective Pareto Ranking (Yield, Cost, Depth)</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <span id="retro-badge-status" class="indicator-decision tag-safe">Ready</span>
+            </div>
+          </div>
+
+          <!-- Feasibility KPI Metrics Banner -->
+          <div id="retro-kpi-banner" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+            <div class="pbpk-stat">
+              <div class="pbpk-stat-title">Search Status</div>
+              <div class="pbpk-stat-val" id="retro-kpi-status" style="font-size: 1rem; color: #34d399;">--</div>
+              <div class="pbpk-stat-sub" id="retro-kpi-depth-sub">Depth: --</div>
+            </div>
+            <div class="pbpk-stat">
+              <div class="pbpk-stat-title">Est. Cumulative Yield</div>
+              <div class="pbpk-stat-val" id="retro-kpi-yield" style="color: #60a5fa;">--%</div>
+              <div class="pbpk-stat-sub">Overall Synthesis Efficiency</div>
+            </div>
+            <div class="pbpk-stat">
+              <div class="pbpk-stat-title">Total Est. Cost</div>
+              <div class="pbpk-stat-val" id="retro-kpi-cost" style="color: #fbbf24;">$--</div>
+              <div class="pbpk-stat-sub">Per gram of product</div>
+            </div>
+            <div class="pbpk-stat">
+              <div class="pbpk-stat-title">Stock Building Blocks</div>
+              <div class="pbpk-stat-val" id="retro-kpi-bbs" style="color: #a78bfa;">--</div>
+              <div class="pbpk-stat-sub">Commercial Precursors</div>
+            </div>
+            <div class="pbpk-stat">
+              <div class="pbpk-stat-title">Candidate Routes Found</div>
+              <div class="pbpk-stat-val" id="retro-kpi-routes-count" style="color: #38bdf8;">--</div>
+              <div class="pbpk-stat-sub">Pareto Top-K Candidates</div>
+            </div>
+          </div>
+
+          <!-- Candidate Routes Comparison Matrix Table -->
+          <div id="retro-comparison-section" style="margin-bottom: 1.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 600; color: #93c5fd; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+              <span>📊 Multi-Route Trade-off & Ranking Matrix</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Click any route row or tab below to inspect detailed reaction diagram</span>
+            </div>
+            <div class="table-container">
+              <table class="screening-table">
+                <thead>
+                  <tr>
+                    <th>순위 (Rank)</th>
+                    <th>상태 (Status)</th>
+                    <th>단계 (Depth)</th>
+                    <th>누적 수율 (Yield)</th>
+                    <th>예상 비용 (Cost)</th>
+                    <th>출발 물질 (Building Blocks)</th>
+                    <th>주요 반응 (Reaction Rules)</th>
+                    <th>Pareto Score</th>
+                    <th>선택 (Inspect)</th>
+                  </tr>
+                </thead>
+                <tbody id="retro-comparison-tbody">
+                  <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Click 'Plan Retrosynthesis Routes' to generate candidate pathways.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Active Route Detail Viewer -->
+          <div id="retro-active-route-viewer" style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+            <!-- Route Selector Tabs -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div id="retro-route-tabs" style="display: flex; gap: 0.5rem; flex-wrap: wrap;"></div>
+              <div style="display: flex; gap: 0.4rem;">
+                <button class="pill-btn" onclick="toggleRetroViewMode('flowchart')" id="btn-view-flowchart" style="color: #60a5fa; border-color: #3b82f6;">Mermaid Flowchart</button>
+                <button class="pill-btn" onclick="toggleRetroViewMode('text')" id="btn-view-text">Text Reaction Tree</button>
+                <button class="pill-btn" onclick="copyMermaidCode()">📋 Copy Code</button>
+              </div>
+            </div>
+
+            <!-- Diagram Display -->
+            <div id="retro-flowchart-container" style="background: #111827; border: 1px solid var(--border-color); border-radius: 8px; padding: 1.5rem; overflow-x: auto; min-height: 260px; display: flex; justify-content: center; align-items: center;">
+              <div id="retro-mermaid-svg" style="width: 100%; text-align: center;">
+                <div style="color: var(--text-muted); font-size: 0.85rem;">Waiting for retrosynthesis planning query...</div>
+              </div>
+            </div>
+            <pre id="retro-text-container" style="display: none; background: #111827; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #93c5fd; overflow-x: auto; max-height: 380px;"></pre>
+
+            <!-- Step-by-Step Reaction Sequence -->
+            <div style="margin-top: 1.25rem;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #93c5fd; margin-bottom: 0.5rem;">🧪 Step-by-Step Reaction Synthesis Protocol</div>
+              <div class="table-container">
+                <table class="screening-table">
+                  <thead>
+                    <tr>
+                      <th>Step</th>
+                      <th>Reaction Rule</th>
+                      <th>Reactants (Precursors)</th>
+                      <th>Product</th>
+                      <th>Yield (%)</th>
+                      <th>Est. Cost ($)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="retro-steps-tbody">
+                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No active route selected.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Building Blocks Bill of Materials (BOM) & Supply Chain Disruption Simulation -->
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px dashed var(--border-color);">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #34d399; margin-bottom: 0.5rem;">📦 Commercial Starting Materials (Stock Building Blocks) & Supply Chain Testing</div>
+              <div id="retro-bom-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Stock precursors will be listed here after search.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Single Step Disconnection Result Area -->
+          <div id="retro-single-step-section" style="margin-top: 1.25rem; display: none; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+            <div style="font-size: 0.85rem; font-weight: 600; color: #f59e0b; margin-bottom: 0.5rem;">⚡ Single-Step Retrosynthetic Disconnections (USPTO Policy Top-K)</div>
+            <div class="table-container">
+              <table class="screening-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Reaction Rule</th>
+                    <th>Confidence</th>
+                    <th>Precursor Reactants</th>
+                  </tr>
+                </thead>
+                <tbody id="retro-single-step-tbody"></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -780,6 +1031,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
                 <span class="indicator-decision tag-safe">Delta: ${c.liability_delta > 0 ? '+' : ''}${c.liability_delta.toFixed(2)}</span>
                 <span class="indicator-decision tag-warning">SA Score: ${c.sa_score.toFixed(2)} / 10</span>
                 <span class="indicator-decision ${c.scaffold_preserved ? 'tag-safe' : 'tag-warning'}">${c.scaffold_preserved ? 'Scaffold Preserved' : 'Scaffold Altered'}</span>
+                <button class="pill-btn" style="color: #34d399; border-color: rgba(16, 185, 129, 0.4); padding: 0.15rem 0.45rem; font-size: 0.72rem;" onclick="planRouteForSmiles('${c.smiles}')">🧭 Plan Route</button>
               </div>
               <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">${c.rationale}</div>
             </div>`;
@@ -1113,6 +1365,440 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <polygon points="${polyPts.join(' ')}" fill="rgba(59, 130, 246, 0.25)" stroke="none" />
         <path d="${medPath}" fill="none" stroke="#60a5fa" stroke-width="2.5" />
       `;
+    }
+
+    // =========================================================================
+    // Retrosynthesis & Multi-Route Pathway Planner
+    // =========================================================================
+    if (window.mermaid) {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'dark',
+          themeVariables: {
+            darkMode: true,
+            background: '#111827',
+            primaryColor: '#1e3a8a',
+            primaryTextColor: '#f3f4f6',
+            primaryBorderColor: '#3b82f6',
+            lineColor: '#60a5fa',
+            secondaryColor: '#1f2937',
+            tertiaryColor: '#111827',
+            fontFamily: 'Inter, sans-serif'
+          }
+        });
+      } catch (e) {
+        console.warn('Mermaid initialization warning:', e);
+      }
+    }
+
+    let currentRetroData = null;
+    let activeRetroRank = 1;
+    let currentRetroViewMode = 'flowchart';
+
+    function scrollToSection(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        if (el.style.display === 'none') {
+          el.style.display = 'block';
+        }
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    function clearBannedBuildingBlocks() {
+      document.getElementById('retro-banned').value = '';
+      if (currentRetroData) {
+        runRetroPlanner();
+      }
+    }
+
+    function banBuildingBlock(smiles) {
+      const input = document.getElementById('retro-banned');
+      const current = input.value.trim();
+      const set = new Set(current ? current.split(',').map(s => s.trim()).filter(Boolean) : []);
+      set.add(smiles);
+      input.value = Array.from(set).join(', ');
+      runRetroPlanner();
+    }
+
+    function planRouteForSmiles(smiles) {
+      setSmiles(smiles);
+      runRetroPlanner();
+    }
+
+    function planRouteForCurrentMolecule() {
+      runRetroPlanner();
+    }
+
+    async function runRetroPlanner() {
+      const smiles = document.getElementById('smiles-input').value.trim();
+      if (!smiles) { alert('Please enter a target SMILES string.'); return; }
+
+      const section = document.getElementById('retro-section');
+      section.style.display = 'block';
+      scrollToSection('retro-section');
+
+      const topK = parseInt(document.getElementById('retro-top-k').value, 10) || 3;
+      const maxDepth = parseInt(document.getElementById('retro-max-depth').value, 10) || 5;
+      const minDiversity = parseFloat(document.getElementById('retro-diversity').value) || 0.25;
+      const bannedRaw = document.getElementById('retro-banned').value.trim();
+      const bannedSmiles = bannedRaw ? bannedRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
+
+      const statusBadge = document.getElementById('retro-badge-status');
+      statusBadge.className = 'indicator-decision tag-warning';
+      statusBadge.innerText = 'Searching (Retro*)...';
+
+      const mermaidSvg = document.getElementById('retro-mermaid-svg');
+      mermaidSvg.innerHTML = '<div style="text-align: center; padding: 2rem;"><span class="loading-spinner"></span><div style="margin-top: 0.5rem; font-size: 0.85rem; color: #93c5fd;">Running Neural A* (Retro*) Search & Pareto Optimization...</div></div>';
+
+      try {
+        const resp = await fetch('/retrosynthesis/plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            smiles: smiles,
+            top_k: topK,
+            min_diversity: minDiversity,
+            banned_smiles: bannedSmiles,
+            max_depth: maxDepth,
+            timeout_sec: 10.0,
+            render_mermaid: true
+          })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert('Retrosynthesis error: ' + (err.detail || 'Search failed'));
+          statusBadge.className = 'indicator-decision tag-danger';
+          statusBadge.innerText = 'Search Failed';
+          mermaidSvg.innerHTML = `<div style="color: #ef4444; font-size: 0.85rem;">Search failed: ${err.detail || 'Unknown error'}</div>`;
+          return;
+        }
+
+        const data = await resp.json();
+        currentRetroData = data;
+        renderRetroResults(data);
+
+      } catch (err) {
+        alert('Retrosynthesis request error: ' + err);
+        statusBadge.className = 'indicator-decision tag-danger';
+        statusBadge.innerText = 'Error';
+        mermaidSvg.innerHTML = `<div style="color: #ef4444; font-size: 0.85rem;">Request error: ${err}</div>`;
+      }
+    }
+
+    function renderRetroResults(data) {
+      const statusBadge = document.getElementById('retro-badge-status');
+      const isSolved = data.solved;
+      statusBadge.className = isSolved ? 'indicator-decision tag-safe' : 'indicator-decision tag-warning';
+      statusBadge.innerText = isSolved ? 'Pathway Solved' : 'Partial Route';
+
+      // KPI Banner
+      document.getElementById('retro-kpi-status').innerText = isSolved ? '✅ Stock Available' : '⚠️ Incomplete';
+      document.getElementById('retro-kpi-status').style.color = isSolved ? '#34d399' : '#f59e0b';
+      document.getElementById('retro-kpi-depth-sub').innerText = `Max Depth: ${data.total_depth} steps`;
+      document.getElementById('retro-kpi-yield').innerText = `${data.cumulative_yield.toFixed(1)}%`;
+      document.getElementById('retro-kpi-cost').innerText = `$${data.total_cost.toFixed(2)}`;
+      document.getElementById('retro-kpi-bbs').innerText = `${data.starting_materials.length} BBs`;
+      document.getElementById('retro-kpi-routes-count').innerText = `${data.routes.length} / ${document.getElementById('retro-top-k').value}`;
+
+      // Comparison Table
+      renderComparisonTable(data);
+
+      // Tabs for Routes
+      renderRouteTabs(data);
+
+      // Default to Rank 1
+      activeRetroRank = 1;
+      renderActiveRoute(1);
+    }
+
+    function renderComparisonTable(data) {
+      const tbody = document.getElementById('retro-comparison-tbody');
+      const routes = data.routes || [];
+      if (routes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No candidate pathways discovered.</td></tr>';
+        return;
+      }
+
+      const rankLabels = {
+        1: '🥇 1위 (최적)',
+        2: '🥈 2위 (대안 A)',
+        3: '🥉 3위 (대안 B)',
+        4: '4위 (대안 C)',
+        5: '5위 (대안 D)'
+      };
+
+      let rowsHtml = '';
+      routes.forEach(r => {
+        const badgeClass = r.rank === 1 ? 'retro-badge-champion' : 'retro-badge-alt';
+        const statusTag = r.solved ? '<span class="indicator-decision tag-safe">✅ Solved</span>' : '<span class="indicator-decision tag-warning">⚠️ Partial</span>';
+        const rules = Array.from(new Set(r.steps.map(s => s.rule_name))).join(', ') || 'Direct Stock';
+        const bbCount = `${r.starting_materials.length}종 (${r.starting_materials.slice(0, 2).join(', ')}${r.starting_materials.length > 2 ? '...' : ''})`;
+        const isSelected = r.rank === activeRetroRank;
+
+        rowsHtml += `
+          <tr style="cursor: pointer; ${isSelected ? 'background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6;' : ''}" onclick="selectRetroRoute(${r.rank})">
+            <td><span class="${badgeClass}">${rankLabels[r.rank] || (r.rank + '위')}</span></td>
+            <td>${statusTag}</td>
+            <td>${r.total_depth}단계</td>
+            <td style="color: #60a5fa; font-weight: 600;">${r.cumulative_yield.toFixed(1)}%</td>
+            <td style="color: #fbbf24; font-weight: 600;">$${r.total_cost.toFixed(2)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${bbCount}</td>
+            <td style="font-size: 0.75rem; color: var(--text-muted);">${rules}</td>
+            <td style="font-weight: 600; color: #a78bfa;">${r.rank_score.toFixed(3)}</td>
+            <td>
+              <button class="pill-btn" style="color: #93c5fd; border-color: rgba(59, 130, 246, 0.4);" onclick="event.stopPropagation(); selectRetroRoute(${r.rank})">
+                Inspect
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+      tbody.innerHTML = rowsHtml;
+    }
+
+    function renderRouteTabs(data) {
+      const container = document.getElementById('retro-route-tabs');
+      const routes = data.routes || [];
+      const rankLabels = {
+        1: '🥇 1위 (최적 경로)',
+        2: '🥈 2위 (대안 A)',
+        3: '🥉 3위 (대안 B)',
+        4: '4위 (대안 C)',
+        5: '5위 (대안 D)'
+      };
+
+      let tabsHtml = '';
+      routes.forEach(r => {
+        const activeClass = r.rank === activeRetroRank ? 'active' : '';
+        tabsHtml += `
+          <button class="retro-tab-btn ${activeClass}" id="retro-tab-${r.rank}" onclick="selectRetroRoute(${r.rank})">
+            ${rankLabels[r.rank] || (r.rank + '위')} [수율: ${r.cumulative_yield.toFixed(1)}%, $${r.total_cost.toFixed(1)}]
+          </button>
+        `;
+      });
+      container.innerHTML = tabsHtml;
+    }
+
+    function selectRetroRoute(rank) {
+      activeRetroRank = rank;
+      if (!currentRetroData || !currentRetroData.routes) return;
+
+      // Update tabs
+      currentRetroData.routes.forEach(r => {
+        const tab = document.getElementById(`retro-tab-${r.rank}`);
+        if (tab) {
+          if (r.rank === rank) {
+            tab.classList.add('active');
+          } else {
+            tab.classList.remove('active');
+          }
+        }
+      });
+
+      // Re-highlight comparison table
+      renderComparisonTable(currentRetroData);
+
+      // Render detail for active route
+      renderActiveRoute(rank);
+    }
+
+    async function renderActiveRoute(rank) {
+      if (!currentRetroData || !currentRetroData.routes) return;
+      const route = currentRetroData.routes.find(r => r.rank === rank) || currentRetroData.routes[0];
+      if (!route) return;
+
+      // 1. Text Tree content
+      const textTree = generateTextTree(route);
+      document.getElementById('retro-text-container').innerText = textTree;
+
+      // 2. Mermaid flowchart
+      const mermaidSvg = document.getElementById('retro-mermaid-svg');
+      if (route.mermaid_diagram) {
+        mermaidSvg.innerHTML = '<span class="loading-spinner"></span> Rendering SVG flowchart...';
+        await renderMermaidSvg(route.mermaid_diagram, mermaidSvg);
+      } else {
+        mermaidSvg.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem;">No diagram generated for this route.</div>';
+      }
+
+      // 3. Step-by-Step Table
+      const stepTbody = document.getElementById('retro-steps-tbody');
+      if (!route.steps || route.steps.length === 0) {
+        stepTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Direct stock molecule (0 synthetic steps required).</td></tr>';
+      } else {
+        let stepsHtml = '';
+        route.steps.forEach(s => {
+          const reactantsStr = s.reactants.map(r => `<span style="font-family: 'JetBrains Mono', monospace; background: #111827; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block; margin: 0.1rem 0;">${r}</span>`).join(' + ');
+          const prodStr = `<span style="font-family: 'JetBrains Mono', monospace; background: #111827; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block;">${s.product}</span>`;
+          stepsHtml += `
+            <tr>
+              <td><span style="font-weight: 600; color: #93c5fd;">#${s.step_number}</span></td>
+              <td><span style="font-weight: 600; color: #fbbf24;">${s.rule_name}</span></td>
+              <td>${reactantsStr}</td>
+              <td>${prodStr}</td>
+              <td style="color: #60a5fa; font-weight: 600;">${s.yield_pct.toFixed(1)}%</td>
+              <td style="color: #34d399; font-weight: 600;">$${s.cost.toFixed(2)}</td>
+            </tr>
+          `;
+        });
+        stepTbody.innerHTML = stepsHtml;
+      }
+
+      // 4. Commercial Stock Building Blocks BOM
+      const bomContainer = document.getElementById('retro-bom-list');
+      if (!route.starting_materials || route.starting_materials.length === 0) {
+        bomContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem;">No starting materials cataloged.</div>';
+      } else {
+        let bomHtml = '';
+        route.starting_materials.forEach(bb => {
+          bomHtml += `
+            <div class="opt-card" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0; padding: 0.6rem 0.85rem;">
+              <div style="display: flex; align-items: center; gap: 0.6rem; overflow: hidden;">
+                <span style="color: #34d399; font-size: 1rem;">📦</span>
+                <div style="overflow: hidden;">
+                  <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #f3f4f6; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${bb}</div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted);">Commercial Building Block &bull; In Stock</div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0;">
+                <button class="pill-btn" style="color: #f87171; border-color: rgba(239, 68, 68, 0.4); font-size: 0.7rem;" onclick="banBuildingBlock('${bb}')" title="Simulate reagent shortage/supply chain disruption">
+                  🚫 Ban Reagent
+                </button>
+                <button class="pill-btn" style="font-size: 0.7rem;" onclick="navigator.clipboard.writeText('${bb}')" title="Copy SMILES">
+                  📋
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        bomContainer.innerHTML = bomHtml;
+      }
+    }
+
+    function generateTextTree(route) {
+      let lines = [
+        `🎯 Target Molecule: ${route.target_smiles}`,
+        `📊 Status: ${route.solved ? 'Solved (All Stock Available)' : 'Incomplete'} | Depth: ${route.total_depth} steps | Cumulative Yield: ${route.cumulative_yield.toFixed(1)}% | Est. Cost: $${route.total_cost.toFixed(2)}`,
+        `======================================================================`
+      ];
+      const stockSet = new Set(route.starting_materials);
+      for (let i = route.steps.length - 1; i >= 0; i--) {
+        const s = route.steps[i];
+        lines.push(`Step ${s.step_number}: [${s.rule_name}] -> Yield: ${s.yield_pct.toFixed(1)}%, Cost: $${s.cost.toFixed(2)}`);
+        lines.push(`  └── Product: ${s.product}`);
+        lines.push(`  └── Precursors:`);
+        s.reactants.forEach(r => {
+          const tag = stockSet.has(r) ? ' (📦 Stock Reagent)' : ' (🔄 Intermediate)';
+          lines.push(`      ├── ${r}${tag}`);
+        });
+        lines.push(`--------------------------------------------------`);
+      }
+      return lines.join('\n');
+    }
+
+    async function renderMermaidSvg(code, containerEl) {
+      let cleaned = code.replace(/```mermaid/gi, '').replace(/```/g, '').trim();
+      if (!window.mermaid) {
+        containerEl.innerHTML = `<pre style="font-family: monospace; font-size: 0.8rem; color: #93c5fd; text-align: left; overflow-x: auto;">${cleaned}</pre>`;
+        return;
+      }
+      try {
+        const renderId = 'retro_svg_' + Math.floor(Math.random() * 1000000);
+        const { svg } = await mermaid.render(renderId, cleaned);
+        containerEl.innerHTML = svg;
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+        containerEl.innerHTML = `<div style="color: #ef4444; font-size: 0.8rem; margin-bottom: 0.5rem;">Diagram rendering notice: ${err.message || err}</div><pre style="font-family: monospace; font-size: 0.75rem; color: #9ca3af; text-align: left; overflow-x: auto;">${cleaned}</pre>`;
+      }
+    }
+
+    function toggleRetroViewMode(mode) {
+      currentRetroViewMode = mode;
+      const flowContainer = document.getElementById('retro-flowchart-container');
+      const textContainer = document.getElementById('retro-text-container');
+      const btnFlow = document.getElementById('btn-view-flowchart');
+      const btnText = document.getElementById('btn-view-text');
+
+      if (mode === 'flowchart') {
+        flowContainer.style.display = 'flex';
+        textContainer.style.display = 'none';
+        btnFlow.style.color = '#60a5fa';
+        btnFlow.style.borderColor = '#3b82f6';
+        btnText.style.color = 'var(--text-muted)';
+        btnText.style.borderColor = 'var(--border-color)';
+      } else {
+        flowContainer.style.display = 'none';
+        textContainer.style.display = 'block';
+        btnText.style.color = '#60a5fa';
+        btnText.style.borderColor = '#3b82f6';
+        btnFlow.style.color = 'var(--text-muted)';
+        btnFlow.style.borderColor = 'var(--border-color)';
+      }
+    }
+
+    function copyMermaidCode() {
+      if (!currentRetroData || !currentRetroData.routes) {
+        alert('No route data available.');
+        return;
+      }
+      const route = currentRetroData.routes.find(r => r.rank === activeRetroRank) || currentRetroData.routes[0];
+      if (route && route.mermaid_diagram) {
+        const clean = route.mermaid_diagram.replace(/```mermaid/gi, '').replace(/```/g, '').trim();
+        navigator.clipboard.writeText(clean);
+        alert('Copied Mermaid syntax to clipboard!');
+      } else {
+        alert('No diagram syntax found for this route.');
+      }
+    }
+
+    async function runSingleStepDisconnection() {
+      const smiles = document.getElementById('smiles-input').value.trim();
+      if (!smiles) { alert('Please enter target SMILES.'); return; }
+
+      const section = document.getElementById('retro-section');
+      section.style.display = 'block';
+      scrollToSection('retro-section');
+
+      const subSection = document.getElementById('retro-single-step-section');
+      const tbody = document.getElementById('retro-single-step-tbody');
+      subSection.style.display = 'block';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;"><span class="loading-spinner"></span> Predicting candidate disconnections...</td></tr>';
+
+      try {
+        const resp = await fetch('/retrosynthesis/single-step', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ smiles: smiles, top_k: 5 })
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          tbody.innerHTML = `<tr><td colspan="4" style="color: #ef4444;">Error: ${err.detail || 'Disconnection failed'}</td></tr>`;
+          return;
+        }
+        const data = await resp.json();
+        if (!data.predictions || data.predictions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No candidate disconnections found for this structure.</td></tr>';
+          return;
+        }
+
+        let rowsHtml = '';
+        data.predictions.forEach(p => {
+          const reactStr = p.reactants.map(r => `<span style="font-family: 'JetBrains Mono', monospace; background: #111827; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block; margin: 0.1rem 0;">${r}</span>`).join(' + ');
+          rowsHtml += `
+            <tr>
+              <td><span style="font-weight: 600; color: #93c5fd;">Rank ${p.rank}</span></td>
+              <td><span style="font-weight: 600; color: #fbbf24;">${p.rule_name}</span></td>
+              <td style="color: #34d399; font-weight: 600;">${(p.confidence * 100).toFixed(1)}%</td>
+              <td>${reactStr}</td>
+            </tr>
+          `;
+        });
+        tbody.innerHTML = rowsHtml;
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4" style="color: #ef4444;">Request error: ${err}</td></tr>`;
+      }
     }
   </script>
 </body>

@@ -152,6 +152,11 @@ class OptimizeRequest(BaseModel):
     target_liability: Optional[str] = Field(
         None, description="Optional target liability key (e.g. 'herg', 'ames', 'dili', 'clearance')."
     )
+    target_sequence: Optional[str] = Field(
+        None, description="Optional target protein amino acid sequence for joint DTA potency scoring."
+    )
+    weight_admet: float = Field(default=1.0, description="Weight for ADMET liability reduction in fitness.")
+    weight_dta: float = Field(default=0.5, description="Weight for DTA binding affinity gain in fitness.")
     max_candidates: int = Field(default=5, description="Maximum number of top candidates to return.")
     sa_threshold: float = Field(default=4.0, description="Maximum synthetic accessibility score allowed.")
 
@@ -181,6 +186,9 @@ class OptimizedCandidateItem(BaseModel):
     sa_score: float = Field(..., description="Synthetic accessibility score (1-10, <=3.5 is ideal).")
     scaffold_preserved: bool = Field(..., description="Whether Bemis-Murcko core scaffold is retained.")
     fitness_score: float = Field(..., description="Multi-objective Pareto fitness score.")
+    parent_dta_pkd: Optional[float] = Field(None, description="Parent molecule baseline affinity pKd.")
+    candidate_dta_pkd: Optional[float] = Field(None, description="Candidate molecule predicted affinity pKd.")
+    dta_delta: Optional[float] = Field(None, description="Affinity delta (positive is improved).")
 
 
 class OptimizeResponse(BaseModel):
@@ -197,6 +205,13 @@ class OptimizeResponse(BaseModel):
     top_candidates: List[OptimizedCandidateItem] = Field(
         default_factory=list, description="Top ranked optimized analogues."
     )
+    target_protein_sequence: Optional[str] = Field(
+        None, description="Target protein amino acid sequence."
+    )
+    parent_dta_pkd: Optional[float] = Field(
+        None, description="Parent baseline target affinity pKd."
+    )
+
 
 
 # ------------------------------------------------------------------------------
@@ -279,12 +294,25 @@ class DTIInferenceResponse(BaseModel):
     pymol_commands: Optional[List[str]] = Field(
         None, description="Ready-to-run PyMOL selection commands for 3D pocket visualization."
     )
+    conformal_lower_95: Optional[List[float]] = Field(
+        None, description="Conformal prediction 95% lower bound pKd."
+    )
+    conformal_upper_95: Optional[List[float]] = Field(
+        None, description="Conformal prediction 95% upper bound pKd."
+    )
+    confidence_interval_width: Optional[List[float]] = Field(
+        None, description="Conformal prediction interval width (2 * q_hat)."
+    )
+    is_in_domain: Optional[List[bool]] = Field(
+        None, description="Applicability Domain validity flags."
+    )
     unit: str = Field(
         default="pK_d (-log10 Kd)", description="Measurement unit of primary prediction."
     )
     model_name: str = Field(default="GraphDTA-Model", description="Serving model identifier.")
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
+
 
 
 class DTIMultiAffinityInferenceRequest(BaseModel):

@@ -14,8 +14,8 @@ from starlette.concurrency import run_in_threadpool
 from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
-from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
 from tdc_studio.serving.exporter import load_model_from_checkpoint
+
 from tdc_studio.serving.pipeline import (
     DTIInferencePipeline,
     DTIMultiAffinityPipeline,
@@ -519,13 +519,15 @@ async def explain_molecule(request: ExplainRequest):
 # ------------------------------------------------------------------------------
 # Closed-Loop Generative Lead Optimizer Endpoint
 # ------------------------------------------------------------------------------
-_optimizer: Optional[SelfCorrectingOptimizer] = None
+_optimizer: Optional[Any] = None
 
 
-def get_optimizer() -> SelfCorrectingOptimizer:
+def get_optimizer() -> Any:
     """Singleton getter for SelfCorrectingOptimizer."""
     global _optimizer
     if _optimizer is None:
+        from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         unified_pipe = get_unified_pipeline()
         if unified_pipe is None:
@@ -542,15 +544,22 @@ def get_optimizer() -> SelfCorrectingOptimizer:
     return _optimizer
 
 
+
 @app.post("/optimize", response_model=OptimizeResponse)
 async def optimize_molecule(request: OptimizeRequest):
     """Automatically diagnose, localize, and repair liabilities using closed-loop self-correction."""
     optimizer = get_optimizer()
+    if optimizer.dti_pipeline is None:
+        optimizer.dti_pipeline = get_dti_pipeline()
+
     try:
         report = await run_in_threadpool(
             optimizer.optimize,
             request.smiles,
             target_liability=request.target_liability,
+            target_seq=request.target_sequence,
+            weight_admet=request.weight_admet,
+            weight_dta=request.weight_dta,
             max_candidates=request.max_candidates,
         )
 
@@ -578,6 +587,9 @@ async def optimize_molecule(request: OptimizeRequest):
                 sa_score=c.sa_score,
                 scaffold_preserved=c.scaffold_preserved,
                 fitness_score=c.fitness_score,
+                parent_dta_pkd=c.parent_dta_pkd,
+                candidate_dta_pkd=c.candidate_dta_pkd,
+                dta_delta=c.dta_delta,
             )
             for c in report.top_candidates
         ]
@@ -590,9 +602,12 @@ async def optimize_molecule(request: OptimizeRequest):
             candidates_generated=report.candidates_generated,
             candidates_passing_sa_filter=report.candidates_passing_sa_filter,
             top_candidates=cand_items,
+            target_protein_sequence=report.target_protein_sequence,
+            parent_dta_pkd=report.parent_dta_pkd,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lead optimization error: {str(e)}")
+
 
 
 # ------------------------------------------------------------------------------
@@ -637,11 +652,16 @@ async def predict_dti(request: DTIInferenceRequest):
             top_contact_residues=result.get("top_contact_residues"),
             top_contact_atoms=result.get("top_contact_atoms"),
             pymol_commands=result.get("pymol_commands"),
+            conformal_lower_95=result.get("conformal_lower_95"),
+            conformal_upper_95=result.get("conformal_upper_95"),
+            confidence_interval_width=result.get("confidence_interval_width"),
+            is_in_domain=result.get("is_in_domain"),
             unit="pK_d (-log10 Kd)",
             model_name=model_name,
             count=len(request.smiles),
             elapsed_ms=elapsed_ms,
         )
+
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:

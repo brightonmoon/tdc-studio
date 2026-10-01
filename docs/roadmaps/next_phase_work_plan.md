@@ -215,27 +215,159 @@ flowchart TD
 
 ---
 
-### 📌 [Phase 4] 원클릭 IND Dossier 자동 생성기 & 3-in-1 통합 웹 대시보드 (TODOLIST)
-- [ ] **Task 4-1: 3-in-1 Unified Web Studio UI**
-  - Ketcher 2D 스케처 + Molstar 3D 구조 뷰어 + ADMET 5축 레이더 + PBPK $C_p - t$ 곡선 + Retro* 대화형 트리를 단일 인터랙티브 캔버스에 유기적 통합
-- [ ] **Task 4-2: Automated IND-Enabling Candidate Dossier Generator**
-  - 후보 화합물에 대해 클릭 한 번으로 규제기관(FDA IND/신약 승인) 검토용 종합 평가 보고서(PDF/HTML) 컴파일
-- [ ] **Task 4-3: 다회 투여(Repeat-Dose) 정상상태 PBPK 및 약물상호작용(DDI) 시뮬레이션**
-  - 1일 1회(QD) / 1일 2회(BID) 반복 투여 시 축적 지수 및 정상상태 농도($C_{ss,\max}, C_{ss,\min}$)
-  - Cluster 3 CYP450 동종효소 저해 상수($K_i$) 연계 병용 약물(DDI) AUC fold change 예측
+#### 📌 [Phase 4] 원클릭 IND Dossier 자동 생성기 & 3-in-1 통합 웹 대시보드 (TODOLIST)
+
+본 과제는 `tdc-studio`의 모든 백엔드 예측/시뮬레이션/최적화 엔진(DTI, 25-Task ADMET, XAI, PBPK, Retro*, CDI 스코어링)을 결합하여, 실제 제약/바이오 연구원과 규제 담당자가 사용할 수 있는 **산업급 엔드투엔드 워크스테이션 UI**와 **규제기관 제출용 비임상 평가 패키지(IND Dossier)**를 완성하는 최종 단계입니다.
+
+```mermaid
+flowchart TD
+    subgraph UI_Shell ["3-in-1 Unified Web Studio UI (React 18 + Vite + Tailwind + Dockview)"]
+        subgraph Pane1 ["📌 [Pane 1] 2D/3D 분자 구조 워크벤치"]
+            Ketcher["2D Chemical Sketcher<br/>(@epam/ketcher-react)"]
+            Molstar["3D Protein-Ligand Viewer<br/>(Mol* / WebGL / WebGPU)"]
+        end
+
+        subgraph Pane2 ["📊 [Pane 2] ADMET & PBPK 동태 시뮬레이터"]
+            Radar["ADMET 5축 레이더 & Conformal 오차막대"]
+            XAI_View["Integrated Gradients 2D 위험도 히트맵"]
+            PBPK_Sim["PBPK 다이나믹 슬라이더 & Cp-t 곡선<br/>(용량, 투여경로, 95% 가상인구 밴드)"]
+        end
+
+        subgraph Pane3 ["🌳 [Pane 3] Retro* 합성 트리 & Lead Optimizer"]
+            ReactFlow["인터랙티브 역합성 DAG 트리<br/>(@xyflow/react)"]
+            Optimizer["자가교정 최적화 파레토 프론트 산점도"]
+        end
+    end
+
+    Ketcher <-->|SMILES 양방향 동기화| Molstar
+    Pane1 -->|REST / WebSocket| Backend["FastAPI Serving App (tdc_studio/serving/app.py)"]
+    Backend --> Pane2
+    Backend --> Pane3
+    Pane3 -.->|최적화 후보 선택| Ketcher
+
+    subgraph DossierPipeline ["원클릭 IND-Enabling Dossier 자동 생성 엔진 (tdc_studio/dossier/)"]
+        DataPayload["DossierDataPayload 취합<br/>(DTI + ADMET + PBPK + Retro* + TI)"]
+        Jinja["Jinja2 Semantic HTML5/CSS Paged Media"]
+        PDF["📄 Formal PDF Dossier (WeasyPrint / Typst)"]
+        HTML["🌐 Standalone Interactive HTML (Base64 SVG 인라인)"]
+        JSON["📊 eCTD Machine-Readable JSON"]
+        
+        Backend --> DataPayload --> Jinja
+        Jinja --> PDF
+        Jinja --> HTML
+        Jinja --> JSON
+    end
+```
+
+---
+
+#### 1) Task 4-1: 3-in-1 Unified Web Studio UI (`tdc_studio/ui/`)
+- **아키텍처 및 기술 스택:**
+  - **프론트엔드 코어**: React 18 + Vite + TypeScript + Tailwind CSS
+  - **패널 레이아웃 엔진**: `dockview` (VS Code / Bloomberg 터미널 스타일의 사용자 정의 가능한 다중 분할/도킹 윈도우 지원)
+  - **상태 관리**: `zustand` (경량화된 전역 상태 저장소, 컴포넌트 간 반응형 양방향 데이터 바인딩)
+  - **Zero Node.js 배포 아키텍처**: Vite 프로덕션 빌드 결과물(`dist/`)을 Python 패키지(`tdc_studio/ui/dist`)에 번들링하여, 사용자가 Node/npm 없이 `tdc-studio ui` 명령만으로 FastAPI `StaticFiles`를 통해 로컬 브라우저(`http://localhost:8000/ui`)에서 즉시 구동.
+- **3대 인터랙티브 워크벤치 구성:**
+  - **Pane 1: 분자 구조 워크벤치 (2D + 3D)**:
+    - 2D 스케처: `@epam/ketcher-react` 내장. SMILES, SDF, Molfile 입출력 및 실시간 드로잉.
+    - 3D 구조 뷰어: `molstar` (Mol*). AlphaFold EBI DB 자동 로드, 바인딩 포켓 잔기 하이라이팅, 리간드 결합 포즈 3D 렌더링, 수소결합 및 입체 충돌(Steric Clash) 인터랙션 가시화.
+    - 양방향 동기화: 2D 구조 변경 시 300ms 디바운스 후 3D conformer 및 속성 예측 자동 갱신.
+  - **Pane 2: ADMET 안전성 레이더 & 다이나믹 PBPK 시뮬레이터**:
+    - Apache ECharts / Plotly 기반 5축 레이더 차트 및 25대 ADMET 지표별 90% Conformal Prediction 오차 막대.
+    - XAI 히트맵 뷰어: Integrated Gradients 기반 원자/결합별 독성 유발 위험도 벡터 SVG 인라인 렌더링.
+    - 인터랙티브 PBPK 시뮬레이터:
+      - 용량 슬라이더(10mg ~ 1000mg), 투여 경로(Oral / IV Bolus / IV Infusion), 투약 빈도(QD, BID) 조절.
+      - 1,000명 가상 인구(Virtual Population) 시뮬레이션 기반 $C_p - t$ 곡선 및 95% 예측 신뢰구간 밴드 렌더링.
+      - 최소유효농도(MEC)와 최대내약농도(MTC) / hERG $IC_{50}$ 사이의 '안전 치료역(Green Safe Zone)' 시각화.
+  - **Pane 3: Retro* 합성 트리 & Lead Optimizer 콘솔**:
+    - React Flow (`@xyflow/react`): 역합성 단계별 중간체(Intermediate), 반응 유형(Amide coupling, Suzuki 등), 예상 수율, 상용 시약 재고(Enamine/Sigma ID, In-stock 뱃지)를 포함하는 대화형 DAG 트리 렌더링.
+    - Lead Optimizer 파레토 프론티어 산점도: 다목적 적합도(CDI 점수 vs 합성 접근성 vs 결합력) 분자 분포 시각화 및 클릭 시 2D/3D 워크벤치 즉각 로드.
+
+---
+
+#### 2) Task 4-2: Automated IND-Enabling Candidate Dossier Generator (`tdc_studio/dossier/`)
+- **규제 표준 준수 (ICH M4 CTD Nonclinical Standard Mapping):**
+  - 미국 FDA IND (Investigational New Drug) 및 ICH CTD Module 2, 3, 4 비임상 보고서 양식에 1:1 매핑되는 5-Chapter 구조 정립:
+    - **Chapter 1: 후보물질 종합 요약 (Executive Summary & Scorecard - CTD 2.4)**:
+      - 2D 구조식, SMILES, InChIKey, 물리화학적 특성 (MW, LogP, TPSA, HBD, HBA, RotBonds, SAScore).
+      - **Clinical Developability Index (CDI, 0~100점)** 4대 기둥 레이더 차트 및 Go / No-Go 판정 신호등(Traffic Light) 요약표.
+    - **Chapter 2: 약효 및 표적 결합 (Primary Pharmacodynamics - CTD 2.6.2 / 4.2.1)**:
+      - 표적 단백질 메타데이터 (UniProt ID, 유전자 심볼, 질환 메커니즘).
+      - 결합 친화도 예측치 ($K_d, K_i, IC_{50}$, pKd 및 3D 도킹 결합 자유에너지 $\Delta G$).
+      - 결합 포켓 잔기 상호작용 분석 다이어그램 (수소결합, $\pi$-스태킹, 소수성 접촉 300 DPI 벡터 그래픽).
+    - **Chapter 3: 체내동태 및 PBPK 외삽 (Pharmacokinetics / ADME - CTD 2.6.4 / 4.2.2)**:
+      - 25-Task ADME 프로파일 요약표 (Caco-2, HIA, 혈장단백결합률 $f_u$, $V_{d,ss}$, BBB, CYP 5대 효소 저해/기질 여부, 간 클리어런스 $CL_{\text{hep}}$).
+      - 인체 예측 PK 지표 ($C_{\max}, T_{\max}, AUC_{0-\infty}, t_{1/2}$).
+      - 1,000명 가상 인구 체내동태 시뮬레이션 $C_p - t$ 곡선 그래프.
+      - 동물 모델 알로메트릭 스케일링 및 MEC 기반 권장 인체 초회 안전 투약 용량(MRSD) 추정치.
+    - **Chapter 4: 비임상 안전성 약리 및 독성 (Safety Pharmacology & Toxicology - CTD 2.6.6 / 4.2.3)**:
+      - 심장독성: hERG 저해 $IC_{50}$ 및 혈중 유리약물 대비 안전역($IC_{50} / C_{\max,\text{free}}$).
+      - 유전독성 / 돌연변이원성: AMES 시험 양/음성 예측 및 유전독성 구조 경고(Structural Alerts).
+      - 간독성: DILI 위험도 및 반응성 대사체 경고.
+      - XAI 독성 유발 원자군(Toxicophore) 분석: Integrated Gradients 2D 컨투어 히트맵.
+      - 치료 지수(Therapeutic Index): $\log_{10}$ Therapeutic Window 및 치료 여유도(Margin of Safety).
+    - **Chapter 5: 원료의약품 합성성 및 CMC (Chemistry & Manufacturing - CTD 3.2.S)**:
+      - Retro* 확정 합성 반응 스킴 (출발 물질, 단계별 반응 시약, 예상 수율).
+      - 상용 구매 가능 빌딩 블록(Starting Materials) 공급사 카탈로그 번호 및 재고 여부.
+      - 합성 접근성 점수(SAScore) 및 화학적 복잡도 정량화.
+- **보고서 렌더링 엔진 기술 스택:**
+  - **데이터 취합기 (`collector.py`)**: 단일 SMILES와 Target 입력 시 `TherapeuticsEvaluator`, `TherapeuticIndexEngine`, `PBPKEngine`, `RetroPlanner`, `MolecularExplainer`를 원패스로 실행하여 단일 `DossierDataPayload` 객체 구축.
+  - **템플릿 렌더러 (`renderer.py`)**: Jinja2 semantic HTML5/CSS Paged Media 템플릿. 모든 도표와 분자 구조식을 외부 의존성 없는 **인라인 Base64 SVG/PNG**로 임베딩하여 오프라인에서 열람 가능한 단일 독립형(Standalone) 파일 생성.
+  - **고해상도 PDF 컴파일러 (`pdf_compiler.py`)**: `WeasyPrint` 또는 `typst-py` 연계로 완벽한 페이지 넘김 제어(`page-break-inside: avoid`), 인쇄용 헤더/푸터, 공식 목차(TOC) 생성.
+  - **다중 포맷 출력**:
+    - `candidate_dossier.pdf`: 인쇄/제출용 출판급 정식 보고서
+    - `candidate_dossier.html`: 웹 브라우저용 반응형 인터랙티브 보고서
+    - `candidate_dossier.json`: eCTD 비임상 데이터베이스 입력용 표준 기계 판독 데이터
+- **CLI & REST API 인터페이스:**
+  - CLI: `tdc-studio dossier <smiles> --target <uniprot_id> --output report.pdf [--format pdf|html|json]`
+  - API: `POST /dossier/generate` (다운로드 가능한 파일 스트림 스트리밍)
+
+---
+
+#### 3) Task 4-3: 다회 투여(Repeat-Dose) 정상상태 PBPK 및 약물상호작용(DDI) 시뮬레이션
+- **다회 투여 정상상태 (Steady-State) 동태 모델링:**
+  - 1일 1회(QD) 및 1일 2회(BID) 반복 경구/정맥 투여 시 축적비($R_{ac} = 1 / (1 - e^{-k_e \tau})$) 및 정상상태 농도 극값($C_{ss,\max}, C_{ss,\min}$) 수치 시뮬레이션.
+- **기전 기반 약물상호작용 (Mechanism-Based DDI) 평가:**
+  - Cluster 3의 CYP450 5대 동종효소(1A2, 2C9, 2C19, 2D6, 3A4) 예측 저해 상수($K_i$)와 문헌 표준 병용 약물(예: Midazolam, Warfarin) 데이터를 결합하여 병용 시 피해약물의 체내 노출량 변화(AUC Fold Change) 정량 예측.
+
+---
+
+#### 4) Phase 4 신규 모듈 디렉터리 구성안
+```text
+tdc_studio/
+├── dossier/                             # [신규] IND Dossier 보고서 자동 생성 엔진
+│   ├── __init__.py
+│   ├── collector.py                     # DTI + ADMET + PBPK + Retro* + TI 원패스 취합
+│   ├── models.py                        # DossierDataPayload, CandidateScorecard 스키마
+│   ├── renderer.py                      # Jinja2 HTML/CSS 렌더러 (Base64 차트 인라인)
+│   ├── pdf_compiler.py                  # WeasyPrint / Typst 기반 고해상도 PDF 변환기
+│   └── templates/                       # ICH CTD 비임상 표준 템플릿
+│       ├── base.html
+│       ├── executive_summary.html
+│       ├── pharmacodynamics.html
+│       ├── pharmacokinetics.html
+│       ├── toxicology.html
+│       └── cmc_synthesis.html
+│
+└── ui/                                  # [신규] 3-in-1 Unified Web Studio UI 서빙
+    ├── __init__.py
+    ├── server.py                        # UI 로컬 정적 서빙 및 실시간 WebSocket 핸들러
+    └── dist/                            # React 18 / Vite 프로덕션 빌드 번들 애셋
+```
 
 ---
 
 ## 5. 종합 마일스톤 및 상태 요약표 (Overall Milestone Summary)
 
 | 단계 | 추진 과제 | 핵심 목표 및 산출물 | 상태 |
-| :---: | :--- | :--- | :---: |
+| :---: | :--- | :--- | :--- |
 | **Phase 0** | **ADMET 25종 SOTA 벤치마크** | 5대 클러스터 D-MPNN, Tri-Hybrid, Two-Stage 전이학습 | **완료 (COMPLETE) ✅** |
 | **Phase 0** | **DTI Foundation Phase B & C** | ChemBERTa + ESM-2 Cross-Attention DTA | **완료 (COMPLETE) ✅** |
 | **Phase 0** | **Retrosynthesis & Reaction Engine** | USPTO-50K 데이터, Seq2Seq Retro, Forward Verifier, Retro* | **완료 (COMPLETE) ✅** |
 | **Phase 0** | **XAI 설명가능 AI 엔진** | Integrated Gradients 원자 기여도 및 2D 히트맵, Bioisostere | **완료 (COMPLETE) ✅** |
 | **Phase 1** | **[Track 1] 치료 지수(TI) 엔진 구축** | - TherapeuticIndexEngine (`tdc_studio/evaluation/therapeutic_index.py`)<br>- Clinical Developability Index (CDI, 0~100 pts) 종합 산출<br>- hERG Safety Margin, In Vivo PK 여유도, API & CLI | **완료 (COMPLETE on `main`) ✅** |
 | **Phase 1** | **[Track 2] LeadOptimizer ➔ Retro\* 결합** | - 자가교정 변이체 생성 시 3-Tier 합성성 자동 평가 및 Stock 경로 첨부<br>- `POST /optimize` 및 `OptimizedCandidateItem` 완결 연동 | **완료 (COMPLETE on `main`) ✅** |
-| **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기<br>- ONNX Runtime FP16/INT8 추론 가속화 및 배치 스트리밍 | **📋 TODOLIST (차기 브랜치)** |
-| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 바인딩 포켓 잔기 어텐션<br>- 능동 학습 기반 차기 합성 화합물 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
-| **Phase 4** | **3-in-1 Studio UI & IND Dossier 보고서** | - 2D/3D + ADMET + PBPK + Retro* 통합 웹 워크스페이스<br>- 원클릭 IND 후보물질 종합 Dossier(PDF/HTML) 생성기 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기 (Ro5 $\to$ GBDT $\to$ D-MPNN $\to$ PBPK/Retro*)<br>- ONNX Runtime FP16/INT8 추론 가속화 및 대규모 라이브러리 배치 스트리밍 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 결합 포켓 잔기 슬라이싱 Cross-Attention DTA<br>- **Multi-Provider Pluggable 3D Docking Bridge** (`VinaLocalProvider`, `DiffDockCloudProvider`)<br>- Conformal 능동 학습 기반 차기 합성 후보 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 4** | **3-in-1 Studio UI & IND Dossier 보고서** | - **3-in-1 Unified Web Studio UI**: Ketcher 2D + Mol* 3D + ADMET/PBPK + Retro* DAG 트리 단일 워크스페이스 (`tdc_studio/ui/`)<br>- **Automated IND-Enabling Dossier Generator**: ICH M4 CTD Module 2/3/4 비임상 보고서 원클릭 생성 (`tdc_studio/dossier/`, PDF/HTML/JSON)<br>- **다회 투여 PBPK & DDI 시뮬레이터**: QD/BID 정상상태 축적비 및 CYP 저해 DDI 예측 | **📋 TODOLIST (차기 브랜치)** |
+

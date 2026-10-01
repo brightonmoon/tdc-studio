@@ -174,12 +174,25 @@ class GraphDTAModel(BaseTherapeuticsModel):
             or (affinity, attn_dict) if return_attention=True.
         """
         h_drug, h_target = self.extract_features(batch, return_sequence=return_sequence)
+
+        extra_kwargs: Dict[str, Any] = {}
+        for k in ("pocket_coords", "residue_importance", "target_padding_mask", "drug_padding_mask"):
+            if k in batch:
+                extra_kwargs[k] = batch[k]
+
+
         if return_attention:
             try:
-                return self.fusion(h_drug, h_target, return_attention=True)
+                return self.fusion(h_drug, h_target, return_attention=True, **extra_kwargs)
             except TypeError:
-                pass
-        return self.fusion(h_drug, h_target)  # [B, out_dim]
+                try:
+                    return self.fusion(h_drug, h_target, return_attention=True)
+                except TypeError:
+                    pass
+        try:
+            return self.fusion(h_drug, h_target, **extra_kwargs)
+        except TypeError:
+            return self.fusion(h_drug, h_target)  # [B, out_dim]
 
     # ------------------------------------------------------------------
     # Loss

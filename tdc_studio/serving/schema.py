@@ -393,17 +393,55 @@ class ReactionStepSchema(BaseModel):
     cost: float
 
 
+class RetroRouteItem(BaseModel):
+    """Single complete retrosynthetic pathway with ranking and metrics."""
+
+    rank: int = Field(..., description="Route rank (1 = champion, 2 = 1st alternative, etc.)")
+    rank_score: float = Field(default=0.0, description="Multi-objective Pareto rank score.")
+    target_smiles: str
+    solved: bool
+    total_depth: int
+    cumulative_yield: float
+    total_cost: float
+    starting_materials: List[str]
+    steps: List[ReactionStepSchema]
+    mermaid_diagram: Optional[str] = None
+
+
+class RouteComparisonItem(BaseModel):
+    """Comparison matrix entry for a candidate route."""
+
+    rank: int
+    solved: bool
+    total_depth: int
+    cumulative_yield: float
+    total_cost: float
+    starting_materials_count: int
+    starting_materials: List[str]
+    reaction_rules: List[str]
+    rank_score: float = 0.0
+
+
 class RetroPlanRequest(BaseModel):
     """Request payload for multi-step retrosynthesis route planning."""
 
     smiles: str = Field(..., description="Target molecule SMILES to plan synthesis route for.")
+    top_k: int = Field(
+        default=3, ge=1, le=10, description="Number of candidate routes to return (1 = optimal only, >1 = include alternative routes)."
+    )
+    min_diversity: float = Field(
+        default=0.25, ge=0.0, le=1.0, description="Minimum diversity distance between alternative routes."
+    )
+    banned_smiles: Optional[List[str]] = Field(
+        default=None, description="Optional list of SMILES to ban/exclude from commercial stock."
+    )
     max_depth: int = Field(default=5, ge=1, le=10, description="Maximum search tree depth.")
     timeout_sec: float = Field(default=5.0, ge=0.5, le=60.0, description="Search timeout in seconds.")
     render_mermaid: bool = Field(default=False, description="Whether to include rendered Mermaid diagram.")
 
 
 class RetroPlanResponse(BaseModel):
-    """Response payload containing complete retrosynthesis pathway."""
+    """Response payload containing complete retrosynthesis pathway(s)."""
 
     target_smiles: str
     solved: bool
@@ -413,4 +451,11 @@ class RetroPlanResponse(BaseModel):
     starting_materials: List[str]
     steps: List[ReactionStepSchema]
     mermaid_diagram: Optional[str] = None
+    routes: List[RetroRouteItem] = Field(
+        default_factory=list, description="All top-k ranked routes (Rank 1 to K)."
+    )
+    comparison_summary: List[RouteComparisonItem] = Field(
+        default_factory=list, description="Summary comparison table of all candidate routes."
+    )
+
 

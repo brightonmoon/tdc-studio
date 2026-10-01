@@ -1917,8 +1917,12 @@ def retro_single_step_cli(
 @retro_app.command("plan")
 def retro_plan_cli(
     smiles: str = typer.Option(..., "--smiles", "-s", help="Target molecule SMILES to plan pathway for"),
+    top_k: int = typer.Option(3, "--top-k", "-k", help="Number of candidate routes to find (1 = optimal only, >1 = alternative routes)"),
+    banned: Optional[str] = typer.Option(None, "--banned", help="Comma-separated SMILES to ban/exclude from commercial stock"),
+    min_diversity: float = typer.Option(0.25, "--min-diversity", help="Minimum diversity distance between routes"),
     max_depth: int = typer.Option(5, "--max-depth", "-d", help="Maximum search tree depth"),
     timeout: float = typer.Option(5.0, "--timeout", help="Search timeout in seconds"),
+    compare: bool = typer.Option(True, "--compare", help="Display comparative Markdown table of all routes"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Optional JSON output file path"),
     render_mermaid: bool = typer.Option(False, "--render-mermaid", help="Print Mermaid diagram"),
 ):
@@ -1927,20 +1931,45 @@ def retro_plan_cli(
 
     from tdc_studio.retrosynthesis.planner import RetroPlanner
 
-    planner = RetroPlanner(policy_type="rule", max_depth=max_depth, timeout_sec=timeout)
-    route = planner.plan_route(smiles)
+    banned_list = [s.strip() for s in banned.split(",") if s.strip()] if banned else None
 
-    tree_str = planner.render_tree(route)
-    console.print(tree_str)
+    planner = RetroPlanner(policy_type="rule", max_depth=max_depth, timeout_sec=timeout)
+    routes = planner.plan_routes(
+        target_smiles=smiles,
+        top_k=top_k,
+        diversity_threshold=min_diversity,
+        banned_smiles=banned_list,
+        timeout_sec=timeout,
+    )
+
+    champion = routes[0] if routes else None
+
+    if compare and len(routes) > 1:
+        console.print("\n[bold cyan]📊 Multi-Route Comparison Summary:[/bold cyan]")
+        console.print(planner.render_comparison_table(routes))
+        console.print("\n" + "=" * 70 + "\n")
+
+    if champion:
+        tree_str = planner.render_tree(champion)
+        console.print(tree_str)
 
     if render_mermaid:
-        console.print("\n[bold magenta]Mermaid Diagram:[/bold magenta]")
-        console.print(planner.render_mermaid(route))
+        console.print("\n[bold magenta]Mermaid Diagram(s):[/bold magenta]")
+        if len(routes) > 1:
+            console.print(planner.render_multi_mermaid(routes))
+        elif champion:
+            console.print(planner.render_mermaid(champion))
 
     if output:
+        out_payload = {
+            "target_smiles": smiles,
+            "routes_count": len(routes),
+            "routes": [r.to_dict() for r in routes],
+        }
         with open(output, "w", encoding="utf-8") as f:
-            json.dump(route.to_dict(), f, indent=2)
-        console.print(f"[bold green]Saved route JSON to:[/bold green] {output}")
+            json.dump(out_payload, f, indent=2)
+        console.print(f"[bold green]Saved routes JSON to:[/bold green] {output}")
+
 
 
 if __name__ == "__main__":

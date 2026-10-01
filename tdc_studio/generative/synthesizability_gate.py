@@ -24,6 +24,9 @@ class SynthesizabilityReport:
     tier2_1step_passed: bool
     tier3_route_solved: bool
     route: Optional[RetrosynthesisRoute] = None
+    routes: Optional[list] = None
+    alternative_routes_count: int = 0
+    synthetic_tractability_score: float = 0.0
     rejection_reason: Optional[str] = None
 
 
@@ -48,7 +51,7 @@ class SynthesizabilityGate:
         self.rule_policy = rule_policy or RuleRetroPolicy()
 
     def evaluate_candidate(
-        self, smiles: str, require_deep_route: bool = False
+        self, smiles: str, require_deep_route: bool = False, top_k_routes: int = 3
     ) -> SynthesizabilityReport:
         """Evaluate candidate synthesizability across the 3 tiers."""
         # --- Tier 1: SAScore Filter (0.1ms) ---
@@ -61,11 +64,11 @@ class SynthesizabilityGate:
                 tier1_sa_passed=False,
                 tier2_1step_passed=False,
                 tier3_route_solved=False,
+                synthetic_tractability_score=0.0,
                 rejection_reason=f"SAScore ({sa_score:.2f}) exceeds threshold ({self.sa_threshold:.2f})",
             )
 
         # --- Tier 2: 1-Step Stock Availability (10ms) ---
-        # Check if already in stock
         if self.stock.is_in_stock(smiles):
             return SynthesizabilityReport(
                 smiles=smiles,
@@ -74,6 +77,8 @@ class SynthesizabilityGate:
                 tier1_sa_passed=True,
                 tier2_1step_passed=True,
                 tier3_route_solved=True,
+                alternative_routes_count=1,
+                synthetic_tractability_score=1.0,
             )
 
         tier2_candidates = self.rule_policy.predict_reactants(smiles, top_k=5)
@@ -85,6 +90,9 @@ class SynthesizabilityGate:
                 tier2_passed = True
                 break
 
+        # Fast feasibility tractability baseline
+        tractability = 0.5 if tier2_passed else 0.2
+
         # If deep multi-step route is not strictly required, pass on Tier 1 + Tier 2
         if not require_deep_route:
             return SynthesizabilityReport(
@@ -94,18 +102,35 @@ class SynthesizabilityGate:
                 tier1_sa_passed=True,
                 tier2_1step_passed=tier2_passed,
                 tier3_route_solved=False,
+                synthetic_tractability_score=round(tractability, 2),
                 rejection_reason=None if tier2_passed else "No single-step stock precursor set found",
             )
 
         # --- Tier 3: Deep Multi-Step Retro* Route Search (1~2s) ---
-        route = self.planner.plan_route(smiles, max_depth=4, timeout_sec=2.0)
+        routes = self.planner.plan_routes(smiles, top_k=top_k_routes, max_depth=4, timeout_sec=2.0)
+        solved_routes = [r for r in routes if r.solved]
+        solved = len(solved_routes) > 0
+        alt_count = len(solved_routes)
+
+        if solved:
+            # Score bonus for having multiple robust alternative pathways
+            deep_tractability = 0.5 + min(0.5, alt_count * 0.15 + (0.1 if tier2_passed else 0.0))
+        else:
+            deep_tractability = 0.1 if tier2_passed else 0.0
+
+        champion = solved_routes[0] if solved_routes else None
+
         return SynthesizabilityReport(
             smiles=smiles,
-            passed=route.solved,
+            passed=solved,
             sa_score=sa_score,
             tier1_sa_passed=True,
             tier2_1step_passed=tier2_passed,
-            tier3_route_solved=route.solved,
-            route=route if route.solved else None,
-            rejection_reason=None if route.solved else "Multi-step Retro* search could not close route to stock",
+            tier3_route_solved=solved,
+            route=champion,
+            routes=solved_routes if solved else None,
+            alternative_routes_count=alt_count,
+            synthetic_tractability_score=round(deep_tractability, 2),
+            rejection_reason=None if solved else "Multi-step Retro* search could not close route to stock",
         )
+

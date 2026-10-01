@@ -718,15 +718,19 @@ async def retrosynthesis_plan_route(request: RetroPlanRequest):
     try:
         response = await run_in_threadpool(
             pipe.plan_route,
-            request.smiles,
-            request.max_depth,
-            request.timeout_sec,
-            request.render_mermaid,
+            smiles=request.smiles,
+            top_k=request.top_k,
+            min_diversity=request.min_diversity,
+            banned_smiles=request.banned_smiles,
+            max_depth=request.max_depth,
+            timeout_sec=request.timeout_sec,
+            render_mermaid=request.render_mermaid,
         )
         return response
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrosynthesis planning error: {str(e)}")
+
 
 

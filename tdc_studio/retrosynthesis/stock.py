@@ -44,6 +44,7 @@ class StockLibrary:
         self.inchikey_to_smiles: Dict[str, str] = {}
         self.inchikey_to_cost: Dict[str, float] = {}
         self.inchikey_to_tier: Dict[str, int] = {}
+        self.banned_inchikeys: set = set()
 
         if load_builtin:
             self.load_compounds(COMMON_BUILDING_BLOCKS, default_cost=10.0, tier=0)
@@ -55,6 +56,31 @@ class StockLibrary:
         if mol is None:
             return None
         return Chem.MolToInchiKey(mol)
+
+    def ban_compound(self, smiles: str) -> bool:
+        """Mark a compound as banned / out of stock (e.g. supply chain bottleneck, patent issue)."""
+        key = self.smiles_to_inchikey(smiles)
+        if key is None:
+            return False
+        self.banned_inchikeys.add(key)
+        return True
+
+    def unban_compound(self, smiles: str) -> bool:
+        """Remove a compound from the banned blacklist."""
+        key = self.smiles_to_inchikey(smiles)
+        if key is None or key not in self.banned_inchikeys:
+            return False
+        self.banned_inchikeys.remove(key)
+        return True
+
+    def clear_banned(self) -> None:
+        """Clear all active bans."""
+        self.banned_inchikeys.clear()
+
+    def is_banned(self, smiles: str) -> bool:
+        """Check if molecule is currently banned."""
+        key = self.smiles_to_inchikey(smiles)
+        return bool(key and key in self.banned_inchikeys)
 
     def add_compound(
         self, smiles: str, cost_per_gram: float = 10.0, tier: int = 0
@@ -83,9 +109,9 @@ class StockLibrary:
         return loaded
 
     def is_in_stock(self, smiles: str) -> bool:
-        """Check if molecule exists in commercial stock in O(1) time."""
+        """Check if molecule exists in commercial stock in O(1) time and is not banned."""
         key = self.smiles_to_inchikey(smiles)
-        if key is None:
+        if key is None or key in self.banned_inchikeys:
             return False
         return key in self.inchikey_to_smiles
 
@@ -111,3 +137,4 @@ class StockLibrary:
 
     def __len__(self) -> int:
         return len(self.inchikey_to_smiles)
+

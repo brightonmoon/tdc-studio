@@ -6,11 +6,14 @@ from typing import Optional
 from tdc_studio.models.retrosynthesis.rule_policy import RuleRetroPolicy
 from tdc_studio.retrosynthesis.planner import RetroPlanner
 from tdc_studio.retrosynthesis.route import RetrosynthesisRoute
+from tdc_studio.retrosynthesis.visualizer import RouteVisualizer
 from tdc_studio.serving.schema import (
     ReactionStepSchema,
     RetroCandidateItem,
     RetroPlanResponse,
+    RetroRouteItem,
     RetroSingleStepResponse,
+    RouteComparisonItem,
 )
 
 logger = logging.getLogger("tdc_studio.serving.retrosynthesis")
@@ -50,16 +53,60 @@ class RetrosynthesisInferencePipeline:
     def plan_route(
         self,
         smiles: str,
+        top_k: int = 3,
+        min_diversity: float = 0.25,
+        banned_smiles: Optional[list] = None,
         max_depth: int = 5,
         timeout_sec: float = 5.0,
         render_mermaid: bool = False,
     ) -> RetroPlanResponse:
-        """Find multi-step pathway to commercial stock reagents."""
-        route: RetrosynthesisRoute = self.planner.plan_route(
-            smiles, max_depth=max_depth, timeout_sec=timeout_sec
+        """Find multi-step pathways to commercial stock reagents (optimal + alternative routes)."""
+        routes: list = self.planner.plan_routes(
+            smiles,
+            top_k=top_k,
+            diversity_threshold=min_diversity,
+            banned_smiles=banned_smiles,
+            max_depth=max_depth,
+            timeout_sec=timeout_sec,
         )
 
-        steps_schema = [
+        champion: RetrosynthesisRoute = routes[0] if routes else RetrosynthesisRoute(target_smiles=smiles, solved=False)
+
+        route_items = []
+        for r in routes:
+            steps_schema = [
+                ReactionStepSchema(
+                    step_number=s.step_number,
+                    reactants=s.reactants,
+                    product=s.product,
+                    rule_name=s.rule_name,
+                    confidence=s.confidence,
+                    yield_pct=s.yield_pct,
+                    cost=s.cost,
+                )
+                for s in r.steps
+            ]
+            m_str = self.planner.render_mermaid(r) if render_mermaid else None
+            route_items.append(
+                RetroRouteItem(
+                    rank=r.rank,
+                    rank_score=r.rank_score,
+                    target_smiles=r.target_smiles,
+                    solved=r.solved,
+                    total_depth=r.total_depth,
+                    cumulative_yield=r.cumulative_yield,
+                    total_cost=r.total_cost,
+                    starting_materials=r.starting_materials,
+                    steps=steps_schema,
+                    mermaid_diagram=m_str,
+                )
+            )
+
+        # Comparison summary entries
+        raw_summary = RouteVisualizer.to_comparison_summary(routes)
+        summary_items = [RouteComparisonItem(**entry) for entry in raw_summary]
+
+        champ_steps = [
             ReactionStepSchema(
                 step_number=s.step_number,
                 reactants=s.reactants,
@@ -69,20 +116,20 @@ class RetrosynthesisInferencePipeline:
                 yield_pct=s.yield_pct,
                 cost=s.cost,
             )
-            for s in route.steps
+            for s in champion.steps
         ]
-
-        mermaid_str = None
-        if render_mermaid:
-            mermaid_str = self.planner.render_mermaid(route)
+        champ_mermaid = self.planner.render_mermaid(champion) if render_mermaid else None
 
         return RetroPlanResponse(
-            target_smiles=route.target_smiles,
-            solved=route.solved,
-            total_depth=route.total_depth,
-            cumulative_yield=route.cumulative_yield,
-            total_cost=route.total_cost,
-            starting_materials=route.starting_materials,
-            steps=steps_schema,
-            mermaid_diagram=mermaid_str,
+            target_smiles=champion.target_smiles,
+            solved=champion.solved,
+            total_depth=champion.total_depth,
+            cumulative_yield=champion.cumulative_yield,
+            total_cost=champion.total_cost,
+            starting_materials=champion.starting_materials,
+            steps=champ_steps,
+            mermaid_diagram=champ_mermaid,
+            routes=route_items,
+            comparison_summary=summary_items,
         )
+

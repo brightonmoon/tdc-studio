@@ -37,7 +37,7 @@ tdc_colab*.ipynb
 Thumbs.db
 data/cache/
 # Worktrees
-ADMET/
-greenling/
-retrosynthesis/
+/ADMET/
+/greenling/
+/retrosynthesis/
 

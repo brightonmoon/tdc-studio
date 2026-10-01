@@ -124,6 +124,25 @@ flowchart LR
   - `synthetic_tractability_score` 및 대안 경로 개수 반환
   - `tests/test_retro_top_k.py` 단위 테스트 100% Pass (전체 34개 테스트 무결성 확인)
 
+---
+
+### 🔹 Phase 7: 인터랙티브 웹 대시보드 통합 & main 브랜치 배포 (v2.2.0)
+- [x] **Task R7-1: Retrosynthesis Studio UI 통합 (`tdc_studio/serving/dashboard_html.py`)**
+  - 상단 글로벌 네비게이션: `[🧪 ADMET & PBPK]`, `[🎯 DTI Affinity]`, `[🧭 Retrosynthesis Studio]` 빠른 이동 앵커
+  - 검색 제어 사이드바: Top-K ($1 \sim 5$), Max Depth ($3 \sim 10$), Jaccard 다양성 슬라이더 ($0.0 \sim 0.8$), 공급망 차단 SMILES 입력기
+- [x] **Task R7-2: 동적 Mermaid.js 반응 다이어그램 브라우저 렌더링**
+  - 출발 물질(📦 녹색), 반응 규칙(⚡ 노랑), 중간체(🔄 파랑), 최종 목표(🎯 산호색) 색상 분기
+  - Mermaid Flowchart와 터미널 ASCII 텍스트 트리 간 전환 및 클립보드 복사 버튼
+- [x] **Task R7-3: 다중 경로 비교 트레이드오프 매트릭스 (Comparison Table)**
+  - 🥇 1위 (최적), 🥈 2위 (대안 A), 🥉 3위 (대안 B) 배지 표기
+  - 수율, 비용, 단계, 빌딩블록, 반응 규칙, Pareto 점수 행렬 및 행 클릭 시 상세 경로 즉시 전환
+- [x] **Task R7-4: 상용 시약 원자재 명세서 (BOM) & 공급망 결함 시뮬레이터**
+  - 각 상용 시약에 `[🚫 Ban Reagent]` 버튼 배치하여 품절 시 우회 경로 실시간 재탐색 지원
+- [x] **Task R7-5: Closed-Loop Lead Optimizer 및 복합 약물성 원클릭 연계**
+  - Self-Correcting Lead Optimizer의 각 추천 후보 분자 카드에 `[🧭 Plan Route]` 버튼 배치
+- [x] **Task R7-6: 서빙 통합 테스트 및 main 브랜치 클린 병합**
+  - `tests/test_serving_api.py` 대시보드 검증 확장 및 50+ 회귀 테스트 100% Pass
+  - `main` 브랜치 최종 머지 완료 (`commit 6b3134c`)
 
 ---
 

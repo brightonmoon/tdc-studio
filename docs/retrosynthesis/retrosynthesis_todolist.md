@@ -1,10 +1,11 @@
 # Retrosynthesis 모듈 구축 및 TDC 벤치마킹 실행 체크리스트 (TODOLIST)
 
-> **문서 버전:** v1.0.0  
-> **기준 일자:** 2026-09-29  
+> **문서 버전:** v2.0.0  
+> **기준 일자:** 2026-10-01  
 > **브랜치:** `feature/retrosynthesis`  
 > **격리 작업공간:** `C:/Users/xps/orca/workspaces/tdc-studio/retrosynthesis`  
-> **기술 조사 문서:** [`docs/retrosynthesis/technical_survey.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/retrosynthesis/docs/retrosynthesis/technical_survey.md)
+> **기술 조사 문서:** [`docs/retrosynthesis/technical_survey.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/retrosynthesis/docs/retrosynthesis/technical_survey.md)  
+> **마스터 작업계획서:** [`docs/retrosynthesis/retrosynthesis_master_work_plan.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/retrosynthesis/docs/retrosynthesis/retrosynthesis_master_work_plan.md)
 
 ---
 

@@ -350,3 +350,67 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
     )
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
+
+
+# ------------------------------------------------------------------------------
+# Retrosynthesis & Multi-Step Route Planning Schemas
+# ------------------------------------------------------------------------------
+
+class RetroCandidateItem(BaseModel):
+    """Single candidate reactant set predicted for retrosynthetic disconnection."""
+
+    reactants: str = Field(..., description="Precursor reactant SMILES separated by '.'")
+    confidence: float = Field(..., description="Model confidence score or heuristic prior (0~1).")
+
+
+class RetroSingleStepRequest(BaseModel):
+    """Request payload for single-step retrosynthetic disconnection."""
+
+    smiles: str = Field(..., description="Target product molecule SMILES.")
+    top_k: int = Field(default=5, ge=1, le=50, description="Number of precursor sets to generate.")
+    reaction_type: Optional[int] = Field(
+        None, ge=1, le=10, description="Optional USPTO-50K reaction class ID (1~10)."
+    )
+
+
+class RetroSingleStepResponse(BaseModel):
+    """Response payload for single-step retrosynthesis."""
+
+    product_smiles: str = Field(..., description="Input product SMILES.")
+    candidates: List[RetroCandidateItem] = Field(..., description="Ranked precursor reactant candidates.")
+    count: int = Field(..., description="Number of returned candidates.")
+
+
+class ReactionStepSchema(BaseModel):
+    """Individual reaction transformation step in a multi-step synthetic pathway."""
+
+    step_number: int
+    reactants: List[str]
+    product: str
+    rule_name: str
+    confidence: float
+    yield_pct: float
+    cost: float
+
+
+class RetroPlanRequest(BaseModel):
+    """Request payload for multi-step retrosynthesis route planning."""
+
+    smiles: str = Field(..., description="Target molecule SMILES to plan synthesis route for.")
+    max_depth: int = Field(default=5, ge=1, le=10, description="Maximum search tree depth.")
+    timeout_sec: float = Field(default=5.0, ge=0.5, le=60.0, description="Search timeout in seconds.")
+    render_mermaid: bool = Field(default=False, description="Whether to include rendered Mermaid diagram.")
+
+
+class RetroPlanResponse(BaseModel):
+    """Response payload containing complete retrosynthesis pathway."""
+
+    target_smiles: str
+    solved: bool
+    total_depth: int
+    cumulative_yield: float
+    total_cost: float
+    starting_materials: List[str]
+    steps: List[ReactionStepSchema]
+    mermaid_diagram: Optional[str] = None
+

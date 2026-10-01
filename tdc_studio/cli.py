@@ -1704,6 +1704,112 @@ def batch_predict_cli(
     console.print(table)
 
 
+@app.command("ti")
+@app.command("therapeutic-index")
+def therapeutic_index_cli(
+    smiles: str = typer.Argument(..., help="Candidate drug molecule SMILES"),
+    kd: Optional[float] = typer.Option(None, "--kd", help="On-target binding affinity Kd in nM"),
+    target_seq: Optional[str] = typer.Option(None, "--target-seq", help="Target amino acid sequence"),
+    dose: float = typer.Option(100.0, "--dose", help="Reference oral dose in mg"),
+    herg_ic50: Optional[float] = typer.Option(None, "--herg-ic50", help="Explicit hERG IC50 in nM"),
+    model_dir: Optional[str] = typer.Option("models/export", "--model-dir", help="Path to exported models"),
+):
+    """Evaluate Therapeutic Index, hERG Safety Window, and Clinical Developability."""
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from tdc_studio.evaluation.therapeutic_index import TherapeuticIndexEngine
+    from tdc_studio.serving.unified_pipeline import UnifiedADMETPipeline
+
+    console.print("\n[bold cyan]🧪 TDC-Studio Therapeutic Index & Clinical Developability Engine[/bold cyan]")
+    console.print(f"  Molecule: [bold yellow]{smiles}[/bold yellow]")
+
+    pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
+    engine = TherapeuticIndexEngine(admet_pipeline=pipeline)
+
+    profile = engine.compute(
+        smiles=smiles,
+        target_kd_nm=kd,
+        target_sequence=target_seq,
+        herg_ic50_nm=herg_ic50,
+        dose_mg=dose,
+    )
+
+    # Format colors
+    score = profile.clinical_developability_score
+    score_color = "green" if score >= 80 else ("yellow" if score >= 60 else "red")
+    tier_color = (
+        "green"
+        if "Safe" in profile.herg_risk_tier
+        else ("yellow" if "Borderline" in profile.herg_risk_tier else "red")
+    )
+
+    table = Table(title="Pharmacological Safety Margin & Potency Profile", show_header=True)
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_column("Assessment", style="bold")
+
+    table.add_row("Target Potency (Kd)", f"{profile.target_kd_nm:.2f} nM", f"pKd = {profile.target_pkd:.2f}")
+    table.add_row("hERG IC50 (Potassium Channel)", f"{profile.herg_ic50_nm:.1f} nM", "TDC Blocker Calibration")
+    table.add_row(
+        "hERG Safety Margin (IC50 / Kd)",
+        f"{profile.herg_safety_margin:.1f}x",
+        f"[{tier_color}]{profile.herg_risk_tier}[/{tier_color}]",
+    )
+    table.add_row("Therapeutic Window (log10)", f"{profile.herg_therapeutic_window_log10:.2f}", "Target Window >= 2.0")
+    table.add_row(
+        "DILI Hepatotoxicity Risk",
+        f"{profile.dili_risk_probability:.2%}",
+        "[green]Low[/green]" if profile.dili_risk_probability < 0.5 else "[red]High Risk[/red]",
+    )
+    table.add_row(
+        "ClinTox Clinical Failure Risk",
+        f"{profile.clintox_risk_probability:.2%}",
+        "[green]Low[/green]" if profile.clintox_risk_probability < 0.5 else "[red]High Risk[/red]",
+    )
+    table.add_row(
+        "AMES Mutagenicity Risk",
+        f"{profile.ames_mutagenicity_probability:.2%}",
+        "[green]Negative[/green]" if profile.ames_mutagenicity_probability < 0.5 else "[red]Positive (Alert)[/red]",
+    )
+
+    if profile.pbpk_cmax_free_ug_ml is not None:
+        table.add_row(
+            f"PBPK Cmax (Free, {dose}mg dose)",
+            f"{profile.pbpk_cmax_free_ug_ml:.4f} ug/mL",
+            "Unbound in vivo systemic exposure",
+        )
+    if profile.in_vivo_herg_margin is not None:
+        table.add_row("In Vivo Free hERG Margin", f"{profile.in_vivo_herg_margin:.1f}x", "FDA S7B recommends >= 30x")
+
+    console.print(table)
+
+    comp = profile.component_scores
+    console.print(
+        Panel(
+            f"[bold {score_color}]Clinical Developability Index (CDI): {score:.1f} / 100[/bold {score_color}] "
+            f"([bold]{profile.developability_tier}[/bold])\n\n"
+            f"  • Potency Pillar: [cyan]{comp.potency:.1f} / 25[/cyan]\n"
+            f"  • Safety Window Pillar: [cyan]{comp.safety_window:.1f} / 25[/cyan]\n"
+            f"  • Organ Toxicology Pillar: [cyan]{comp.organ_toxicology:.1f} / 25[/cyan]\n"
+            f"  • Human PK Druggability Pillar: [cyan]{comp.human_pk:.1f} / 25[/cyan]",
+            title="[bold]Summary Developability Score[/bold]",
+            border_style=score_color,
+        )
+    )
+
+    if profile.warnings:
+        console.print("\n[bold yellow]⚠️ Pharmacological & Regulatory Warnings:[/bold yellow]")
+        for w in profile.warnings:
+            console.print(f"  • [yellow]{w}[/yellow]")
+
+    if profile.recommendations:
+        console.print("\n[bold green]💡 Medicinal Chemistry Recommendations:[/bold green]")
+        for r in profile.recommendations:
+            console.print(f"  • [green]{r}[/green]")
+    console.print()
+
+
 switch_app = typer.Typer(help="Manage and switch Colab CLI accounts (tokens)")
 remote_app.add_typer(switch_app, name="switch")
 

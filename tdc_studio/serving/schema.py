@@ -162,6 +162,12 @@ class OptimizeRequest(BaseModel):
     )
     max_candidates: int = Field(default=5, description="Maximum number of top candidates to return.")
     sa_threshold: float = Field(default=4.0, description="Maximum synthetic accessibility score allowed.")
+    verify_retrosynthesis: bool = Field(
+        default=True, description="Whether to evaluate multi-step retrosynthesis and commercial stock availability."
+    )
+    require_deep_route: bool = Field(
+        default=False, description="Whether to mandate multi-step Retro* search for all candidates."
+    )
 
 
 class LiabilityDiagnosticItem(BaseModel):
@@ -189,6 +195,27 @@ class OptimizedCandidateItem(BaseModel):
     sa_score: float = Field(..., description="Synthetic accessibility score (1-10, <=3.5 is ideal).")
     scaffold_preserved: bool = Field(..., description="Whether Bemis-Murcko core scaffold is retained.")
     fitness_score: float = Field(..., description="Multi-objective Pareto fitness score.")
+    retrosynthesis_solved: Optional[bool] = Field(
+        None, description="Whether retrosynthesis route is solved to catalog stock."
+    )
+    retrosynthesis_steps: Optional[int] = Field(
+        None, description="Number of reaction steps to starting materials."
+    )
+    cumulative_yield: Optional[float] = Field(
+        None, description="Predicted cumulative synthesis yield percentage."
+    )
+    starting_materials: Optional[List[str]] = Field(
+        None, description="Required commercial stock starting materials."
+    )
+    synthetic_tractability_score: Optional[float] = Field(
+        None, description="Composite synthetic feasibility score (0.0~1.0)."
+    )
+    rejection_reason: Optional[str] = Field(
+        None, description="Reason if candidate failed synthesizability filter."
+    )
+    route_summary: Optional[str] = Field(
+        None, description="Human-readable synthesis route summary."
+    )
 
 
 class OptimizeResponse(BaseModel):
@@ -519,6 +546,83 @@ class RetroPlanResponse(BaseModel):
     )
     comparison_summary: List[RouteComparisonItem] = Field(
         default_factory=list, description="Summary comparison table of all candidate routes."
+    )
+
+
+# ------------------------------------------------------------------------------
+# Therapeutic Index & Clinical Developability Schemas
+# ------------------------------------------------------------------------------
+
+class ComponentScoresSchema(BaseModel):
+    """Pillar scores for clinical developability (0~25 pts each)."""
+
+    potency: float = Field(..., description="Target potency score (0~25).")
+    safety_window: float = Field(..., description="hERG/safety window score (0~25).")
+    organ_toxicology: float = Field(..., description="Organ/regulatory toxicity score (0~25).")
+    human_pk: float = Field(..., description="Human PK & oral druggability score (0~25).")
+
+
+class TherapeuticIndexRequest(BaseModel):
+    """Request payload for Therapeutic Index and Clinical Developability evaluation."""
+
+    smiles: str = Field(..., description="Candidate molecule SMILES.", min_length=1)
+    target_kd_nm: Optional[float] = Field(
+        None, gt=0, description="On-target binding affinity Kd in nM (optional if target_sequence provided)."
+    )
+    target_pkd: Optional[float] = Field(
+        None, description="On-target binding affinity pKd (-log10 Kd)."
+    )
+    target_sequence: Optional[str] = Field(
+        None, description="Target protein amino acid sequence for on-the-fly DTI affinity prediction."
+    )
+    herg_ic50_nm: Optional[float] = Field(
+        None, gt=0, description="Explicit or experimental hERG IC50 in nM (optional, calibrated from model if omitted)."
+    )
+    dose_mg: float = Field(
+        default=100.0, gt=0, description="Reference human oral dose in mg for in vivo exposure scaling."
+    )
+
+
+class TherapeuticIndexResponse(BaseModel):
+    """Response payload for Therapeutic Index and Clinical Developability profile."""
+
+    smiles: str = Field(..., description="Input molecule SMILES.")
+    canonical_smiles: str = Field(..., description="Canonicalized SMILES.")
+    target_kd_nm: float = Field(..., description="Target binding affinity Kd in nM.")
+    target_pkd: float = Field(..., description="Target binding affinity pKd (-log10 Kd).")
+    herg_ic50_nm: float = Field(..., description="hERG potassium channel IC50 in nM.")
+    herg_safety_margin: float = Field(
+        ..., description="hERG Safety Margin ratio (IC50 / Kd). Ideal >= 100x."
+    )
+    herg_therapeutic_window_log10: float = Field(
+        ..., description="Therapeutic Window in log10 scale: log10(IC50 / Kd)."
+    )
+    herg_risk_tier: str = Field(
+        ..., description="Cardiotoxicity risk tier ('Safe', 'Borderline', 'High Risk')."
+    )
+    dili_risk_probability: float = Field(..., description="Predicted drug-induced liver injury risk (0~1).")
+    clintox_risk_probability: float = Field(..., description="Predicted FDA clinical trial toxicity failure risk (0~1).")
+    ames_mutagenicity_probability: float = Field(..., description="Predicted mutagenicity risk (0~1).")
+    clinical_developability_score: float = Field(
+        ..., description="Overall Clinical Developability Index (CDI, 0~100 pts)."
+    )
+    developability_tier: str = Field(
+        ..., description="Developability tier ('Tier 1: High Clinical Potential', 'Tier 2', 'Tier 3')."
+    )
+    component_scores: ComponentScoresSchema = Field(..., description="Breakdown across the 4 pillars.")
+    pbpk_cmax_total_ug_ml: Optional[float] = Field(
+        None, description="Predicted peak total plasma concentration (ug/mL) at reference dose."
+    )
+    pbpk_cmax_free_ug_ml: Optional[float] = Field(
+        None, description="Predicted peak unbound free drug concentration (ug/mL)."
+    )
+    in_vivo_herg_margin: Optional[float] = Field(
+        None, description="In vivo free drug hERG safety margin (IC50 / Cmax_free). FDA recommends >= 30x."
+    )
+    target_name: Optional[str] = Field(None, description="Target protein name or identifier.")
+    warnings: List[str] = Field(default_factory=list, description="Pharmacological and regulatory warnings.")
+    recommendations: List[str] = Field(
+        default_factory=list, description="Medicinal chemistry optimization recommendations."
     )
 
 

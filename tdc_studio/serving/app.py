@@ -14,6 +14,9 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
+from tdc_studio.evaluation.therapeutic_index import (
+    TherapeuticIndexEngine,
+)
 from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
@@ -27,6 +30,7 @@ from tdc_studio.serving.pipeline import (
 )
 from tdc_studio.serving.schema import (
     BioisostereRecommendationItem,
+    ComponentScoresSchema,
     DTIInferenceRequest,
     DTIInferenceResponse,
     DTIMultiAffinityInferenceRequest,
@@ -45,6 +49,8 @@ from tdc_studio.serving.schema import (
     RetroPlanResponse,
     RetroSingleStepRequest,
     RetroSingleStepResponse,
+    TherapeuticIndexRequest,
+    TherapeuticIndexResponse,
     UnifiedADMETRequest,
     UnifiedADMETResponse,
     VirtualPopulationRequest,
@@ -709,6 +715,7 @@ def get_optimizer() -> Any:
             pipeline=unified_pipe,
             explainer=explainer,
             recommender=recommender,
+            verify_retrosynthesis=True,
             device=device,
         )
     return _optimizer
@@ -724,6 +731,8 @@ async def optimize_molecule(request: OptimizeRequest):
             request.smiles,
             target_liability=request.target_liability,
             max_candidates=request.max_candidates,
+            verify_retrosynthesis=request.verify_retrosynthesis,
+            require_deep_route=request.require_deep_route,
         )
 
         primary_item = None
@@ -750,6 +759,13 @@ async def optimize_molecule(request: OptimizeRequest):
                 sa_score=c.sa_score,
                 scaffold_preserved=c.scaffold_preserved,
                 fitness_score=c.fitness_score,
+                retrosynthesis_solved=c.retrosynthesis_solved,
+                retrosynthesis_steps=c.retrosynthesis_steps,
+                cumulative_yield=c.cumulative_yield,
+                starting_materials=c.starting_materials,
+                synthetic_tractability_score=c.synthetic_tractability_score,
+                rejection_reason=c.rejection_reason,
+                route_summary=c.route_summary,
             )
             for c in report.top_candidates
         ]
@@ -765,6 +781,90 @@ async def optimize_molecule(request: OptimizeRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lead optimization error: {str(e)}")
+
+
+# ------------------------------------------------------------------------------
+# Therapeutic Index & Clinical Developability Endpoints
+# ------------------------------------------------------------------------------
+_ti_engine: Optional[TherapeuticIndexEngine] = None
+
+
+def get_ti_engine() -> TherapeuticIndexEngine:
+    """Singleton getter for TherapeuticIndexEngine."""
+    global _ti_engine
+    if _ti_engine is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        unified_pipe = get_unified_pipeline()
+        if unified_pipe is None:
+            unified_pipe = UnifiedADMETPipeline(device=device)
+            set_unified_pipeline(unified_pipe)
+        dti_pipe = get_dti_pipeline()
+        _ti_engine = TherapeuticIndexEngine(
+            admet_pipeline=unified_pipe,
+            dti_pipeline=dti_pipe,
+            device=device,
+        )
+    return _ti_engine
+
+
+def set_ti_engine(engine: Optional[TherapeuticIndexEngine]) -> None:
+    """Setter for global TherapeuticIndexEngine (useful for test injection)."""
+    global _ti_engine
+    _ti_engine = engine
+
+
+@app.post("/predict/therapeutic-index", response_model=TherapeuticIndexResponse)
+@app.post("/predict/ti", response_model=TherapeuticIndexResponse)
+async def predict_therapeutic_index(request: TherapeuticIndexRequest):
+    """Predict comprehensive Therapeutic Index, hERG Safety Margin, and Clinical Developability."""
+    engine = get_ti_engine()
+    if engine.dti_pipeline is None:
+        engine.dti_pipeline = get_dti_pipeline()
+
+    try:
+        profile = await run_in_threadpool(
+            engine.compute,
+            smiles=request.smiles,
+            target_kd_nm=request.target_kd_nm,
+            target_pkd=request.target_pkd,
+            target_sequence=request.target_sequence,
+            herg_ic50_nm=request.herg_ic50_nm,
+            dose_mg=request.dose_mg,
+        )
+
+        return TherapeuticIndexResponse(
+            smiles=profile.smiles,
+            canonical_smiles=profile.canonical_smiles,
+            target_kd_nm=profile.target_kd_nm,
+            target_pkd=profile.target_pkd,
+            herg_ic50_nm=profile.herg_ic50_nm,
+            herg_safety_margin=profile.herg_safety_margin,
+            herg_therapeutic_window_log10=profile.herg_therapeutic_window_log10,
+            herg_risk_tier=profile.herg_risk_tier,
+            dili_risk_probability=profile.dili_risk_probability,
+            clintox_risk_probability=profile.clintox_risk_probability,
+            ames_mutagenicity_probability=profile.ames_mutagenicity_probability,
+            clinical_developability_score=profile.clinical_developability_score,
+            developability_tier=profile.developability_tier,
+            component_scores=ComponentScoresSchema(
+                potency=profile.component_scores.potency,
+                safety_window=profile.component_scores.safety_window,
+                organ_toxicology=profile.component_scores.organ_toxicology,
+                human_pk=profile.component_scores.human_pk,
+            ),
+            pbpk_cmax_total_ug_ml=profile.pbpk_cmax_total_ug_ml,
+            pbpk_cmax_free_ug_ml=profile.pbpk_cmax_free_ug_ml,
+            in_vivo_herg_margin=profile.in_vivo_herg_margin,
+            target_name=profile.target_name,
+            warnings=profile.warnings,
+            recommendations=profile.recommendations,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Therapeutic Index calculation error: {str(e)}"
+        )
 
 
 # ------------------------------------------------------------------------------

@@ -74,3 +74,30 @@ def test_self_correcting_optimizer_carboxylic_acid():
     assert Chem.MolFromSmiles(top_cand.smiles) is not None
     assert top_cand.sa_score <= 4.0
     assert top_cand.scaffold_preserved is True
+
+
+def test_self_correcting_optimizer_retrosynthesis_coupling():
+    # Verify that LeadOptimizer directly integrates Retrosynthesis verification
+    optimizer = SelfCorrectingOptimizer(
+        device="cpu",
+        sa_threshold=4.5,
+        verify_retrosynthesis=True,
+    )
+
+    report = optimizer.optimize(
+        smiles="c1ccccc1C(=O)O",
+        target_liability="dili",
+        max_candidates=3,
+        steps=5,
+        verify_retrosynthesis=True,
+        require_deep_route=False,
+    )
+
+    assert len(report.top_candidates) > 0
+    cand = report.top_candidates[0]
+    # Retrosynthesis fields should be populated
+    assert cand.retrosynthesis_solved is not None
+    assert cand.synthetic_tractability_score is not None
+    assert 0.0 <= cand.synthetic_tractability_score <= 1.0
+    if cand.retrosynthesis_solved:
+        assert cand.route_summary is not None

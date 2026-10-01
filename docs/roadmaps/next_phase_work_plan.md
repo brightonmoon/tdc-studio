@@ -144,40 +144,98 @@ flowchart TD
 
 ---
 
-### 📌 [Task 4] DTI 결합력 연계 치료지수 (Therapeutic Index) 통합 (Phase C)
+### 📌 [Task 4] DTI 결합력 연계 치료지수 (Therapeutic Index) 통합 & 임상 성공성 정량화
 
-- **현재 상태:** DTA 및 ADMET 모델 각각의 고도화 완료 후 연계 / TODOLIST 등록.
-- **선행 충족 조건:**
-  - DTI Phase B (BindingDB Kd Cold-Drug CI=0.7464)의 추가 에포크 및 Pocket 특성 주입을 통한 $CI \ge 0.76$ 달성.
-  - ADMET Cluster 5 hERG/DILI 챔피언 모델 Colab GPU 학습 완료.
-- **통합 설계안 (Preview):**
-  $$\text{Therapeutic Window} = \log_{10}\left( \frac{\text{Predicted } IC_{50}(\text{hERG Cardiotoxicity})}{\text{Predicted } K_d(\text{On-Target Efficacy})} \right)$$
-  - 안전역(Window) $> 2.0$ ($100$배 이상 농도 격차) 화합물만 임상 진입 후보로 자동 판정.
-
----
-
-### 📌 [Task 5] DTA + ADMET + Retrosynthesis 3-in-1 통합 웹 대시보드
-
-- **현재 상태:** 3대 핵심 모듈 완성 후 구축 / TODOLIST 등록.
-- **3대 모듈 개발 진행 현황 및 로드맵:**
-  1. **ADMET & PBPK:** 22대 전주기 및 PBPK 엔진 완료 (완성도 95%)
-  2. **DTA (약물-단백질 결합력):** ChemBERTa + ESM-2 Foundation 완료 (완성도 85%)
-  3. **Retrosynthesis (역합성 분석):** 차기 트랙 개발 예정
-- **최종 대시보드 청사진:**
-  - **Single Molecule Deep-Dive:**
-    - 좌측: Ketcher 2D 스케처 및 분자 3D 뷰어
-    - 중앙: 22대 ADMET 5축 레이더 차트 및 PBPK $C_p - t$ 곡선
-    - 우측 상단: 온타깃 DTA 친화도 및 치료지수(TI) 게이지
-    - 우측 하단: 역합성 분석 트리 (출발 시약 및 합성 단계수)
+- **상태:** **완료 (COMPLETE on `main`) ✅**
+- **산출물:**
+  - `tdc_studio/evaluation/therapeutic_index.py`: `TherapeuticIndexEngine`, `TherapeuticIndexProfile`, `ComponentScores`
+  - 4대 축 기반 Clinical Developability Index (CDI, 0~100 pts) 종합 산출
+  - hERG 안전역($IC_{50} / K_d$) 및 $\log_{10}$ Therapeutic Window
+  - PBPK 연계 In Vivo Free Drug Safety Margin ($C_{\max,\text{free}}$ vs hERG)
+  - REST API: `POST /predict/therapeutic-index`, `POST /predict/ti`
+  - CLI 인터페이스: `tdc-studio ti <smiles> [--kd <nM>] [--dose <mg>]`
+  - 단위 및 API 통합 테스트: 100% 통과 검증
 
 ---
 
-## 4. 종합 실행 일정표 (Integrated Phased Roadmap)
+### 📌 [Task 5] 자가교정 분자 생성기 ➔ Retro* 역합성 단일 폐루프 파이프라인 결합
+
+- **상태:** **완료 (COMPLETE on `main`) ✅**
+- **산출물:**
+  - `tdc_studio/generative/lead_optimizer.py`: `SelfCorrectingOptimizer`에 `verify_retrosynthesis=True` 기본 활성화
+  - `tdc_studio/generative/synthesizability_gate.py`: 3-Tier 합성성 평가(Tier 1 SAScore $\to$ Tier 2 상용 시약 즉시 분해 $\to$ Tier 3 Multi-step Retro*)
+  - `OptimizedCandidateItem` 및 API `/optimize`: `retrosynthesis_solved`, `retrosynthesis_steps`, `cumulative_yield`, `starting_materials`, `synthetic_tractability_score`, `route_summary` 완전 노출
+  - 합성 불가능한 가상 변이체 패널티 부여 및 검증된 시약 재고(Catalog stock) 기반 합성 경로 동시 제공
+
+---
+
+## 4. 📋 잔여 고도화 TODOLIST (Main 외 차기 브랜치 개발 과제)
+
+본 과제들은 사용자의 개발 원칙에 따라 `main` 브랜치에는 현재 머지하지 않고, 차기 전용 기능 브랜치(`feature/htvs-onnx`, `feature/pocket-dti`, `feature/unified-studio-ui`)에서 순차적으로 개발을 진행하도록 등록된 잔여 과제 목록입니다.
+
+### 📌 [Phase 2] 초고속 가상 스크리닝 (HTVS) & ONNX 서빙 가속화 (TODOLIST)
+- [ ] **Task 2-1: 4단계 계층형 가상 스크리닝 깔때기 (Hierarchical Screening Funnel)**
+  - Tier 1: Lipinski Ro5, Veber, PAINS, Brenk 구조 알럿 (100만 건/분)
+  - Tier 2: GBDT/Fingerprint ADME 간이 추론 (10만 건/분)
+  - Tier 3: D-MPNN 25대 ADMET + ESM-2 DTI 심층 신경망 (1만 건/분)
+  - Tier 4: PBPK 시뮬레이션 & Retro* 역합성 경로 확정 (최종 Top-100 화합물)
+- [ ] **Task 2-2: Full ONNX Runtime / TensorRT 25-Task ADMET Serving Backend**
+  - PyTorch JIT TorchScript 및 ONNX Runtime FP16/INT8 양자화 적용으로 서빙 Latency 5배 가속
+- [ ] **Task 2-3: 대규모 화합물 라이브러리(Enamine REAL, ZINC20) 스트리밍 배치 Ingestion**
+  - 청크 단위 멀티프로세싱 및 메모리 효율적 SDF/SMI/CSV 처리
+
+---
+
+### 📌 [Phase 3] 3D 구조/포켓 인식(Pocket-Aware) DTI & 실험실 연계 능동 학습 (TODOLIST)
+- [ ] **Task 3-1: Pocket-Specific Cross-Attention DTA**
+  - AlphaFold PDB 또는 P2Rank 포켓 좌표 기반 결합 부위 잔기 마스킹 슬라이싱
+  - 서열 전체 대신 결합 포켓 잔기만을 선택적으로 임베딩하여 국소 결합력 예측 정확도 향상
+- [ ] **Task 3-2: 멀티 프로바이더 플러그인 3D 도킹(Docking) 브릿지 구축 (Multi-Provider Pluggable Docking Client)**
+  - **설계 원칙**: 3D 도킹 모델의 직접 학습을 배제하고, 어댑터(Adapter) 패턴을 통해 **무료 로컬 엔진 vs 상용 클라우드 AI 서비스**를 사용자가 유연하게 선택/전환할 수 있도록 구축.
+  - **프로바이더 계층 구조 (`tdc_studio/docking/`)**:
+    - **1) 무료 기본 로컬 엔진 (`VinaLocalProvider`)**:
+      - AutoDock Vina / Smina / Meeko 연계 (Scripps Research 공식, 100% 무료, 오프라인 폐쇄망 지원, 무제한 실행, CPU/GPU 초 단위 연산).
+    - **2) 상용 클라우드 생성형 AI API (`TamarindDockingProvider` / `NeurosnapProvider`)**:
+      - DiffDock / DiffDock-L 기반 클라우드 REST API 연계 (`x-api-key`, GPU 인프라 관리 없이 대규모 분자 3D 결합 포즈 생성).
+    - **3) 엔터프라이즈 컨테이너 API (`BioNeMoProvider`)**:
+      - NVIDIA BioNeMo NIM (`build.nvidia.com`) DiffDock 마이크로서비스 연계 (대규모 파이프라인/사내 배포용).
+    - **4) 공공 3D 단백질 구조 자동 취득 (`AlphaFoldDBClient` / `RCSBClient`)**:
+      - UniProt ID 기반 AlphaFold EBI REST API PDB 자동 다운로드 및 pLDDT/P2Rank 포켓 좌표 자동 추출.
+  - **선언적 설정 지원 (`configs/docking.yaml`)**:
+    - `default_provider: "vina"` (기본 무료), 환경변수 기반 API 키 주입 (`TAMARIND_API_KEY`, `NEUROSNAP_API_KEY`, `NVIDIA_API_KEY`).
+  - **계층형 능동 학습(Active Learning) 파이프라인 연계**:
+    - 1차: TDC-Studio DTI + ADMET + Retro*로 대규모 라이브러리 스크리닝.
+    - 2차: 불확실성(Conformal Prediction) 높은 유망 후보 Top 10~50건만 선별하여 On-Demand 도킹 호출.
+    - 3차: 결합 자유에너지($\Delta G$, kcal/mol)를 `TherapeuticIndexProfile`에 반영하고, 3D 결합 포즈 PDB를 Web 대시보드(Molstar 뷰어)에 렌더링.
+- [ ] **Task 3-3: 능동 학습(Active Learning) 및 실험 추천기**
+  - Conformal Prediction 불확실성 기반 Bayesian Acquisition Function (Expected Improvement)
+  - 실험실(Wet-lab)에서 차기 합성/어세이해야 할 "최우선 후보 분자 Top 10" 자동 선정
+- [ ] **Task 3-4: Few-shot LoRA / Residual Adapter**
+  - 사내 측정 소량 실측치(10~50건) 기반 기존 SOTA 백본 보존형 미세조정 어댑터
+
+---
+
+### 📌 [Phase 4] 원클릭 IND Dossier 자동 생성기 & 3-in-1 통합 웹 대시보드 (TODOLIST)
+- [ ] **Task 4-1: 3-in-1 Unified Web Studio UI**
+  - Ketcher 2D 스케처 + Molstar 3D 구조 뷰어 + ADMET 5축 레이더 + PBPK $C_p - t$ 곡선 + Retro* 대화형 트리를 단일 인터랙티브 캔버스에 유기적 통합
+- [ ] **Task 4-2: Automated IND-Enabling Candidate Dossier Generator**
+  - 후보 화합물에 대해 클릭 한 번으로 규제기관(FDA IND/신약 승인) 검토용 종합 평가 보고서(PDF/HTML) 컴파일
+- [ ] **Task 4-3: 다회 투여(Repeat-Dose) 정상상태 PBPK 및 약물상호작용(DDI) 시뮬레이션**
+  - 1일 1회(QD) / 1일 2회(BID) 반복 투여 시 축적 지수 및 정상상태 농도($C_{ss,\max}, C_{ss,\min}$)
+  - Cluster 3 CYP450 동종효소 저해 상수($K_i$) 연계 병용 약물(DDI) AUC fold change 예측
+
+---
+
+## 5. 종합 마일스톤 및 상태 요약표 (Overall Milestone Summary)
 
 | 단계 | 추진 과제 | 핵심 목표 및 산출물 | 상태 |
 | :---: | :--- | :--- | :---: |
-| **Step 1** | **[트랙 1] XAI 설명가능 AI 엔진** | - Integrated Gradients 기여도 추출기<br>- 2D 히트맵 시각화 및 Bioisostere 추천<br>- `POST /explain` 서빙 엔드포인트 구축 | **완료 (COMPLETE) ✅** |
-| **Step 2** | **[트랙 2] 단점 자가교정 분자 생성기** | - 4단계 Closed-Loop 아키텍처 및 알고리즘 구현 (프로토타입 완료 ✅)<br>- Retrosynthesis(역합성) 트랙 개발 시 생성 모델 학습 및 통합 파이프라인으로 본격 연계 | **TODOLIST (Retrosynthesis 연계)** |
-| **Step 3** | **[트랙 3] VS 엔진 & ONNX 가속** | - ONNX 변환 및 대용량 배치 스트리밍 설계안 확정 | **TODOLIST / 검토** |
-| **Step 4** | **[트랙 4] DTI 연계 치료지수 (Phase C)** | - DTA 모델 성숙 후 hERG/CYP 연계 치료창 산출 | **TODOLIST** |
-| **Step 5** | **[트랙 5] 3-in-1 통합 웹 대시보드** | - DTA + ADMET + Retrosynthesis 완성 후 단일 웹 UI 통합 | **TODOLIST** |
+| **Phase 0** | **ADMET 25종 SOTA 벤치마크** | 5대 클러스터 D-MPNN, Tri-Hybrid, Two-Stage 전이학습 | **완료 (COMPLETE) ✅** |
+| **Phase 0** | **DTI Foundation Phase B & C** | ChemBERTa + ESM-2 Cross-Attention DTA | **완료 (COMPLETE) ✅** |
+| **Phase 0** | **Retrosynthesis & Reaction Engine** | USPTO-50K 데이터, Seq2Seq Retro, Forward Verifier, Retro* | **완료 (COMPLETE) ✅** |
+| **Phase 0** | **XAI 설명가능 AI 엔진** | Integrated Gradients 원자 기여도 및 2D 히트맵, Bioisostere | **완료 (COMPLETE) ✅** |
+| **Phase 1** | **[Track 1] 치료 지수(TI) 엔진 구축** | - TherapeuticIndexEngine (`tdc_studio/evaluation/therapeutic_index.py`)<br>- Clinical Developability Index (CDI, 0~100 pts) 종합 산출<br>- hERG Safety Margin, In Vivo PK 여유도, API & CLI | **완료 (COMPLETE on `main`) ✅** |
+| **Phase 1** | **[Track 2] LeadOptimizer ➔ Retro\* 결합** | - 자가교정 변이체 생성 시 3-Tier 합성성 자동 평가 및 Stock 경로 첨부<br>- `POST /optimize` 및 `OptimizedCandidateItem` 완결 연동 | **완료 (COMPLETE on `main`) ✅** |
+| **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기<br>- ONNX Runtime FP16/INT8 추론 가속화 및 배치 스트리밍 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 바인딩 포켓 잔기 어텐션<br>- 능동 학습 기반 차기 합성 화합물 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 4** | **3-in-1 Studio UI & IND Dossier 보고서** | - 2D/3D + ADMET + PBPK + Retro* 통합 웹 워크스페이스<br>- 원클릭 IND 후보물질 종합 Dossier(PDF/HTML) 생성기 | **📋 TODOLIST (차기 브랜치)** |

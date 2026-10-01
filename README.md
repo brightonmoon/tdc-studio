@@ -342,4 +342,7 @@ uv run python scripts/sync_wandb_models.py
 
 # 8. 프로덕션 Docker 컨테이너 구동
 docker compose -f deploy/docker-compose.yml up -d
+
+# 9. 온타깃 결합력(Kd) 및 hERG 연계 치료 지수(TI) & 임상 성공성 평가 CLI
+uv run tdc-studio ti "CC(=O)Oc1ccccc1C(=O)O" --kd 10.0
 ```

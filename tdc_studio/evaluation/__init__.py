@@ -12,6 +12,11 @@ from tdc_studio.evaluation.retro_metrics import (
     compute_top_k_exact_match,
     evaluate_multistep_routes,
 )
+from tdc_studio.evaluation.therapeutic_index import (
+    ComponentScores,
+    TherapeuticIndexEngine,
+    TherapeuticIndexProfile,
+)
 
 __all__ = [
     "TherapeuticsEvaluator",
@@ -22,4 +27,7 @@ __all__ = [
     "compute_top_k_exact_match",
     "compute_invalid_smiles_rate",
     "evaluate_multistep_routes",
+    "TherapeuticIndexEngine",
+    "TherapeuticIndexProfile",
+    "ComponentScores",
 ]

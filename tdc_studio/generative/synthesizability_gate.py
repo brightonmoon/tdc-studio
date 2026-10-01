@@ -70,6 +70,15 @@ class SynthesizabilityGate:
 
         # --- Tier 2: 1-Step Stock Availability (10ms) ---
         if self.stock.is_in_stock(smiles):
+            stock_route = RetrosynthesisRoute(
+                target_smiles=smiles,
+                steps=[],
+                solved=True,
+                total_depth=0,
+                cumulative_yield=100.0,
+                total_cost=5.0,
+                starting_materials=[smiles],
+            )
             return SynthesizabilityReport(
                 smiles=smiles,
                 passed=True,
@@ -77,17 +86,21 @@ class SynthesizabilityGate:
                 tier1_sa_passed=True,
                 tier2_1step_passed=True,
                 tier3_route_solved=True,
+                route=stock_route,
+                routes=[stock_route],
                 alternative_routes_count=1,
                 synthetic_tractability_score=1.0,
             )
 
         tier2_candidates = self.rule_policy.predict_reactants(smiles, top_k=5)
         tier2_passed = False
+        tier2_reactants = []
         for react_str, _ in tier2_candidates:
             frags = [f.strip() for f in react_str.split(".") if f.strip()]
             all_in_stock, _ = self.stock.check_all_in_stock(frags)
             if all_in_stock:
                 tier2_passed = True
+                tier2_reactants = frags
                 break
 
         # Fast feasibility tractability baseline
@@ -95,6 +108,29 @@ class SynthesizabilityGate:
 
         # If deep multi-step route is not strictly required, pass on Tier 1 + Tier 2
         if not require_deep_route:
+            route_tier2 = None
+            if tier2_passed:
+                from tdc_studio.retrosynthesis.route import ReactionStep
+
+                route_tier2 = RetrosynthesisRoute(
+                    target_smiles=smiles,
+                    steps=[
+                        ReactionStep(
+                            step_number=1,
+                            reactants=tier2_reactants,
+                            product=smiles,
+                            rule_name="Single-Step Stock Disconnection",
+                            confidence=0.92,
+                            yield_pct=85.0,
+                            cost=15.0,
+                        )
+                    ],
+                    solved=True,
+                    total_depth=1,
+                    cumulative_yield=85.0,
+                    total_cost=15.0,
+                    starting_materials=tier2_reactants,
+                )
             return SynthesizabilityReport(
                 smiles=smiles,
                 passed=tier2_passed,
@@ -102,6 +138,9 @@ class SynthesizabilityGate:
                 tier1_sa_passed=True,
                 tier2_1step_passed=tier2_passed,
                 tier3_route_solved=False,
+                route=route_tier2,
+                routes=[route_tier2] if route_tier2 else None,
+                alternative_routes_count=1 if route_tier2 else 0,
                 synthetic_tractability_score=round(tractability, 2),
                 rejection_reason=None if tier2_passed else "No single-step stock precursor set found",
             )

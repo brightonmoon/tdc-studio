@@ -54,6 +54,10 @@ class OptimizedCandidate:
     retrosynthesis_solved: Optional[bool] = None
     retrosynthesis_steps: Optional[int] = None
     cumulative_yield: Optional[float] = None
+    starting_materials: Optional[List[str]] = None
+    synthetic_tractability_score: Optional[float] = None
+    rejection_reason: Optional[str] = None
+    route_summary: Optional[str] = None
 
 
 @dataclass
@@ -94,7 +98,8 @@ class SelfCorrectingOptimizer:
         recommender: Optional[BioisostereRecommender] = None,
         sa_threshold: float = 4.0,
         synthesizability_gate: Optional[Any] = None,
-        verify_retrosynthesis: bool = False,
+        verify_retrosynthesis: bool = True,
+        require_deep_route: bool = False,
         device: str = "cpu",
     ):
         """Initialize the Self-Correcting Lead Optimizer."""
@@ -103,8 +108,9 @@ class SelfCorrectingOptimizer:
         self.recommender = recommender or BioisostereRecommender()
         self.sa_threshold = sa_threshold
         self.verify_retrosynthesis = verify_retrosynthesis
+        self.require_deep_route = require_deep_route
         self.gate = synthesizability_gate
-        if self.verify_retrosynthesis and self.gate is None:
+        if self.gate is None:
             from tdc_studio.generative.synthesizability_gate import SynthesizabilityGate
 
             self.gate = SynthesizabilityGate(sa_threshold=self.sa_threshold)
@@ -195,6 +201,8 @@ class SelfCorrectingOptimizer:
         target_liability: Optional[str] = None,
         max_candidates: int = 5,
         steps: int = 20,
+        verify_retrosynthesis: Optional[bool] = None,
+        require_deep_route: Optional[bool] = None,
     ) -> OptimizationReport:
         """Run complete 4-step closed-loop optimization on the target molecule.
 
@@ -203,6 +211,8 @@ class SelfCorrectingOptimizer:
             target_liability: Optional explicit liability key (e.g. 'herg', 'ames', 'dili', 'clearance').
             max_candidates: Number of top candidates to return.
             steps: Number of Integrated Gradients steps.
+            verify_retrosynthesis: Override retrosynthesis verification flag.
+            require_deep_route: Whether to mandate full multi-step Retro* search.
 
         Returns:
             OptimizationReport with diagnosed liabilities, localized hotspots, and top candidates.
@@ -310,14 +320,42 @@ class SelfCorrectingOptimizer:
             retro_solved = None
             retro_steps = None
             cum_yield = None
-            if self.verify_retrosynthesis and self.gate is not None:
-                rep = self.gate.evaluate_candidate(cand_smi, require_deep_route=False)
+            starting_materials = None
+            tractability_score = None
+            rejection_reason = None
+            route_summary = None
+
+            do_verify = (
+                self.verify_retrosynthesis
+                if verify_retrosynthesis is None
+                else verify_retrosynthesis
+            )
+            deep_route = (
+                self.require_deep_route
+                if require_deep_route is None
+                else require_deep_route
+            )
+
+            if do_verify and self.gate is not None:
+                rep = self.gate.evaluate_candidate(cand_smi, require_deep_route=deep_route)
                 retro_solved = rep.passed
+                tractability_score = rep.synthetic_tractability_score
                 if rep.route:
                     retro_steps = rep.route.total_depth
                     cum_yield = rep.route.cumulative_yield
-                if not rep.passed:
+                    starting_materials = rep.route.starting_materials
+                    n_stock = len(starting_materials) if starting_materials else 0
+                    route_summary = f"{retro_steps} step(s), yield {cum_yield:.1f}%, {n_stock} stock precursor(s)"
+                elif rep.passed and rep.tier2_1step_passed:
+                    retro_steps = 1
+                    cum_yield = 85.0
+                    route_summary = "1 step (Catalog stock precursors available)"
+
+                if rep.passed:
+                    fitness += 0.20 * (tractability_score or 0.5)
+                else:
                     fitness -= 0.5  # Penalize synthetic infeasibility
+                    rejection_reason = rep.rejection_reason
 
             candidate_obj = OptimizedCandidate(
                 smiles=cand_smi,
@@ -333,6 +371,10 @@ class SelfCorrectingOptimizer:
                 retrosynthesis_solved=retro_solved,
                 retrosynthesis_steps=retro_steps,
                 cumulative_yield=cum_yield,
+                starting_materials=starting_materials,
+                synthetic_tractability_score=tractability_score,
+                rejection_reason=rejection_reason,
+                route_summary=route_summary,
             )
             evaluated_candidates.append(candidate_obj)
 

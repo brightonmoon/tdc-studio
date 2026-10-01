@@ -180,9 +180,17 @@ flowchart TD
   - Tier 3: D-MPNN 25대 ADMET + ESM-2 DTI 심층 신경망 (1만 건/분)
   - Tier 4: PBPK 시뮬레이션 & Retro* 역합성 경로 확정 (최종 Top-100 화합물)
 - [ ] **Task 2-2: Full ONNX Runtime / TensorRT 25-Task ADMET Serving Backend**
-  - PyTorch JIT TorchScript 및 ONNX Runtime FP16/INT8 양자화 적용으로 서빙 Latency 5배 가속
+  - PyTorch JIT TorchScript 및 ONNX Runtime FP16/INT8 동적 양자화(`quantize_dynamic`) 적용으로 서빙 Latency 5배 가속
 - [ ] **Task 2-3: 대규모 화합물 라이브러리(Enamine REAL, ZINC20) 스트리밍 배치 Ingestion**
   - 청크 단위 멀티프로세싱 및 메모리 효율적 SDF/SMI/CSV 처리
+- [ ] **Task 2-4: RDKit 기반 화합물 염/용매 분리 표준화 및 PAINS/Brenk 필터 (`tdc_studio/data/standardizer.py`, `tdc_studio/features/filters.py`)**
+  - 사용자 업로드 파일(SDF/CSV) 내 염(HCl, TFA, Na+) 및 용매(DMSO) 혼입 방지를 위한 RDKit `rdMolStandardize` 기반 `MolecularStandardizer` (최대 단편 선택 `LargestFragmentChooser`, 비이온화 중화 `Uncharger`)
+  - RDKit `FilterCatalog` 내장 PAINS (A/B/C 480종) 및 Brenk (105종 원치 않는 반응성 작용단) 고속 필터링 (불필요한 바퀴 재발명 배제)
+- [ ] **Task 2-5: NSGA-II 다목적 파레토 비지배 정렬 & Tanimoto 다양성 필터 (`tdc_studio/generative/pareto_ranker.py`)**
+  - 임의의 선형 가중치 합산 방식의 한계를 극복하고, 비지배 정렬(Non-dominated Sorting)과 밀집도 거리(Crowding Distance) 기반 다목적 파레토 프론트(Pareto Front) 산출
+  - RDKit `MaxMinPicker` 기반 Tanimoto 지문 거리 다양성 선별로 최종 추천 후보의 구조적 쏠림 방지
+- [ ] **Task 2-6: 대용량 상용 시약 카탈로그(Enamine/ZINC) 온디맨드 스트리밍 로더 (`tdc_studio/retrosynthesis/stock.py`)**
+  - 60종 기본 내장 시약 외에 Enamine Building Blocks (~30만 건) 압축 TSV를 메모리 효율적으로 스트리밍 파싱하여 $O(1)$ 해시 인덱싱하는 경량 로더 연계
 
 ---
 
@@ -212,6 +220,8 @@ flowchart TD
   - 실험실(Wet-lab)에서 차기 합성/어세이해야 할 "최우선 후보 분자 Top 10" 자동 선정
 - [ ] **Task 3-4: Few-shot LoRA / Residual Adapter**
   - 사내 측정 소량 실측치(10~50건) 기반 기존 SOTA 백본 보존형 미세조정 어댑터
+- [ ] **Task 3-5: 단백질 잔기 기여도 Cross-Attention XAI (`tdc_studio/explainability/target_attention.py`)**
+  - `CrossAttentionFusion` 모델의 Attention Matrix($L_{\text{drug}} \times L_{\text{protein}}$)를 집계하여 표적 단백질 서열 중 결합을 주도하는 상위 아미노산 잔기 Top 10 및 중요도 히트맵 추출.
 
 ---
 
@@ -367,7 +377,7 @@ tdc_studio/
 | **Phase 0** | **XAI 설명가능 AI 엔진** | Integrated Gradients 원자 기여도 및 2D 히트맵, Bioisostere | **완료 (COMPLETE) ✅** |
 | **Phase 1** | **[Track 1] 치료 지수(TI) 엔진 구축** | - TherapeuticIndexEngine (`tdc_studio/evaluation/therapeutic_index.py`)<br>- Clinical Developability Index (CDI, 0~100 pts) 종합 산출<br>- hERG Safety Margin, In Vivo PK 여유도, API & CLI | **완료 (COMPLETE on `main`) ✅** |
 | **Phase 1** | **[Track 2] LeadOptimizer ➔ Retro\* 결합** | - 자가교정 변이체 생성 시 3-Tier 합성성 자동 평가 및 Stock 경로 첨부<br>- `POST /optimize` 및 `OptimizedCandidateItem` 완결 연동 | **완료 (COMPLETE on `main`) ✅** |
-| **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기 (Ro5 $\to$ GBDT $\to$ D-MPNN $\to$ PBPK/Retro*)<br>- ONNX Runtime FP16/INT8 추론 가속화 및 대규모 라이브러리 배치 스트리밍 | **📋 TODOLIST (차기 브랜치)** |
-| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 결합 포켓 잔기 슬라이싱 Cross-Attention DTA<br>- **Multi-Provider Pluggable 3D Docking Bridge** (`VinaLocalProvider`, `DiffDockCloudProvider`)<br>- Conformal 능동 학습 기반 차기 합성 후보 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기 (Ro5 $\to$ GBDT $\to$ D-MPNN $\to$ PBPK/Retro*)<br>- ONNX Runtime FP16/INT8 동적 양자화 가속 및 대규모 라이브러리 배치 스트리밍<br>- RDKit `rdMolStandardize` 염 제거 및 PAINS/Brenk 필터<br>- NSGA-II 다목적 파레토 비지배 정렬 & Tanimoto 다양성 선별<br>- Enamine 30만 상용 시약 스트리밍 로더 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 결합 포켓 잔기 슬라이싱 Cross-Attention DTA<br>- **Multi-Provider Pluggable 3D Docking Bridge** (`VinaLocalProvider`, `DiffDockCloudProvider`)<br>- 단백질 잔기 Cross-Attention 기여도 XAI 히트맵<br>- Conformal 능동 학습 기반 차기 합성 후보 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
 | **Phase 4** | **3-in-1 Studio UI & IND Dossier 보고서** | - **3-in-1 Unified Web Studio UI**: Ketcher 2D + Mol* 3D + ADMET/PBPK + Retro* DAG 트리 단일 워크스페이스 (`tdc_studio/ui/`)<br>- **Automated IND-Enabling Dossier Generator**: ICH M4 CTD Module 2/3/4 비임상 보고서 원클릭 생성 (`tdc_studio/dossier/`, PDF/HTML/JSON)<br>- **다회 투여 PBPK & DDI 시뮬레이터**: QD/BID 정상상태 축적비 및 CYP 저해 DDI 예측 | **📋 TODOLIST (차기 브랜치)** |
 

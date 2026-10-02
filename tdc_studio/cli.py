@@ -38,8 +38,11 @@ console = Console()
 
 
 def load_yaml(path: str) -> dict:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Configuration file not found: {path}")
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f)
+    return data if data is not None else {}
 
 
 def _batch_to_device(batch: dict, device: Any) -> dict:
@@ -168,7 +171,10 @@ def train(
     pretrained_path = cfg.get("pretrained_checkpoint")
     if pretrained_path and os.path.exists(pretrained_path):
         console.print(f"[bold cyan]Loading pre-trained weights from: {pretrained_path}[/bold cyan]")
-        chk = torch.load(pretrained_path, map_location=device)
+        try:
+            chk = torch.load(pretrained_path, map_location=device, weights_only=True)
+        except Exception:
+            chk = torch.load(pretrained_path, map_location=device)
         state_dict = chk.get("state_dict", chk) if isinstance(chk, dict) else chk
         model_dict = model.state_dict()
         matched = {k: v for k, v in state_dict.items() if k in model_dict and v.shape == model_dict[k].shape}
@@ -867,6 +873,9 @@ def ensemble(
             console.print(
                 f"\n[bold cyan]─── Training Ensemble Model #{idx + 1}/{len(seed_list)} (Seed: {seed}) ───[/bold cyan]"
             )
+            import random
+
+            random.seed(seed)
             torch.manual_seed(seed)
             np.random.seed(seed)
             if torch.cuda.is_available():

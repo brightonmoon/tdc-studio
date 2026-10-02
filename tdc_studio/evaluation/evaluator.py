@@ -12,7 +12,9 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
     mean_squared_error,
+    precision_score,
     r2_score,
+    recall_score,
     roc_auc_score,
 )
 
@@ -28,6 +30,11 @@ HIGHER_IS_BETTER_METRICS = {
     "average_precision",
     "accuracy",
     "acc",
+    "precision",
+    "prec",
+    "recall",
+    "sens",
+    "sensitivity",
     "f1",
     "f1_score",
     "f1_macro",
@@ -237,6 +244,22 @@ class TherapeuticsEvaluator:
                 else (y_pred >= 0.0).astype(int)
             )
             return float(balanced_accuracy_score(y_true.astype(int), binary_preds))
+
+        if metric in ("precision", "prec"):
+            binary_preds = (
+                (y_pred >= 0.5).astype(int)
+                if np.all((y_pred >= 0.0) & (y_pred <= 1.0))
+                else (y_pred >= 0.0).astype(int)
+            )
+            return float(precision_score(y_true.astype(int), binary_preds, zero_division=0))
+
+        if metric in ("recall", "sens", "sensitivity"):
+            binary_preds = (
+                (y_pred >= 0.5).astype(int)
+                if np.all((y_pred >= 0.0) & (y_pred <= 1.0))
+                else (y_pred >= 0.0).astype(int)
+            )
+            return float(recall_score(y_true.astype(int), binary_preds, zero_division=0))
 
         if metric in ("f1", "f1_score"):
             binary_preds = (

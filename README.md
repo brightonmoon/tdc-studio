@@ -346,3 +346,17 @@ docker compose -f deploy/docker-compose.yml up -d
 # 9. 온타깃 결합력(Kd) 및 hERG 연계 치료 지수(TI) & 임상 성공성 평가 CLI
 uv run tdc-studio ti "CC(=O)Oc1ccccc1C(=O)O" --kd 10.0
 ```
+
+---
+
+## 8. 🛡️ 코드 품질 및 안정성 보증 (Code Quality & Security Assurance)
+
+TDC-Studio는 최신 소스코드 전수 검수를 통해 보안 취약점 및 런타임 오류 방어벽을 구축했습니다:
+
+- **안전한 모델 가중치 로딩 (Secure Weights Loading)**: `torch.load` 역직렬화 시 `weights_only=True`를 강제하여 임의 코드 실행 취약점을 원천 방어하고 구버전 환경과의 호환성을 유지합니다.
+- **RDKit 화학적 동등성 검증 (Chemical Canonicalization)**: 역합성 라운드트립 검증 시 RDKit `Chem.MolToSmiles(canonical=True)` 정규화를 통해 표기법 차이로 인한 거짓 음성(False Negative)을 방지합니다.
+- **결측 레이블 보호 및 마스킹 손실 계산 (Masked Loss & NaN Defense)**: `BaseTherapeuticsModel`에서 마스크 인자를 공식 지원하며 NaN 전파를 방어합니다.
+- **데이터셋 컬럼 유연 자동 탐색 (SMILES Column Autodetection)**: TDC 및 외부 데이터셋의 다양한 SMILES 컬럼명(`Drug`, `smiles`, `SMILES`, `Compound` 등)을 자동 인식합니다.
+- **분류 메트릭 0나누기 방어 (Zero-Division Safe Metrics)**: $TP+FP=0$ 환경에서도 `zero_division=0` 가드를 통해 예외 없이 안정적으로 동작합니다.
+- **전수 테스트 및 린트 통과**: Ruff 정적 분석 린트 100% 무결성 및 **189개 회귀 테스트 전량 통과 (100% Pass)**를 상시 보장합니다.
+

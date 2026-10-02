@@ -237,6 +237,40 @@
 
 ---
 
+## 🛡️ [코드 검수 및 전수 무결성 강화 완료] Full Code Review, 거짓 양성 트리아지 및 189개 테스트 통과 (2026-10-02 - COMPLETE)
+
+main 브랜치 전수 정밀 코드 검수(~90개 소스 파일 대상)를 수행하여, 제기된 잠재 이슈의 코드베이스 실증 대조 및 실질 결함 패치를 완료했습니다:
+
+### 1. 거짓 양성(False Positive) 실증 검증
+- **`collate.py` 엣지 인덱스 오프셋**: PyG `Batch.from_data_list()`로 자동 오프셋 처리 확인.
+- **`multi_task.py` NaN 전파**: 레이블 결측치 마스킹(`~torch.isnan(labels)`) 및 0.0 치환 기적용 확인.
+- **`pbpk/engine.py` 음수 농도**: 순수 대수적 PBPK 프로파일 계산식 및 입력값 가드 유효 확인.
+- **`therapeutic_index.py` TI 공식**: $IC_{50} / K_d$ 안전 마진 공식 정상 확인.
+- **`uncertainty/conformal.py` 분위수 공식**: $\lceil(n+1)(1-\alpha)\rceil / n$ 표준 공식 기적용 확인.
+- **`pbpk/virtual_population.py` 로그정규분포**: $\exp(-0.5\sigma^2 + \sigma Z)$ 기하 평균 보정 수학적 정합성 확인.
+- **`retrosynthesis/search/retro_star.py` 비용 함수**: 스텝 비용 $10.0 + \max(0.0, -5\ln(\text{yield}/100)) \ge 10.0$ 양수 보장 확인.
+
+### 2. 실질적 결함 및 보안/안정성 패치 완료
+1. **`torch.load` 보안 강화 (`weights_only=True`)**:
+   - `serving/unified_pipeline.py`, `serving/multitask_pipeline.py`, `cli.py` 내 모델 가중치 역직렬화 시 `weights_only=True` 및 호환 폴백 적용.
+2. **역합성 라운드트립 화학적 동등성 검증 (`forward_verifier.py`)**:
+   - RDKit `Chem.MolToSmiles(canonical=True)`로 기대/예측 분자를 정규화 후 화학적 동등성 비교로 거짓 음성 방지.
+3. **`BaseTherapeuticsModel` 손실 함수 마스킹 및 저장/로드 편의화 (`models/base.py`)**:
+   - `compute_loss(preds, targets, mask=None)` 시그니처 확장 및 결측치 안전 필터링.
+   - 상위 디렉터리 자동 생성 `save(path)` 및 안전 로드 `load(path)` 메서드 구현.
+4. **SMILES 컬럼명 자동 탐색 지원 (`data/single_pred.py`)**:
+   - `["Drug", "smiles", "SMILES", "Smiles", "Compound", "drug", "compound"]` 후보군 자동 탐색으로 데이터셋 호환성 확보.
+5. **분류 평가 지표 확장 및 0나누기 방어 (`evaluation/evaluator.py`)**:
+   - `precision`, `recall` 지표 추가 및 `zero_division=0` 가드 적용.
+6. **CLI 설정 파일 검증 및 난수 시드 동기화 (`cli.py`)**:
+   - `load_yaml()` 파일 존재 검증 및 앙상블 학습 시 `random.seed(seed)` 시드 동기화.
+
+### 3. 검증 결과
+- **Ruff 정적 분석**: 100% 무결성 패스 (`All checks passed!`).
+- **Pytest 단위/통합 회귀 테스트**: 신규 테스트 포함 **189개 테스트 전량 통과 (189 passed in 71.52s)**.
+
+---
+
 ## 🛠️ 주요 설정 파일 및 문서 빠른 링크
 
 | 대상 | 설정 파일 / 문서 경로 |

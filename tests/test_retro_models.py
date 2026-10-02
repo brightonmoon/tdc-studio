@@ -103,6 +103,12 @@ def test_forward_verifier():
     assert is_valid is True
     assert conf >= 0.8
 
+    # Non-canonical SMILES representation of the same molecule should succeed
+    alt_expected = "CNC(=O)c1ccccc1"
+    is_valid_alt, conf_alt = verifier.verify_reaction(reactants, alt_expected)
+    assert is_valid_alt is True
+    assert conf_alt >= 0.8
+
     # Incompatible reactants should fail verification
     bad_reactants = "c1ccccc1.c1ccccc1"
     is_valid_bad, conf_bad = verifier.verify_reaction(bad_reactants, expected)

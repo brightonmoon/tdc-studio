@@ -17,11 +17,6 @@
 
 **[📖 문서 허브](docs/) • [🚀 빠른 시작](#-빠른-시작-quickstart) • [📊 SOTA 벤치마크](docs/benchmarks/admet_cluster_sota_archive.md) • [🧪 웹 대시보드](#3-대화형-웹-대시보드-ui-구동) • [🤝 기여 가이드](CONTRIBUTING.md)**
 
----
-
-<img src="assets/ui_dashboard_preview.png" alt="TDC-Studio Interactive Dashboard" width="96%" style="border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); margin-top: 10px; margin-bottom: 10px;" />
-<p align="center"><em>▲ TDC-Studio 내장 바이오메디컬 대화형 웹 대시보드 (25종 ADMET 레이더 차트 & 14-구획 PBPK 시뮬레이션)</em></p>
-
 </div>
 
 ---
@@ -39,28 +34,10 @@
 ## 🏗️ 시스템 아키텍처 (System Architecture)
 
 ```mermaid
-flowchart TD
-    subgraph Local["💻 Local Developer Workstation"]
-        A["UV (Python 3.11 Standard)"] --> B["Ruff Linter & Zero-training Pytest"]
-        B --> C["CLI Trigger: tdc-studio remote run"]
-    end
-
-    subgraph Colab["☁️ Cloud GPU Worker (Google Colab CLI)"]
-        D["Ephemeral GPU VM (T4 / A100 / H100)"]
-        E["TDC Cache & Multi-task Training / HPO"]
-        F["Weights & Biases (Realtime Runs & Artifacts)"]
-        D --> E --> F
-    end
-
-    subgraph Serving["🚀 Production Serving"]
-        G["Lightweight Docker Container (Python 3.11-slim)"]
-        H["FastAPI Microservice (/predict/pbpk, /dti, /healthz)"]
-        I["Interactive Biomedical Dashboard (Streamlit / Web UI)"]
-        G --> H --> I
-    end
-
-    C -->|google-colab-cli| D
-    F -->|Checkpoint / Model Sync| G
+flowchart LR
+    Local["💻 <b>Local Workstation</b><br>• Python 3.11 (uv)<br>• Ruff 린트 & 180+ 테스트<br>• CLI 1-Step 드라이런"]
+    -->|google-colab-cli| Colab["☁️ <b>Cloud GPU Worker</b><br>• Ephemeral VM (T4 / A100)<br>• TDC Multi-Task & HPO<br>• W&B 실시간 실험 추적"]
+    -->|Model Sync| Serving["🚀 <b>Production Serving</b><br>• Docker (Python 3.11-slim)<br>• FastAPI (/predict/pbpk, /dti)<br>• 대화형 웹 대시보드 UI"]
 ```
 
 ---

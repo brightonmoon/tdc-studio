@@ -374,6 +374,8 @@ class AminoAcidTokenizer:
             ids.extend([self.pad_id] * pad_len)
         return torch.tensor(ids, dtype=torch.long)
 
+    encode = __call__
+
     def decode(self, tensor: torch.Tensor) -> str:
         """Reverse mapping from token ids back to AA string (strips padding)."""
         inv_vocab = {v: k for k, v in self.vocab.items()}

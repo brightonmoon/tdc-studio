@@ -15,6 +15,7 @@ from tdc_studio.data.retrosyn import (
     remove_atom_mapping,
 )
 from tdc_studio.data.single_pred import ADMETDataModule, ToxDataModule
+from tdc_studio.data.standardizer import MolecularStandardizer, StandardizationResult
 from tdc_studio.data.transforms import (
     CanonicalSmilesNormalizer,
     MorganFingerprintTransform,
@@ -35,6 +36,8 @@ __all__ = [
     "SequenceTokenizer",
     "CanonicalSmilesNormalizer",
     "RandomizedSmilesAugmenter",
+    "MolecularStandardizer",
+    "StandardizationResult",
     "ADMETDataModule",
     "ToxDataModule",
     "DTADataModule",
@@ -50,4 +53,5 @@ __all__ = [
     "get_mock_retrosyn_dataset",
     "get_mock_yields_dataset",
 ]
+
 

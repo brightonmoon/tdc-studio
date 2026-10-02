@@ -2156,6 +2156,36 @@ def retro_plan_cli(
         console.print(f"[bold green]Saved routes JSON to:[/bold green] {output}")
 
 
+@app.command("dossier")
+def dossier_cli(
+    smiles: str = typer.Argument(..., help="Candidate molecule SMILES"),
+    target_seq: Optional[str] = typer.Option(None, "--target-seq", help="Target protein amino acid sequence"),
+    target_name: Optional[str] = typer.Option(None, "--target-name", help="Target protein or gene name"),
+    kd: Optional[float] = typer.Option(None, "--kd", help="Target binding affinity Kd in nM"),
+    dose: float = typer.Option(100.0, "--dose", help="Reference oral dose in mg"),
+    output: str = typer.Option("candidate_dossier.html", "--output", "-o", help="Output file path (.html or .json)"),
+    output_format: str = typer.Option("html", "--format", "-f", help="Output format: 'html' or 'json'"),
+):
+    """Generate one-click Candidate Evaluation Dossier (interactive HTML or JSON)."""
+    from tdc_studio.dossier.collector import DossierCollector
+    from tdc_studio.dossier.renderer import DossierRenderer
+
+    console.print("\n[bold cyan]🧬 TDC-Studio Candidate Evaluation Dossier Generator[/bold cyan]")
+    console.print(f"  Molecule: [bold yellow]{smiles}[/bold yellow]")
+
+    collector = DossierCollector()
+    payload = collector.collect(
+        smiles=smiles,
+        target_seq=target_seq,
+        target_name=target_name,
+        target_kd_nm=kd,
+        dose_mg=dose,
+    )
+
+    out_path = DossierRenderer.export_file(payload, output_path=output, output_format=output_format)
+    console.print(f"[bold green]✓ Dossier successfully generated:[/bold green] [bold]{out_path}[/bold]\n")
+
 
 if __name__ == "__main__":
     app()
+

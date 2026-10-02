@@ -203,6 +203,7 @@ class SelfCorrectingOptimizer:
         steps: int = 20,
         verify_retrosynthesis: Optional[bool] = None,
         require_deep_route: Optional[bool] = None,
+        use_pareto_ranking: bool = False,
     ) -> OptimizationReport:
         """Run complete 4-step closed-loop optimization on the target molecule.
 
@@ -378,9 +379,40 @@ class SelfCorrectingOptimizer:
             )
             evaluated_candidates.append(candidate_obj)
 
-        # Sort candidates by fitness score descending
-        evaluated_candidates.sort(key=lambda c: c.fitness_score, reverse=True)
-        top_candidates = evaluated_candidates[:max_candidates]
+        if use_pareto_ranking and len(evaluated_candidates) > 1:
+            from tdc_studio.generative.pareto_ranker import (
+                Objective,
+                ParetoCandidate,
+                ParetoRanker,
+            )
+
+            ranker = ParetoRanker()
+            pareto_objs = [
+                Objective(name="liability_delta", maximize=True),
+                Objective(name="sa_score", maximize=False),
+                Objective(name="synthetic_tractability", maximize=True),
+            ]
+            pareto_cands = [
+                ParetoCandidate(
+                    candidate_id=f"cand_{i}",
+                    smiles=c.smiles,
+                    objective_values={
+                        "liability_delta": c.liability_delta,
+                        "sa_score": c.sa_score,
+                        "synthetic_tractability": c.synthetic_tractability_score or 0.0,
+                    },
+                    metadata={"candidate_obj": c},
+                )
+                for i, c in enumerate(evaluated_candidates)
+            ]
+            ranked_pareto = ranker.rank_and_select(
+                pareto_cands, pareto_objs, top_k=max_candidates, ensure_diversity=True
+            )
+            top_candidates = [p.metadata["candidate_obj"] for p in ranked_pareto]
+        else:
+            # Sort candidates by fitness score descending
+            evaluated_candidates.sort(key=lambda c: c.fitness_score, reverse=True)
+            top_candidates = evaluated_candidates[:max_candidates]
 
         return OptimizationReport(
             input_smiles=smiles,

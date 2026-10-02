@@ -165,7 +165,11 @@ class UnifiedADMETPipeline:
                     "use_descriptors": False,
                 }
                 herg_m = MODELS.get("dmpnn")(model_cfg)
-                herg_m.load_state_dict(torch.load(herg_path, map_location=device))
+                try:
+                    herg_state = torch.load(herg_path, map_location=device, weights_only=True)
+                except TypeError:
+                    herg_state = torch.load(herg_path, map_location=device)
+                herg_m.load_state_dict(herg_state)
                 herg_m.eval()
                 herg_champion = herg_m
                 logger.info("Loaded hERG 2-Stage Champion model from %s", herg_path)
@@ -200,7 +204,10 @@ class UnifiedADMETPipeline:
             model_name = cfg.get("type", "dmpnn_mtl")
             model_cls = MODELS.get(model_name)
             model = model_cls(cfg)
-            state_dict = torch.load(weights_path, map_location=device)
+            try:
+                state_dict = torch.load(weights_path, map_location=device, weights_only=True)
+            except TypeError:
+                state_dict = torch.load(weights_path, map_location=device)
             model.load_state_dict(state_dict)
             model.eval()
             return model

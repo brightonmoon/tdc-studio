@@ -143,11 +143,24 @@ class ForwardVerifier(BaseForwardModel):
             (is_round_trip_valid: bool, verification_score: float)
         """
         clean_expected = remove_atom_mapping(expected_product_smiles)
+        mol_exp = Chem.MolFromSmiles(clean_expected)
+        canon_expected = (
+            Chem.MolToSmiles(mol_exp, canonical=True)
+            if mol_exp is not None
+            else clean_expected
+        )
+
         preds = self.predict_product(reactants_smiles, top_k=5)
 
         for prod_smi, conf in preds:
             clean_pred = remove_atom_mapping(prod_smi)
-            if clean_pred == clean_expected:
+            mol_pred = Chem.MolFromSmiles(clean_pred)
+            canon_pred = (
+                Chem.MolToSmiles(mol_pred, canonical=True)
+                if mol_pred is not None
+                else clean_pred
+            )
+            if canon_pred == canon_expected:
                 return True, conf
 
         return False, 0.0

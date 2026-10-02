@@ -35,6 +35,10 @@ def _scaffold_split(
     from rdkit import Chem
     from rdkit.Chem.Scaffolds import MurckoScaffold
 
+    if smiles_col not in df.columns:
+        candidates = ["Drug", "smiles", "SMILES", "Smiles", "Compound", "drug", "compound"]
+        smiles_col = next((c for c in candidates if c in df.columns), df.columns[0])
+
     scaffolds = defaultdict(list)
     for idx, row in df.iterrows():
         s = str(row[smiles_col])
@@ -179,8 +183,9 @@ class ADMETDataModule(BaseTDCDataModule):
 
     def _build_dataset(self, df: pd.DataFrame) -> MolecularDataset:
         samples: List[Dict[str, Any]] = []
-        smiles_col = "Drug" if "Drug" in df.columns else "smiles"
-        label_col = "Y" if "Y" in df.columns else "label"
+        candidates = ["Drug", "smiles", "SMILES", "Smiles", "Compound", "drug", "compound"]
+        smiles_col = next((c for c in candidates if c in df.columns), df.columns[0])
+        label_col = "Y" if "Y" in df.columns else ("label" if "label" in df.columns else df.columns[-1])
 
         for _, row in df.iterrows():
             s = str(row[smiles_col])
@@ -318,8 +323,9 @@ class ToxDataModule(BaseTDCDataModule):
 
     def _build_dataset(self, df: pd.DataFrame) -> MolecularDataset:
         samples: List[Dict[str, Any]] = []
-        smiles_col = "Drug" if "Drug" in df.columns else "smiles"
-        label_col = "Y" if "Y" in df.columns else "label"
+        candidates = ["Drug", "smiles", "SMILES", "Smiles", "Compound", "drug", "compound"]
+        smiles_col = next((c for c in candidates if c in df.columns), df.columns[0])
+        label_col = "Y" if "Y" in df.columns else ("label" if "label" in df.columns else df.columns[-1])
 
         for _, row in df.iterrows():
             s = str(row[smiles_col])

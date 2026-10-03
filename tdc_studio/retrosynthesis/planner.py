@@ -21,12 +21,13 @@ class RetroPlanner:
     def __init__(
         self,
         policy_type: str = "rule",
+        stock: Optional[StockLibrary] = None,
         max_depth: int = 5,
         beam_width: int = 5,
         timeout_sec: float = 5.0,
         verify_round_trip: bool = False,
     ):
-        self.stock = StockLibrary(load_builtin=True)
+        self.stock = stock or StockLibrary(load_builtin=True)
         self.verifier = ForwardVerifier()
         self.yield_predictor = YieldPredictor({"hidden_dim": 64, "n_bits": 512})
 

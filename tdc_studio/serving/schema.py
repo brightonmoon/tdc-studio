@@ -481,6 +481,8 @@ class ReactionStepSchema(BaseModel):
     confidence: float
     yield_pct: float
     cost: float
+    conditions: Optional[Dict[str, Any]] = None
+    cost_breakdown: Optional[Dict[str, Any]] = None
 
 
 class RetroRouteItem(BaseModel):
@@ -493,6 +495,9 @@ class RetroRouteItem(BaseModel):
     total_depth: int
     cumulative_yield: float
     total_cost: float
+    tcs_cost: Optional[float] = None
+    synthetic_complexity_score: Optional[float] = None
+    cost_breakdown: Optional[Dict[str, Any]] = None
     starting_materials: List[str]
     steps: List[ReactionStepSchema]
     mermaid_diagram: Optional[str] = None
@@ -506,6 +511,8 @@ class RouteComparisonItem(BaseModel):
     total_depth: int
     cumulative_yield: float
     total_cost: float
+    tcs_cost: Optional[float] = None
+    synthetic_complexity_score: Optional[float] = None
     starting_materials_count: int
     starting_materials: List[str]
     reaction_rules: List[str]
@@ -538,6 +545,9 @@ class RetroPlanResponse(BaseModel):
     total_depth: int
     cumulative_yield: float
     total_cost: float
+    tcs_cost: Optional[float] = None
+    synthetic_complexity_score: Optional[float] = None
+    cost_breakdown: Optional[Dict[str, Any]] = None
     starting_materials: List[str]
     steps: List[ReactionStepSchema]
     mermaid_diagram: Optional[str] = None

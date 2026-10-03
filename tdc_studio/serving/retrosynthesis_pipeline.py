@@ -83,6 +83,8 @@ class RetrosynthesisInferencePipeline:
                     confidence=s.confidence,
                     yield_pct=s.yield_pct,
                     cost=s.cost,
+                    conditions=s.conditions,
+                    cost_breakdown=s.cost_breakdown,
                 )
                 for s in r.steps
             ]
@@ -96,6 +98,9 @@ class RetrosynthesisInferencePipeline:
                     total_depth=r.total_depth,
                     cumulative_yield=r.cumulative_yield,
                     total_cost=r.total_cost,
+                    tcs_cost=r.tcs_cost,
+                    synthetic_complexity_score=r.synthetic_complexity_score,
+                    cost_breakdown=r.cost_breakdown,
                     starting_materials=r.starting_materials,
                     steps=steps_schema,
                     mermaid_diagram=m_str,
@@ -115,6 +120,8 @@ class RetrosynthesisInferencePipeline:
                 confidence=s.confidence,
                 yield_pct=s.yield_pct,
                 cost=s.cost,
+                conditions=s.conditions,
+                cost_breakdown=s.cost_breakdown,
             )
             for s in champion.steps
         ]
@@ -126,6 +133,9 @@ class RetrosynthesisInferencePipeline:
             total_depth=champion.total_depth,
             cumulative_yield=champion.cumulative_yield,
             total_cost=champion.total_cost,
+            tcs_cost=champion.tcs_cost,
+            synthetic_complexity_score=champion.synthetic_complexity_score,
+            cost_breakdown=champion.cost_breakdown,
             starting_materials=champion.starting_materials,
             steps=champ_steps,
             mermaid_diagram=champ_mermaid,

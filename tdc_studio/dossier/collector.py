@@ -110,13 +110,14 @@ class DossierCollector:
 
                 self.ti_engine = TherapeuticIndexEngine(device=self.device)
 
-            ti_obj = self.ti_engine.evaluate(
+            ti_obj = self.ti_engine.compute(
                 canon_smi,
                 target_kd_nm=target_kd_nm or 20.0,
                 dose_mg=dose_mg,
-                target_name=target_name,
             )
             ti_profile = ti_obj.to_dict()
+            if target_name:
+                ti_profile["target_name"] = target_name
             pbpk_dict = {
                 "cmax_total_ug_ml": ti_obj.pbpk_cmax_total_ug_ml,
                 "cmax_free_ug_ml": ti_obj.pbpk_cmax_free_ug_ml,

@@ -49,8 +49,23 @@ class RouteVisualizer:
             prod_id = node_map.get(step.product, _clean_node_id(step.product, f"P{i}"))
             node_map[step.product] = prod_id
 
+            cond_info = ""
+            if step.conditions:
+                cat = step.conditions.get("catalyst")
+                reag = step.conditions.get("reagents", [])
+                temp = step.conditions.get("temperature_c")
+                parts = []
+                if cat:
+                    parts.append(f"Cat: {cat}")
+                elif reag:
+                    parts.append(f"Reag: {reag[0]}")
+                if temp is not None:
+                    parts.append(f"{temp:.0f}°C")
+                if parts:
+                    cond_info = f"\\n[{', '.join(parts)}]"
+
             lines.append(
-                f'    {rxn_id}{{"Step {step.step_number}: {step.rule_name}\\n(Yield: {step.yield_pct:.1f}%)"}}:::reaction'
+                f'    {rxn_id}{{"Step {step.step_number}: {step.rule_name}\\n(Yield: {step.yield_pct:.1f}%){cond_info}"}}:::reaction'
             )
             lines.append(f"    {rxn_id} --> {prod_id}")
 
@@ -79,7 +94,7 @@ class RouteVisualizer:
         header = [
             "=" * 70,
             f"🎯 Target Molecule: {route.target_smiles}",
-            f"📊 Solved: {route.solved} | Depth: {route.total_depth} steps | Cumulative Yield: {route.cumulative_yield}% | Cost: ${route.total_cost:.2f}",
+            f"📊 Solved: {route.solved} | Depth: {route.total_depth} steps | Cumulative Yield: {route.cumulative_yield}% | Total Cost: ${route.total_cost:.2f}/g | SCS: {route.synthetic_complexity_score:.1f}/10",
             "=" * 70,
         ]
 
@@ -87,7 +102,16 @@ class RouteVisualizer:
         body = []
 
         for step in reversed(route.steps):
-            body.append(f"Step {step.step_number}: [{step.rule_name}] -> Yield: {step.yield_pct:.1f}%")
+            body.append(
+                f"Step {step.step_number}: [{step.rule_name}] -> Yield: {step.yield_pct:.1f}% | Cost: ${step.cost:.2f}/g"
+            )
+            if step.conditions and step.conditions.get("summary"):
+                body.append(f"  ├── Protocol: {step.conditions['summary']}")
+            if step.cost_breakdown:
+                cb = step.cost_breakdown
+                body.append(
+                    f"  ├── Breakdown: Raw: ${cb.get('materials_cost', 0):.1f} | Ops: ${cb.get('operational_cost', 0):.1f} | Purif: ${cb.get('purification_cost', 0):.1f} | Risk: ${cb.get('risk_penalty', 0):.1f}"
+                )
             body.append(f"  └── Product: {step.product}")
             body.append("  └── Precursors:")
             for r in step.reactants:
@@ -111,6 +135,8 @@ class RouteVisualizer:
                     "total_depth": r.total_depth,
                     "cumulative_yield": r.cumulative_yield,
                     "total_cost": r.total_cost,
+                    "tcs_cost": r.tcs_cost,
+                    "synthetic_complexity_score": r.synthetic_complexity_score,
                     "starting_materials_count": len(r.starting_materials),
                     "starting_materials": r.starting_materials,
                     "reaction_rules": rxn_rules,
@@ -126,8 +152,8 @@ class RouteVisualizer:
             return "No retrosynthesis routes available."
 
         header = [
-            "| 순위 (Rank) | 상태 (Status) | 단계 수 (Depth) | 누적 수율 (Yield) | 예상 비용 (Cost) | 출발 물질 (Starting BBs) | 주요 반응 (Reactions) |",
-            "| :---: | :---: | :---: | :---: | :---: | :--- | :--- |",
+            "| 순위 (Rank) | 상태 (Status) | 단계 수 (Depth) | 누적 수율 (Yield) | 예상 비용 (TCS) | 난이도 (SCS) | 출발 물질 (Starting BBs) | 주요 반응 (Reactions) |",
+            "| :---: | :---: | :---: | :---: | :---: | :---: | :--- | :--- |",
         ]
 
         rank_badges = {1: "🥇 1위 (최적)", 2: "🥈 2위 (대안 A)", 3: "🥉 3위 (대안 B)", 4: "4위 (대안 C)", 5: "5위 (대안 D)"}
@@ -138,14 +164,15 @@ class RouteVisualizer:
             status = "✅ Solved" if r.solved else "❌ Unsolved"
             depth = f"{r.total_depth}단계"
             cum_yield = f"{r.cumulative_yield:.1f}%"
-            cost = f"${r.total_cost:.2f}"
+            cost = f"${r.total_cost:.2f}/g"
+            scs = f"{r.synthetic_complexity_score:.1f}/10"
             bb_str = ", ".join(r.starting_materials[:3])
             if len(r.starting_materials) > 3:
                 bb_str += f" 외 {len(r.starting_materials)-3}종"
             rules = ", ".join(dict.fromkeys(s.rule_name for s in r.steps)) or "N/A"
 
             rows.append(
-                f"| {badge} | {status} | {depth} | {cum_yield} | {cost} | `{bb_str}` | {rules} |"
+                f"| {badge} | {status} | {depth} | {cum_yield} | {cost} | {scs} | `{bb_str}` | {rules} |"
             )
 
         return "\n".join(header + rows)

@@ -5,6 +5,13 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from rdkit import Chem
 
+from tdc_studio.retrosynthesis.adapters import (
+    BaseStockAdapter,
+    BuildingBlockRecord,
+    InMemoryStockAdapter,
+    UnifiedStockManager,
+)
+
 logger = logging.getLogger("tdc_studio.retrosynthesis.stock")
 
 # Common organic building blocks across medicinal chemistry (halides, acids, amines, boronics)
@@ -46,6 +53,10 @@ class StockLibrary:
         self.inchikey_to_tier: Dict[str, int] = {}
         self.banned_inchikeys: set = set()
 
+        self.stock_manager = UnifiedStockManager()
+        self._default_adapter = InMemoryStockAdapter(name="BuiltinStock")
+        self.stock_manager.register_adapter(self._default_adapter, priority=5)
+
         if load_builtin:
             self.load_compounds(COMMON_BUILDING_BLOCKS, default_cost=10.0, tier=0)
 
@@ -57,12 +68,17 @@ class StockLibrary:
             return None
         return Chem.MolToInchiKey(mol)
 
+    def register_adapter(self, adapter: BaseStockAdapter, priority: int = 10) -> None:
+        """Register an external stock backend (SQLite, CSV, custom LIMS/vendor API)."""
+        self.stock_manager.register_adapter(adapter, priority=priority)
+
     def ban_compound(self, smiles: str) -> bool:
         """Mark a compound as banned / out of stock (e.g. supply chain bottleneck, patent issue)."""
         key = self.smiles_to_inchikey(smiles)
         if key is None:
             return False
         self.banned_inchikeys.add(key)
+        self.stock_manager.ban_compound(smiles)
         return True
 
     def unban_compound(self, smiles: str) -> bool:
@@ -71,11 +87,13 @@ class StockLibrary:
         if key is None or key not in self.banned_inchikeys:
             return False
         self.banned_inchikeys.remove(key)
+        self.stock_manager.unban_compound(smiles)
         return True
 
     def clear_banned(self) -> None:
         """Clear all active bans."""
         self.banned_inchikeys.clear()
+        self.stock_manager.clear_banned()
 
     def is_banned(self, smiles: str) -> bool:
         """Check if molecule is currently banned."""
@@ -83,16 +101,29 @@ class StockLibrary:
         return bool(key and key in self.banned_inchikeys)
 
     def add_compound(
-        self, smiles: str, cost_per_gram: float = 10.0, tier: int = 0
+        self,
+        smiles: str,
+        cost_per_gram: float = 10.0,
+        tier: int = 0,
+        supplier: str = "CommonStock",
+        lead_time_days: int = 1,
     ) -> bool:
         """Register a single compound into the stock database."""
         key = self.smiles_to_inchikey(smiles)
         if key is None:
             return False
         canon_smi = Chem.MolToSmiles(Chem.MolFromSmiles(smiles), canonical=True)
+        cost = max(0.1, float(cost_per_gram))
         self.inchikey_to_smiles[key] = canon_smi
-        self.inchikey_to_cost[key] = max(0.1, float(cost_per_gram))
+        self.inchikey_to_cost[key] = cost
         self.inchikey_to_tier[key] = int(tier)
+
+        self._default_adapter.add_smiles(
+            canon_smi,
+            cost_per_gram=cost,
+            supplier=supplier,
+            lead_time_days=lead_time_days,
+        )
         return True
 
     def load_compounds(
@@ -113,14 +144,26 @@ class StockLibrary:
         key = self.smiles_to_inchikey(smiles)
         if key is None or key in self.banned_inchikeys:
             return False
-        return key in self.inchikey_to_smiles
+        if key in self.inchikey_to_smiles:
+            return True
+        return self.stock_manager.is_in_stock(key)
 
     def get_cost(self, smiles: str, default: float = 100.0) -> float:
         """Retrieve estimated commercial purchase cost per gram ($/g)."""
         key = self.smiles_to_inchikey(smiles)
         if key is None:
             return default
-        return self.inchikey_to_cost.get(key, default)
+        if key in self.inchikey_to_cost:
+            return self.inchikey_to_cost[key]
+        return self.stock_manager.get_cost(smiles, default=default)
+
+    def get_record(self, smiles: str) -> Optional[BuildingBlockRecord]:
+        """Fetch rich building block metadata (supplier, lead time, hazards)."""
+        return self.stock_manager.get_record(smiles)
+
+    def get_lead_time(self, smiles: str, default: int = 2) -> int:
+        """Retrieve delivery or procurement lead time in days."""
+        return self.stock_manager.get_lead_time(smiles, default=default)
 
     def check_all_in_stock(
         self, smiles_list: List[str]
@@ -136,5 +179,6 @@ class StockLibrary:
         return all_present, status
 
     def __len__(self) -> int:
-        return len(self.inchikey_to_smiles)
+        return max(len(self.inchikey_to_smiles), self.stock_manager.total_compounds())
+
 

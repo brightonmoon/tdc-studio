@@ -86,9 +86,10 @@ flowchart LR
   - **Route Search Success Rate** (% of target solved with stock reagents)
   - **Average Path Length** (평균 필요 단계 수)
   - **Call Count / Latency** (목표당 모델 호출 횟수 및 탐색 소요 시간)
-- [ ] **Task R4-3: USPTO-50K 공식 테스트 세트 벤치마킹 런 및 성능 리포트 발행**
+- [x] **Task R4-3: USPTO-50K 공식 테스트 세트 벤치마킹 런 및 성능 리포트 발행**
   - SOTA 모델(LocalRetro, Root-aligned Transformer, RetroXpert 등) 대비 정밀 비교
-  - `docs/benchmarks/retrosynthesis_uspto50k_benchmark_report.md` 발행
+  - Colab NVIDIA Tesla T4 GPU 클라우드 학습 및 체크포인트(`seq2seq_retro_uspto50k.pt`) 보존
+  - `docs/benchmarks/retrosynthesis_uspto50k_benchmark_report.md` 공식 리포트 발행 (Top-1 58.33%, Top-10 88.33%, Multi-step 95.0%)
 
 ---
 
@@ -143,6 +144,32 @@ flowchart LR
 - [x] **Task R7-6: 서빙 통합 테스트 및 main 브랜치 클린 병합**
   - `tests/test_serving_api.py` 대시보드 검증 확장 및 50+ 회귀 테스트 100% Pass
   - `main` 브랜치 최종 머지 완료 (`commit 6b3134c`)
+
+---
+
+### 🔹 Phase 8: 플러그형 시약 DB, 상세 반응 조건 추천 및 합성 총비용(TCS)/난이도(SCS) 엔진 (v2.3.0)
+- [x] **Task R8-1: 대규모 플러그형 빌딩 블록 저장소 어댑터 (`tdc_studio/retrosynthesis/adapters.py`)**
+  - InChIKey 기반 $O(1)$ 정규 해시 인덱싱
+  - `BaseStockAdapter` 표준 추상 클래스 설계
+  - `InMemoryStockAdapter` (고속 인메모리 Tier 0)
+  - `SQLiteStockAdapter` (사내 구축 DB 및 상용 벤더 카탈로그 영구 인덱스)
+  - `CSVStockAdapter` (조달 목록 및 LIMS TSV/CSV 연동)
+  - `UnifiedStockManager` (사내 재고 우선 다계층 공급망 오케스트레이터, 블랙리스트 차단 기능)
+- [x] **Task R8-2: 상세 실험 반응 조건 추천 엔진 (`tdc_studio/retrosynthesis/conditions.py`)**
+  - `ReactionCondition`: 촉매(Catalyst), 보조 시약(Reagents), 용매(Solvents), 반응 온도(°C), 시간(h), 분위기(Atmosphere), 정제법(Purification method)
+  - `ReactionConditionRecommender`: 10대 유기 반응 클래스 및 화학적 특이성 기반 표준 실험 프로토콜 추천
+- [x] **Task R8-3: 다차원 합성 총비용(TCS) 및 합성 난이도(SCS) 산출 엔진 (`tdc_studio/retrosynthesis/cost.py`)**
+  - `CostBreakdown`: 원자재비($C_{\text{materials}}$), 가동비($C_{\text{ops}}$), 정제비($C_{\text{purif}}$), 위험가산금($P_{\text{risk}}$), 총합성비용($/g)
+  - 후속 공정 누적 수율 감쇄 역수($1/\prod Y_k$) 기반 원료 소모 승수(Yield Loss Multiplier) 반영
+  - 합성 난이도 지수(Synthetic Complexity Score, SCS 1.0 ~ 10.0 scale)
+  - 조달/합성 소요 기간(Lead time) 추정
+- [x] **Task R8-4: 다단계 경로 탐색(`RetroStarSearcher`) 및 서빙 파이프라인 연동**
+  - 각 반응 단계별 조건 및 TCS 원가 명세 부착
+  - RouteRanker 다목적 Pareto 랭킹에 SCS 및 TCS 반영
+  - Visualizer (Mermaid 다이어그램 조건 표시, ASCII 트리 원가 명세, 대안 비교 테이블 확장)
+  - FastAPI 및 Pydantic 서빙 스키마 직렬화 지원
+- [x] **Task R8-5: 회귀 검증 및 신규 단위 테스트 스위트 (`tests/test_retro_cost_conditions.py`)**
+  - 전체 42개 역합성 테스트 100% Pass 및 Ruff 린트 0 에러 달성
 
 ---
 

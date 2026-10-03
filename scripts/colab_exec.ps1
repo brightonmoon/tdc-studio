@@ -46,7 +46,7 @@ with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             for item in tp.rglob('*'):
                 if '__pycache__' in item.parts or item.suffix in ('.pyc', '.pt', '.pth', '.log', '.npz'):
                     continue
-                if item.is_file() and item.stat().st_size <= 5 * 1024 * 1024:
+                if item.is_file() and item.stat().st_size <= 10 * 1024 * 1024:
                     rel_path = item.relative_to(root)
                     zf.write(item, arcname=str(rel_path).replace('\\', '/'))
 "@

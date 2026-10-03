@@ -2165,6 +2165,54 @@ def retro_plan_cli(
         console.print(f"[bold green]Saved routes JSON to:[/bold green] {output}")
 
 
+@app.command()
+def mcp(
+    transport: str = typer.Option("stdio", "--transport", "-t", help="Transport protocol: 'stdio' or 'sse'"),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host IP for SSE transport"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port number for SSE transport"),
+):
+    """Launch the TDC-Studio Model Context Protocol (MCP) Server for AI Agent collaboration."""
+    from tdc_studio.mcp.server import run_mcp_server
+
+    console.print(f"[bold green]🚀 Launching TDC-Studio MCP Server ({transport})...[/bold green]")
+    run_mcp_server(transport=transport, host=host, port=port)
+
+
+@app.command()
+def dossier(
+    smiles: str = typer.Argument(..., help="Candidate molecule SMILES string"),
+    target_name: str = typer.Option("Target", "--target", "-t", help="Target gene symbol or name"),
+    target_seq: Optional[str] = typer.Option(None, "--sequence", "-s", help="Target protein amino acid sequence"),
+    dose_mg: float = typer.Option(100.0, "--dose", "-d", help="Clinical oral dose in mg"),
+    output_dir: str = typer.Option("reports", "--output-dir", "-o", help="Output directory for reports"),
+):
+    """Generate an ICH CTD Nonclinical Candidate Dossier (HTML and JSON)."""
+    import json
+
+    from tdc_studio.dossier.collector import DossierCollector
+    from tdc_studio.dossier.renderer import DossierRenderer
+
+    os.makedirs(output_dir, exist_ok=True)
+    console.print(f"[bold cyan]🔍 Collecting nonclinical data for candidate:[/bold cyan] {smiles}")
+
+    collector = DossierCollector()
+    payload = collector.collect(smiles=smiles, target_seq=target_seq, target_name=target_name, dose_mg=dose_mg)
+
+    renderer = DossierRenderer()
+    html_content = renderer.render_html(payload)
+
+    safe_name = "".join(c if c.isalnum() else "_" for c in target_name)[:20]
+    html_path = os.path.join(output_dir, f"dossier_{safe_name}.html")
+    json_path = os.path.join(output_dir, f"dossier_{safe_name}.json")
+
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(payload.to_dict(), f, indent=2)
+
+    console.print(f"[bold green]✅ Standalone HTML Report:[/bold green] {html_path}")
+    console.print(f"[bold green]✅ Machine-readable JSON:[/bold green] {json_path}")
+
 
 if __name__ == "__main__":
     app()

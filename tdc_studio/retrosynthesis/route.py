@@ -1,7 +1,7 @@
 """Data structures for retrosynthetic pathways, reaction steps, and route trees."""
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -15,6 +15,8 @@ class ReactionStep:
     confidence: float
     yield_pct: float = 80.0
     cost: float = 10.0
+    conditions: Optional[Dict[str, Any]] = None
+    cost_breakdown: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -27,16 +29,22 @@ class RetrosynthesisRoute:
     total_depth: int = 0
     cumulative_yield: float = 100.0
     total_cost: float = 0.0
+    tcs_cost: float = 0.0
+    synthetic_complexity_score: float = 1.0
+    cost_breakdown: Optional[Dict[str, Any]] = None
     starting_materials: List[str] = field(default_factory=list)
     rank: int = 1
     rank_score: float = 0.0
 
-    def calculate_metrics(self) -> None:
+    def calculate_metrics(self, stock_manager: Optional[Any] = None) -> None:
         """Recompute depth, cumulative yield, and total cost across all steps."""
         self.total_depth = len(self.steps)
         if not self.steps:
             self.cumulative_yield = 100.0
             self.total_cost = 0.0
+            self.tcs_cost = 0.0
+            self.synthetic_complexity_score = 1.0
+            self.cost_breakdown = None
             return
 
         cum_y = 1.0
@@ -56,6 +64,26 @@ class RetrosynthesisRoute:
         # Starting materials are reactants that were not synthesized in any previous step
         self.starting_materials = sorted(list(all_reactants - produced))
 
+        # Evaluate comprehensive Total Cost of Synthesis (TCS) and complexity
+        try:
+            from tdc_studio.retrosynthesis.cost import TCSCalculator
+
+            tcs_calc = TCSCalculator()
+            cb = tcs_calc.evaluate_route(self.steps, self.target_smiles, stock_manager=stock_manager)
+            self.tcs_cost = cb.total_cost_per_gram
+            self.synthetic_complexity_score = cb.synthetic_complexity_score
+            self.cost_breakdown = cb.to_dict()
+
+            # Attach step cost breakdowns if not already present
+            if cb.step_costs and len(cb.step_costs) == len(self.steps):
+                for idx, s in enumerate(self.steps):
+                    if not s.cost_breakdown:
+                        s.cost_breakdown = cb.step_costs[idx]
+        except Exception:
+            # Fallback if TCSCalculator encounters non-SMILES or calculation failure
+            self.tcs_cost = self.total_cost
+            self.synthetic_complexity_score = round(1.0 + (len(self.steps) * 0.8), 2)
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize route to standard JSON-compatible dictionary."""
         return {
@@ -64,6 +92,9 @@ class RetrosynthesisRoute:
             "total_depth": self.total_depth,
             "cumulative_yield": self.cumulative_yield,
             "total_cost": self.total_cost,
+            "tcs_cost": self.tcs_cost,
+            "synthetic_complexity_score": self.synthetic_complexity_score,
+            "cost_breakdown": self.cost_breakdown,
             "starting_materials": self.starting_materials,
             "rank": self.rank,
             "rank_score": self.rank_score,
@@ -81,6 +112,9 @@ class RetrosynthesisRoute:
             total_depth=data.get("total_depth", len(steps)),
             cumulative_yield=data.get("cumulative_yield", 100.0),
             total_cost=data.get("total_cost", 0.0),
+            tcs_cost=data.get("tcs_cost", data.get("total_cost", 0.0)),
+            synthetic_complexity_score=data.get("synthetic_complexity_score", 1.0),
+            cost_breakdown=data.get("cost_breakdown"),
             starting_materials=data.get("starting_materials", []),
             rank=data.get("rank", 1),
             rank_score=data.get("rank_score", 0.0),
@@ -174,11 +208,21 @@ class RouteRanker:
             cost_norm = r.total_cost / max(1.0, max_cost)
             yield_penalty = max(0.0, 1.0 - (r.cumulative_yield / 100.0))
             depth_penalty = r.total_depth / 10.0
-            r.rank_score = round(0.45 * cost_norm + 0.40 * yield_penalty + 0.15 * depth_penalty, 4)
+            scs_norm = max(0.0, min(1.0, (r.synthetic_complexity_score - 1.0) / 9.0))
+            r.rank_score = round(
+                0.35 * cost_norm + 0.30 * yield_penalty + 0.15 * depth_penalty + 0.20 * scs_norm, 4
+            )
 
         # Sort by rank_score ascending (solved routes first)
         sorted_routes = sorted(
-            routes, key=lambda x: (not x.solved, x.rank_score, x.total_cost, -x.cumulative_yield)
+            routes,
+            key=lambda x: (
+                not x.solved,
+                x.rank_score,
+                x.synthetic_complexity_score,
+                x.total_cost,
+                -x.cumulative_yield,
+            ),
         )
         for idx, r in enumerate(sorted_routes, start=1):
             r.rank = idx

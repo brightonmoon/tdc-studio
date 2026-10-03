@@ -2,7 +2,6 @@
 
 import heapq
 import logging
-import math
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Set, Tuple
@@ -13,6 +12,8 @@ from tdc_studio.models.retrosynthesis.base import BaseRetroModel
 from tdc_studio.models.retrosynthesis.forward_verifier import ForwardVerifier
 from tdc_studio.models.retrosynthesis.rule_policy import RuleRetroPolicy
 from tdc_studio.models.retrosynthesis.yield_predictor import YieldPredictor
+from tdc_studio.retrosynthesis.conditions import ReactionConditionRecommender
+from tdc_studio.retrosynthesis.cost import TCSCalculator
 from tdc_studio.retrosynthesis.route import (
     ReactionStep,
     RetrosynthesisRoute,
@@ -44,6 +45,8 @@ class RetroStarSearcher:
         stock: Optional[StockLibrary] = None,
         verifier: Optional[ForwardVerifier] = None,
         yield_predictor: Optional[YieldPredictor] = None,
+        condition_recommender: Optional[ReactionConditionRecommender] = None,
+        tcs_calculator: Optional[TCSCalculator] = None,
         max_depth: int = 5,
         beam_width: int = 5,
         timeout_sec: float = 5.0,
@@ -53,6 +56,8 @@ class RetroStarSearcher:
         self.stock = stock or StockLibrary()
         self.verifier = verifier or ForwardVerifier()
         self.yield_predictor = yield_predictor or YieldPredictor({"hidden_dim": 64, "n_bits": 512})
+        self.condition_recommender = condition_recommender or ReactionConditionRecommender()
+        self.tcs_calculator = tcs_calculator or TCSCalculator()
         self.max_depth = max_depth
         self.beam_width = beam_width
         self.timeout_sec = timeout_sec
@@ -94,7 +99,7 @@ class RetroStarSearcher:
                     starting_materials=[canon_target],
                     rank=1,
                 )
-                route.calculate_metrics()
+                route.calculate_metrics(stock_manager=self.stock)
                 return [route]
 
             # Priority Queue for AND-OR frontier
@@ -134,7 +139,7 @@ class RetroStarSearcher:
                             steps=list(curr.path),
                             solved=True,
                         )
-                        route.calculate_metrics()
+                        route.calculate_metrics(stock_manager=self.stock)
                         raw_solved_routes.append(route)
 
                         if len(raw_solved_routes) >= target_candidates_count:
@@ -182,7 +187,31 @@ class RetroStarSearcher:
 
                     # Estimate reaction yield
                     pred_yield = self.yield_predictor.predict_yield(reactants_str, current_target)
-                    step_cost = 10.0 + max(0.0, -math.log(max(0.05, pred_yield / 100.0)) * 5.0)
+
+                    # Recommend detailed reaction conditions
+                    cond = self.condition_recommender.recommend_conditions(
+                        reactants=frags,
+                        product=current_target,
+                        rule_name="Disconnection",
+                    )
+
+                    # Calculate itemized step cost via TCSCalculator
+                    r_costs = {f: self.stock.get_cost(f) for f in frags}
+                    r_hazards = {}
+                    for f in frags:
+                        rec = self.stock.get_record(f)
+                        if rec and rec.hazards:
+                            r_hazards[f] = rec.hazards
+
+                    step_cost_info = self.tcs_calculator.calculate_step_cost(
+                        reactants=frags,
+                        product=current_target,
+                        yield_pct=pred_yield,
+                        condition=cond,
+                        reactant_costs=r_costs,
+                        reactant_hazards=r_hazards,
+                    )
+                    step_cost = step_cost_info["total_step_cost"]
 
                     new_step = ReactionStep(
                         step_number=len(curr.path) + 1,
@@ -191,7 +220,9 @@ class RetroStarSearcher:
                         rule_name="Disconnection",
                         confidence=confidence,
                         yield_pct=pred_yield,
-                        cost=round(step_cost, 2),
+                        cost=step_cost,
+                        conditions=cond.to_dict(),
+                        cost_breakdown=step_cost_info,
                     )
 
                     # Formulate next unsolved leaves
@@ -226,7 +257,7 @@ class RetroStarSearcher:
                 solved=False,
                 rank=1,
             )
-            fallback.calculate_metrics()
+            fallback.calculate_metrics(stock_manager=self.stock)
             return [fallback]
 
         finally:

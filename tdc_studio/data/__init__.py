@@ -1,9 +1,14 @@
 """Data module exposing TDC data abstractions, transforms, and collators."""
 
-from tdc_studio.data.admet_cluster import ADMETClusterDataModule
+try:
+    from tdc_studio.data.admet_cluster import ADMETClusterDataModule
+    from tdc_studio.data.bio_permeability import BioPermeabilityDataModule
+    from tdc_studio.data.collate import molecule_collate_fn
+except (ImportError, ModuleNotFoundError):
+    ADMETClusterDataModule = None
+    BioPermeabilityDataModule = None
+    molecule_collate_fn = None
 from tdc_studio.data.base import BaseTDCDataModule, MolecularDataset
-from tdc_studio.data.bio_permeability import BioPermeabilityDataModule
-from tdc_studio.data.collate import molecule_collate_fn
 from tdc_studio.data.multi_pred import DTADataModule
 from tdc_studio.data.multi_task import MultiTaskDataModule
 from tdc_studio.data.reaction import ForwardReactionDataModule

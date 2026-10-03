@@ -175,10 +175,27 @@ class GraphDTAModel(BaseTherapeuticsModel):
         """
         h_drug, h_target = self.extract_features(batch, return_sequence=return_sequence)
 
+        # Pocket-Specific Slicing: selectively slice target representations to binding pocket residues
+        pocket_indices = batch.get("pocket_indices")
+        if pocket_indices is not None and h_target.dim() == 3:
+            from tdc_studio.features.pocket_extractor import slice_pocket_embeddings
+            h_target = slice_pocket_embeddings(h_target, pocket_indices)
+
         extra_kwargs: Dict[str, Any] = {}
         for k in ("pocket_coords", "residue_importance", "target_padding_mask", "drug_padding_mask"):
             if k in batch:
-                extra_kwargs[k] = batch[k]
+                val = batch[k]
+                if (
+                    pocket_indices is not None
+                    and k in ("target_padding_mask", "residue_importance", "pocket_coords")
+                    and val is not None
+                    and hasattr(val, "shape")
+                ):
+                    target_dim_check = val.shape[-2] if k == "pocket_coords" else val.shape[-1]
+                    if target_dim_check > len(pocket_indices):
+                        from tdc_studio.features.pocket_extractor import slice_pocket_embeddings
+                        val = slice_pocket_embeddings(val, pocket_indices)
+                extra_kwargs[k] = val
 
 
         if return_attention:

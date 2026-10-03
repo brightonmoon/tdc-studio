@@ -1,3 +1,9 @@
+from tdc_studio.models.dti.adapter import (
+    FewShotDTAAdapter,
+    FewShotTrainer,
+    LoRALinear,
+    ResidualBottleneckAdapter,
+)
 from tdc_studio.models.dti.dta_model import GraphDTAModel
 from tdc_studio.models.dti.dual_modal_encoder import DualModalDrugEncoder
 from tdc_studio.models.dti.fusion import (
@@ -17,5 +23,9 @@ __all__ = [
     "ChemBERTaEncoder",
     "ESM2Encoder",
     "DualModalDrugEncoder",
+    "ResidualBottleneckAdapter",
+    "LoRALinear",
+    "FewShotDTAAdapter",
+    "FewShotTrainer",
 ]
 

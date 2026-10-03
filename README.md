@@ -72,21 +72,24 @@ tdc-studio/
 ├── docs/                        # 시스템 상세 가이드, 아키텍처, 벤치마크 아카이브
 ├── models/                      # 학습된 체크포인트 (.pt), 스케일러 (.pkl), 모델 아티팩트
 ├── scripts/                     # W&B 모델 동기화, 배치 벤치마크 유틸리티 스크립트
+├── skills/                      # AI Agent 전용 스킬 정의서 (Antigravity, Claude Code, Devin 등)
+│   └── tdc-studio/
+│       └── SKILL.md
 └── tests/                       # 215+ 회귀 및 단위 테스트 (Zero-training 원칙)
 ```
 
 ---
 
-## 🤖 AI 에이전트 원클릭 연동 가이드 (Agentic MCP Integration)
+## 🤖 AI 에이전트 원클릭 연동 가이드 (Agentic MCP & Skill Integration)
 
-TDC-Studio는 **LLM(Claude Desktop, Cursor, Antigravity, Windsurf 등)이 직접 소형 특화 모델(SLMs)을 호출하여 자율적으로 신약을 설계하고 검증할 수 있는 표준 MCP(Model Context Protocol v2.3) 서버**를 기본 내장하고 있습니다.
+TDC-Studio는 AI 에이전트가 소형 특화 모델(SLMs)을 호출하여 자율적으로 신약을 설계하고 검증할 수 있도록 **(1) 표준 MCP(Model Context Protocol v2.3) 서버**와 **(2) 터미널 코딩 에이전트 전용 스킬(`SKILL.md`)**을 모두 지원합니다.
 
 ### ⚡ 1. AI 에이전트에게 전달하는 원클릭 설치 및 연동 프롬프트 (Agent Prompt)
 AI 코딩 에이전트(Antigravity, Cursor, Devin, Claude 등)의 대화창에 아래 프롬프트를 복사하여 붙여넣으면, **에이전트가 리포지토리를 직접 클론하고 환경을 구축하여 신약개발 도구를 즉시 사용**할 수 있습니다:
 
 ```text
 https://github.com/brightonmoon/tdc-studio.git 리포지토리를 클론하고 `uv sync`를 실행해 개발 환경을 구축해줘.
-그 후 TDC-Studio MCP 서버(`uv run tdc-studio mcp --transport stdio`)를 연동하여, 내가 질의하는 화합물에 대해 25대 ADMET 지표 예측(`predict_admet_profile`), 다회투여 PBPK 시뮬레이션(`simulate_pbpk_regimen`), 약물상호작용 검증(`evaluate_drug_interactions`), 역합성 경로 탐색(`plan_retrosynthesis_route`), 비임상 IND Dossier 보고서 컴파일(`compile_candidate_dossier`) 도구를 호출해 신약 개발 협업을 진행해줘.
+그 후 TDC-Studio MCP 서버(`uv run tdc-studio mcp --transport stdio`)를 연동하거나 `skills/tdc-studio/SKILL.md` 가이드를 참조하여, 내가 질의하는 화합물에 대해 25대 ADMET 지표 예측(`predict_admet_profile`), 다회투여 PBPK 시뮬레이션(`simulate_pbpk_regimen`), 약물상호작용 검증(`evaluate_drug_interactions`), 역합성 경로 탐색(`plan_retrosynthesis_route`), 비임상 IND Dossier 보고서 컴파일(`compile_candidate_dossier`) 도구를 호출해 신약 개발 협업을 진행해줘.
 ```
 
 ### 🔌 2. MCP 클라이언트 설정 JSON (Claude Desktop / Cursor / Antigravity)
@@ -135,7 +138,16 @@ https://github.com/brightonmoon/tdc-studio.git 리포지토리를 클론하고 `
 | **`optimize_lead_molecule`** | 단점 자가교정 폐루프 분자 최적화 | 결함 극복 변이체 생성 및 실제 역합성 경로 존재성 검증 |
 | **`compile_candidate_dossier`** | ICH CTD 비임상 후보 평가 보고서 생성 | 정량 데이터 + LLM 전문 고찰 결합 Standalone HTML & JSON 출력 |
 
-### 💬 4. 에이전트와의 실전 신약개발 협업 질의 예시
+### 🧰 4. 터미널 코딩 에이전트용 스킬 정의서 (Agent Skill for CLI)
+터미널 실행 권한을 가진 자율 코딩 에이전트(Antigravity CLI, Claude Code, Devin 등)는 별도의 상주 서버 구동 없이도 CLI 명령을 직접 오케스트레이션할 수 있습니다:
+* **스킬 파일 경로**: [**`skills/tdc-studio/SKILL.md`**](skills/tdc-studio/SKILL.md)
+* **에이전트가 실행하는 핵심 CLI 패턴**:
+  - `uv run tdc-studio predict "<SMILES>"`: 25대 ADMET 지표 즉시 산출
+  - `uv run tdc-studio ti "<SMILES>" --kd <NM> --dose <MG>`: 치료지수 및 CDI 평가
+  - `uv run tdc-studio dossier "<SMILES>" --target <TARGET> --output-dir reports`: 원클릭 비임상 IND 보고서(HTML/JSON) 발행
+  - `uv run tdc-studio retrosynthesis plan --smiles "<SMILES>" --top-k 3`: A* 상용 시약 역합성 트리 탐색
+
+### 💬 5. 에이전트와의 실전 신약개발 협업 질의 예시
 * **[표적 결합 및 심장 안전성]**: *"HER2 표적($K_d < 20\text{nM}$)을 유지하면서 hERG 심장 독성을 낮춘 Imatinib 변이체를 설계하고, 1일 1회(QD) 100mg 투여 시의 정상상태 PBPK 혈중 농도를 계산해줘."*
 * **[약물상호작용 리스크]**: *"이 신약 후보물질과 와파린(Warfarin)을 병용 투여할 때 CYP2C9 저해로 인한 출혈 위험(AUC Fold Change)을 평가하고, 임상 모니터링 가이드를 작성해줘."*
 * **[원클릭 IND 보고서]**: *"후보물질에 대해 상용 시약 카탈로그(Enamine/Sigma)로부터 4단계 이내로 합성 가능한 역합성 경로를 찾고, 최종 비임상 IND Dossier 보고서를 생성해줘."*

@@ -63,6 +63,12 @@ def test_evaluator_classification_metrics():
     acc = evaluator.compute(probs, labels, "accuracy")
     assert acc == 1.0
 
+    prec = evaluator.compute(probs, labels, "precision")
+    assert prec == 1.0
+
+    rec = evaluator.compute(probs, labels, "recall")
+    assert rec == 1.0
+
     f1 = evaluator.compute(probs, labels, "f1")
     assert f1 == 1.0
 

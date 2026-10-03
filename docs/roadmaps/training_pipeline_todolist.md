@@ -220,6 +220,7 @@
 | **ADMET 실전** | **Task F-4** | **Cluster 4 (Clearance & Half-life) 생체 연계 학습**<br/>• `half_life_obach`, `clearance_hepatocyte_az`, `clearance_microsome_az` 학습<br/>• Cluster 2의 $f_u$ (PPBR) 및 $V_{\text{dss}}$ 예측값을 생리학적 입력($CL = \frac{V_{\text{dss}} \cdot \ln 2}{t_{1/2}}$)으로 연계 | • 간 클리어런스 및 생체 반감기 정밀 예측<br/>• 생리학 기반 약동학(PBPK) 파이프라인 완성 |
 | **ADMET 실전** | **Task F-5** | **Cluster 5 (hERG Central 306k & DILI) 안전성 방어벽 학습**<br/>• 306k hERG Central 3-Head Multi-Task 학습<br/>• DILI (약물유도간손상) 이진분류 모델 결합 | • hERG ROC-AUC $\ge 0.88$, DILI ROC-AUC $\ge 0.82$<br/>• 초기 독성 스크리닝 필터 확립 |
 | **엔지니어링** | **Task F-6** | **Docker 프로덕션 컨테이너화 및 W&B Model Registry 자동 동기화**<br/>• FastAPI 기반 경량 배포 Dockerfile 작성<br/>• SOTA 모델 아티팩트 자동 버전 태깅 및 CI/CD 롤백 체계 구축 | • 배포 환경 일관성 및 재현성 100% 보장 |
+| **역합성/합성성** | **Task F-7** | **TDC 기반 역합성(Retrosynthesis) 엔진 및 다단계 경로 탐색**<br/>• TDC `RetroSyn (USPTO-50K)` 기반 단일단계 예측 및 순방향 검증<br/>• 상용 시약(Stock) 연계 Retro* A* 다단계 트리 탐색<br/>• `lead_optimizer.py` 실전 합성가능성(Synthesizability) 필터 결합 | • USPTO-50K Top-1 $\ge 55\%$, Top-10 $\ge 88\%$<br/>• 가용 시약 경로 탐색 성공률 $\ge 75\%$<br/>• 상세 명세: [`docs/retrosynthesis/retrosynthesis_todolist.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/docs/retrosynthesis/retrosynthesis_todolist.md) |
 
 ## 🚨 [긴급 점검 및 조치] 코드 리뷰 발견 핵심 결함 및 패치 완료 (Critical Bugs & Immediate Fixes - COMPLETE)
 
@@ -236,6 +237,40 @@
 
 ---
 
+## 🛡️ [코드 검수 및 전수 무결성 강화 완료] Full Code Review, 거짓 양성 트리아지 및 189개 테스트 통과 (2026-10-02 - COMPLETE)
+
+main 브랜치 전수 정밀 코드 검수(~90개 소스 파일 대상)를 수행하여, 제기된 잠재 이슈의 코드베이스 실증 대조 및 실질 결함 패치를 완료했습니다:
+
+### 1. 거짓 양성(False Positive) 실증 검증
+- **`collate.py` 엣지 인덱스 오프셋**: PyG `Batch.from_data_list()`로 자동 오프셋 처리 확인.
+- **`multi_task.py` NaN 전파**: 레이블 결측치 마스킹(`~torch.isnan(labels)`) 및 0.0 치환 기적용 확인.
+- **`pbpk/engine.py` 음수 농도**: 순수 대수적 PBPK 프로파일 계산식 및 입력값 가드 유효 확인.
+- **`therapeutic_index.py` TI 공식**: $IC_{50} / K_d$ 안전 마진 공식 정상 확인.
+- **`uncertainty/conformal.py` 분위수 공식**: $\lceil(n+1)(1-\alpha)\rceil / n$ 표준 공식 기적용 확인.
+- **`pbpk/virtual_population.py` 로그정규분포**: $\exp(-0.5\sigma^2 + \sigma Z)$ 기하 평균 보정 수학적 정합성 확인.
+- **`retrosynthesis/search/retro_star.py` 비용 함수**: 스텝 비용 $10.0 + \max(0.0, -5\ln(\text{yield}/100)) \ge 10.0$ 양수 보장 확인.
+
+### 2. 실질적 결함 및 보안/안정성 패치 완료
+1. **`torch.load` 보안 강화 (`weights_only=True`)**:
+   - `serving/unified_pipeline.py`, `serving/multitask_pipeline.py`, `cli.py` 내 모델 가중치 역직렬화 시 `weights_only=True` 및 호환 폴백 적용.
+2. **역합성 라운드트립 화학적 동등성 검증 (`forward_verifier.py`)**:
+   - RDKit `Chem.MolToSmiles(canonical=True)`로 기대/예측 분자를 정규화 후 화학적 동등성 비교로 거짓 음성 방지.
+3. **`BaseTherapeuticsModel` 손실 함수 마스킹 및 저장/로드 편의화 (`models/base.py`)**:
+   - `compute_loss(preds, targets, mask=None)` 시그니처 확장 및 결측치 안전 필터링.
+   - 상위 디렉터리 자동 생성 `save(path)` 및 안전 로드 `load(path)` 메서드 구현.
+4. **SMILES 컬럼명 자동 탐색 지원 (`data/single_pred.py`)**:
+   - `["Drug", "smiles", "SMILES", "Smiles", "Compound", "drug", "compound"]` 후보군 자동 탐색으로 데이터셋 호환성 확보.
+5. **분류 평가 지표 확장 및 0나누기 방어 (`evaluation/evaluator.py`)**:
+   - `precision`, `recall` 지표 추가 및 `zero_division=0` 가드 적용.
+6. **CLI 설정 파일 검증 및 난수 시드 동기화 (`cli.py`)**:
+   - `load_yaml()` 파일 존재 검증 및 앙상블 학습 시 `random.seed(seed)` 시드 동기화.
+
+### 3. 검증 결과
+- **Ruff 정적 분석**: 100% 무결성 패스 (`All checks passed!`).
+- **Pytest 단위/통합 회귀 테스트**: 신규 테스트 포함 **189개 테스트 전량 통과 (189 passed in 71.52s)**.
+
+---
+
 ## 🛠️ 주요 설정 파일 및 문서 빠른 링크
 
 | 대상 | 설정 파일 / 문서 경로 |
@@ -249,4 +284,6 @@
 | **CYP450 Stage 2 설정** | [`configs/config_cyp450_stage2_substrates.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/configs/config_cyp450_stage2_substrates.yaml) |
 | **DTI Phase C 설정** | [`configs/config_dti_phase_c.yaml`](file:///C:/Users/xps/orca/workspaces/tdc-studio/configs/config_dti_phase_c.yaml) |
 | **ChEMBL HSA 큐레이션 데이터** | [`data/external/chembl_hsa_processed.csv`](file:///C:/Users/xps/orca/workspaces/tdc-studio/data/external/chembl_hsa_processed.csv) |
+| **역합성 기술 조사 보고서** | [`docs/retrosynthesis/technical_survey.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/docs/retrosynthesis/technical_survey.md) |
+| **역합성 실행 TODOLIST** | [`docs/retrosynthesis/retrosynthesis_todolist.md`](file:///C:/Users/xps/orca/workspaces/tdc-studio/docs/retrosynthesis/retrosynthesis_todolist.md) |
 

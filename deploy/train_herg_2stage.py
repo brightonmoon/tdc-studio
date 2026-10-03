@@ -19,6 +19,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from tdc.single_pred import Tox
+from tdc.utils import create_scaffold_split
 from torch.utils.data import DataLoader
 
 from tdc_studio.core.registry import MODELS
@@ -113,8 +114,26 @@ def main():
     # Stage 1: Pre-training on hERG_Karim (13.4k compounds)
     # =========================================================================
     logger.info("=== Stage 1: Loading hERG_Karim (13,445 compounds) ===")
-    karim_data = Tox(name="hERG_Karim")
-    karim_split = karim_data.get_split(method="scaffold", seed=42)
+    candidate_paths = [
+        "data/herg_karim.tab",
+        os.path.join(os.getcwd(), "data", "herg_karim.tab"),
+        "/content/tdc-studio/data/herg_karim.tab",
+    ]
+    karim_csv = None
+    for cp in candidate_paths:
+        if os.path.exists(cp):
+            karim_csv = cp
+            break
+    if os.path.exists(karim_csv):
+        import pandas as pd
+        karim_df = pd.read_csv(karim_csv, sep="\t")
+        karim_split = create_scaffold_split(karim_df, seed=42, frac=[0.7, 0.1, 0.2], entity="Drug")
+        logger.info("Loaded herg_karim.tab from %s (Train: %d, Val: %d, Test: %d)",
+                    karim_csv, len(karim_split["train"]), len(karim_split["valid"]), len(karim_split["test"]))
+    else:
+        logger.warning("Local herg_karim.tab not found! Falling back to TDC herg_central.")
+        karim_data = Tox(name="herg_central")
+        karim_split = karim_data.get_split(method="scaffold", seed=42)
 
     train_df = karim_split["train"]
     val_df = karim_split["valid"]
@@ -125,7 +144,7 @@ def main():
         val_df = val_df.head(32)
         test_df = test_df.head(32)
         args.epochs_stage1 = 1
-        args.epochs_stage2 = 1
+        args.epochs_stage2 = 2
 
     train_ds = MoleculeDataset(train_df["Drug"], train_df["Y"], transform)
     val_ds = MoleculeDataset(val_df["Drug"], val_df["Y"], transform)
@@ -162,7 +181,10 @@ def main():
             batch = {k: v.to(device) if hasattr(v, "to") else v for k, v in batch.items()}
             optimizer.zero_grad()
             logits = model(batch)
-            loss = loss_fn(logits, batch["labels"])
+            if logits.ndim > 1:
+                logits = logits.view(-1)
+            targets = batch["labels"].view(-1)
+            loss = loss_fn(logits, targets)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -201,46 +223,60 @@ def main():
 
     w_train_ds = MoleculeDataset(w_train_df["Drug"], w_train_df["Y"], transform)
     w_val_ds = MoleculeDataset(w_val_df["Drug"], w_val_df["Y"], transform)
-    w_test_ds = MoleculeDataset(w_test_df["Drug"], w_test_df["Y"], transform)
+    test_ds = MoleculeDataset(w_test_df["Drug"], w_test_df["Y"], transform)
 
     w_train_loader = DataLoader(w_train_ds, batch_size=32, shuffle=True, collate_fn=molecule_collate_fn)
     w_val_loader = DataLoader(w_val_ds, batch_size=32, shuffle=False, collate_fn=molecule_collate_fn)
-    w_test_loader = DataLoader(w_test_ds, batch_size=32, shuffle=False, collate_fn=molecule_collate_fn)
+    w_test_loader = DataLoader(test_ds, batch_size=32, shuffle=False, collate_fn=molecule_collate_fn)
 
-    # Phase 2A: Freeze GNN backbone for first 5 epochs
-    logger.info("Phase 2A: Freezing GNN backbone, fine-tuning classification head only...")
+    stage2_pt = os.path.join(args.export_dir, "herg_wang_finetuned.pt")
+    best_wang_auc = 0.0
+
+    # Phase 2A: Freeze GNN backbone for initial epochs
+    phase2a_epochs = 1 if args.dry_run else min(5, args.epochs_stage2 // 2)
+    logger.info("Phase 2A: Freezing GNN backbone, fine-tuning classification head only for %d epochs...", phase2a_epochs)
     for name, param in model.named_parameters():
         if "out" not in name and "mlp" not in name and "head" not in name:
             param.requires_grad = False
 
     optimizer_head = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=5e-4)
 
-    for epoch in range(1, min(6, args.epochs_stage2 + 1)):
+    for epoch in range(1, phase2a_epochs + 1):
         model.train()
         for batch in w_train_loader:
             batch = {k: v.to(device) if hasattr(v, "to") else v for k, v in batch.items()}
             optimizer_head.zero_grad()
             logits = model(batch)
-            loss = loss_fn(logits, batch["labels"])
+            if logits.ndim > 1:
+                logits = logits.view(-1)
+            targets = batch["labels"].view(-1)
+            loss = loss_fn(logits, targets)
             loss.backward()
             optimizer_head.step()
 
+        w_val_metrics = evaluate_model(model, w_val_loader, device)
+        if w_val_metrics["roc_auc"] >= best_wang_auc:
+            best_wang_auc = w_val_metrics["roc_auc"]
+            torch.save(model.state_dict(), stage2_pt)
+
     # Phase 2B: Unfreeze all parameters and train with gentle LR
-    logger.info("Phase 2B: Unfreezing full network with lr = %.6f...", args.lr_stage2)
+    logger.info("Phase 2B: Unfreezing full network with lr = %.6f for epochs %d..%d...",
+                args.lr_stage2, phase2a_epochs + 1, args.epochs_stage2)
     for param in model.parameters():
         param.requires_grad = True
 
     optimizer_full = torch.optim.AdamW(model.parameters(), lr=args.lr_stage2, weight_decay=1e-4)
-    best_wang_auc = 0.0
-    stage2_pt = os.path.join(args.export_dir, "herg_wang_finetuned.pt")
 
-    for epoch in range(6, args.epochs_stage2 + 1):
+    for epoch in range(phase2a_epochs + 1, args.epochs_stage2 + 1):
         model.train()
         for batch in w_train_loader:
             batch = {k: v.to(device) if hasattr(v, "to") else v for k, v in batch.items()}
             optimizer_full.zero_grad()
             logits = model(batch)
-            loss = loss_fn(logits, batch["labels"])
+            if logits.ndim > 1:
+                logits = logits.view(-1)
+            targets = batch["labels"].view(-1)
+            loss = loss_fn(logits, targets)
             loss.backward()
             optimizer_full.step()
 

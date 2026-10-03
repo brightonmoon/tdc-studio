@@ -90,6 +90,11 @@ def main():
     with open(os.path.join(args.export_dir, "clearance_cascade_summary.json"), "w") as f:
         json.dump(test_metrics, f, indent=2)
 
+    import joblib
+    save_path = os.path.join(args.export_dir, "clearance_cascade_model.joblib")
+    joblib.dump(predictor, save_path)
+    logger.info("Successfully saved Cascaded Clearance model to: %s", save_path)
+
 
 if __name__ == "__main__":
     main()

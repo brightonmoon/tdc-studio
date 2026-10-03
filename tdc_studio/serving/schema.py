@@ -114,6 +114,9 @@ class UnifiedADMETProfile(BaseModel):
     pbpk: Optional[PBPKProfileResult] = Field(
         None, description="Integrated in vivo PBPK PK profile."
     )
+    conformal_uncertainty: Optional[Dict[str, Any]] = Field(
+        None, description="Calibrated conformal prediction sets and intervals (coverage 1 - alpha)."
+    )
 
 
 class UnifiedADMETRequest(BaseModel):
@@ -121,6 +124,15 @@ class UnifiedADMETRequest(BaseModel):
 
     smiles: List[str] = Field(
         ..., description="List of drug SMILES strings to evaluate.", min_length=1
+    )
+    include_conformal: bool = Field(
+        default=False, description="Whether to include conformal uncertainty quantification."
+    )
+    conformal_alpha: float = Field(
+        default=0.10,
+        ge=0.01,
+        le=0.50,
+        description="Significance level alpha for conformal coverage (default 0.10 for 90% confidence).",
     )
 
 
@@ -208,6 +220,14 @@ class OptimizeRequest(BaseModel):
     sa_threshold: float = Field(
         default=4.0, description="Maximum synthetic accessibility score allowed."
     )
+    verify_retrosynthesis: bool = Field(
+        default=True,
+        description="Whether to evaluate multi-step retrosynthesis and commercial stock availability.",
+    )
+    require_deep_route: bool = Field(
+        default=False,
+        description="Whether to mandate multi-step Retro* search for all candidates.",
+    )
 
 
 class LiabilityDiagnosticItem(BaseModel):
@@ -246,6 +266,27 @@ class OptimizedCandidateItem(BaseModel):
         None, description="Candidate molecule predicted affinity pKd."
     )
     dta_delta: Optional[float] = Field(None, description="Affinity delta (positive is improved).")
+    retrosynthesis_solved: Optional[bool] = Field(
+        None, description="Whether retrosynthesis route is solved to catalog stock."
+    )
+    retrosynthesis_steps: Optional[int] = Field(
+        None, description="Number of reaction steps to starting materials."
+    )
+    cumulative_yield: Optional[float] = Field(
+        None, description="Predicted cumulative synthesis yield percentage."
+    )
+    starting_materials: Optional[List[str]] = Field(
+        None, description="Required commercial stock starting materials."
+    )
+    synthetic_tractability_score: Optional[float] = Field(
+        None, description="Composite synthetic feasibility score (0.0~1.0)."
+    )
+    rejection_reason: Optional[str] = Field(
+        None, description="Reason if candidate failed synthesizability filter."
+    )
+    route_summary: Optional[str] = Field(
+        None, description="Human-readable synthesis route summary."
+    )
 
 
 class OptimizeResponse(BaseModel):
@@ -440,12 +481,12 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
 
 
 # ------------------------------------------------------------------------------
-# Therapeutic Index (TI) Linked Schemas
+# Therapeutic Index (TI) Batch Linked Schemas
 # ------------------------------------------------------------------------------
 
 
-class TherapeuticIndexRequest(BaseModel):
-    """Payload for Drug-Target Interaction linked Therapeutic Index prediction."""
+class TherapeuticIndexBatchRequest(BaseModel):
+    """Payload for Drug-Target Interaction linked Therapeutic Index batch prediction."""
 
     smiles: List[str] = Field(
         ..., description="List of drug SMILES strings to evaluate.", min_length=1
@@ -467,7 +508,7 @@ class TherapeuticIndexRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def check_lengths_match(self) -> "TherapeuticIndexRequest":
+    def check_lengths_match(self) -> "TherapeuticIndexBatchRequest":
         if len(self.smiles) != len(self.target_sequences):
             raise ValueError(
                 f"Mismatch between number of SMILES ({len(self.smiles)}) "
@@ -516,8 +557,8 @@ class TherapeuticIndexItem(BaseModel):
     elapsed_ms: float = Field(..., description="Evaluation latency in milliseconds.")
 
 
-class TherapeuticIndexResponse(BaseModel):
-    """Response payload for Therapeutic Index evaluation."""
+class TherapeuticIndexBatchResponse(BaseModel):
+    """Response payload for Therapeutic Index batch evaluation."""
 
     results: List[TherapeuticIndexItem]
     count: int = Field(..., description="Number of evaluated compound-target pairs.")
@@ -525,3 +566,284 @@ class TherapeuticIndexResponse(BaseModel):
     pipeline_version: str = Field(
         default="TDC-Studio-TI-v1", description="Serving pipeline identifier."
     )
+
+
+# PBPK Virtual Population Monte Carlo Simulation Schemas
+# ------------------------------------------------------------------------------
+
+
+class PKMetricSummarySchema(BaseModel):
+    mean: float
+    sd: float
+    cv_pct: float
+    median: float
+    p5: float
+    p25: float
+    p75: float
+    p95: float
+
+
+class ConcentrationTimeTrajectorySchema(BaseModel):
+    time_hours: List[float]
+    p5_ug_ml: List[float]
+    median_ug_ml: List[float]
+    p95_ug_ml: List[float]
+    mean_ug_ml: List[float]
+
+
+class VirtualPopulationRequest(BaseModel):
+    smiles: str = Field(..., description="Molecular SMILES identifier.")
+    subgroup: str = Field(
+        default="healthy_adults",
+        description="Target population: healthy_adults, renal_mild, renal_moderate, renal_severe, hepatic_child_pugh_a, hepatic_child_pugh_b, hepatic_child_pugh_c, geriatric",
+    )
+    n_subjects: int = Field(
+        default=500, ge=10, le=5000, description="Virtual population subject count."
+    )
+    dose_mg: float = Field(default=100.0, gt=0, description="Single oral dose in mg.")
+    ka_per_h: float = Field(
+        default=1.2, gt=0, description="Oral absorption rate constant ka (1/h)."
+    )
+    t_max_sim_hours: float = Field(
+        default=48.0, gt=0, description="Concentration trajectory simulation window in hours."
+    )
+
+
+class VirtualPopulationMetricsSchema(BaseModel):
+    vdss_l_kg: PKMetricSummarySchema
+    cl_total_l_h_kg: PKMetricSummarySchema
+    half_life_hours: PKMetricSummarySchema
+    cmax_ug_ml: PKMetricSummarySchema
+    tmax_hours: PKMetricSummarySchema
+    auc_inf_ug_h_ml: PKMetricSummarySchema
+    fraction_unbound: PKMetricSummarySchema
+
+
+class VirtualPopulationResponse(BaseModel):
+    subgroup: str
+    n_subjects: int
+    dose_mg: float
+    metrics: VirtualPopulationMetricsSchema
+    trajectory: ConcentrationTimeTrajectorySchema
+
+
+# ------------------------------------------------------------------------------
+# Retrosynthesis & Multi-Step Route Planning Schemas
+# ------------------------------------------------------------------------------
+
+
+class RetroCandidateItem(BaseModel):
+    """Single candidate reactant set predicted for retrosynthetic disconnection."""
+
+    reactants: str = Field(..., description="Precursor reactant SMILES separated by '.'")
+    confidence: float = Field(..., description="Model confidence score or heuristic prior (0~1).")
+
+
+class RetroSingleStepRequest(BaseModel):
+    """Request payload for single-step retrosynthetic disconnection."""
+
+    smiles: str = Field(..., description="Target product molecule SMILES.")
+    top_k: int = Field(default=5, ge=1, le=50, description="Number of precursor sets to generate.")
+    reaction_type: Optional[int] = Field(
+        None, ge=1, le=10, description="Optional USPTO-50K reaction class ID (1~10)."
+    )
+
+
+class RetroSingleStepResponse(BaseModel):
+    """Response payload for single-step retrosynthesis."""
+
+    product_smiles: str = Field(..., description="Input product SMILES.")
+    candidates: List[RetroCandidateItem] = Field(
+        ..., description="Ranked precursor reactant candidates."
+    )
+    count: int = Field(..., description="Number of returned candidates.")
+
+
+class ReactionStepSchema(BaseModel):
+    """Individual reaction transformation step in a multi-step synthetic pathway."""
+
+    step_number: int
+    reactants: List[str]
+    product: str
+    rule_name: str
+    confidence: float
+    yield_pct: float
+    cost: float
+
+
+class RetroRouteItem(BaseModel):
+    """Single complete retrosynthetic pathway with ranking and metrics."""
+
+    rank: int = Field(..., description="Route rank (1 = champion, 2 = 1st alternative, etc.)")
+    rank_score: float = Field(default=0.0, description="Multi-objective Pareto rank score.")
+    target_smiles: str
+    solved: bool
+    total_depth: int
+    cumulative_yield: float
+    total_cost: float
+    starting_materials: List[str]
+    steps: List[ReactionStepSchema]
+    mermaid_diagram: Optional[str] = None
+
+
+class RouteComparisonItem(BaseModel):
+    """Comparison matrix entry for a candidate route."""
+
+    rank: int
+    solved: bool
+    total_depth: int
+    cumulative_yield: float
+    total_cost: float
+    starting_materials_count: int
+    starting_materials: List[str]
+    reaction_rules: List[str]
+    rank_score: float = 0.0
+
+
+class RetroPlanRequest(BaseModel):
+    """Request payload for multi-step retrosynthesis route planning."""
+
+    smiles: str = Field(..., description="Target molecule SMILES to plan synthesis route for.")
+    top_k: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of candidate routes to return (1 = optimal only, >1 = include alternative routes).",
+    )
+    min_diversity: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description="Minimum diversity distance between alternative routes.",
+    )
+    banned_smiles: Optional[List[str]] = Field(
+        default=None, description="Optional list of SMILES to ban/exclude from commercial stock."
+    )
+    max_depth: int = Field(default=5, ge=1, le=10, description="Maximum search tree depth.")
+    timeout_sec: float = Field(
+        default=5.0, ge=0.5, le=60.0, description="Search timeout in seconds."
+    )
+    render_mermaid: bool = Field(
+        default=False, description="Whether to include rendered Mermaid diagram."
+    )
+
+
+class RetroPlanResponse(BaseModel):
+    """Response payload containing complete retrosynthesis pathway(s)."""
+
+    target_smiles: str
+    solved: bool
+    total_depth: int
+    cumulative_yield: float
+    total_cost: float
+    starting_materials: List[str]
+    steps: List[ReactionStepSchema]
+    mermaid_diagram: Optional[str] = None
+    routes: List[RetroRouteItem] = Field(
+        default_factory=list, description="All top-k ranked routes (Rank 1 to K)."
+    )
+    comparison_summary: List[RouteComparisonItem] = Field(
+        default_factory=list, description="Summary comparison table of all candidate routes."
+    )
+
+
+# ------------------------------------------------------------------------------
+# Therapeutic Index & Clinical Developability Schemas
+# ------------------------------------------------------------------------------
+
+
+class ComponentScoresSchema(BaseModel):
+    """Pillar scores for clinical developability (0~25 pts each)."""
+
+    potency: float = Field(..., description="Target potency score (0~25).")
+    safety_window: float = Field(..., description="hERG/safety window score (0~25).")
+    organ_toxicology: float = Field(..., description="Organ/regulatory toxicity score (0~25).")
+    human_pk: float = Field(..., description="Human PK & oral druggability score (0~25).")
+
+
+class TherapeuticIndexRequest(BaseModel):
+    """Request payload for Therapeutic Index and Clinical Developability evaluation."""
+
+    smiles: str = Field(..., description="Candidate molecule SMILES.", min_length=1)
+    target_kd_nm: Optional[float] = Field(
+        None,
+        gt=0,
+        description="On-target binding affinity Kd in nM (optional if target_sequence provided).",
+    )
+    target_pkd: Optional[float] = Field(
+        None, description="On-target binding affinity pKd (-log10 Kd)."
+    )
+    target_sequence: Optional[str] = Field(
+        None,
+        description="Target protein amino acid sequence for on-the-fly DTI affinity prediction.",
+    )
+    herg_ic50_nm: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Explicit or experimental hERG IC50 in nM (optional, calibrated from model if omitted).",
+    )
+    dose_mg: float = Field(
+        default=100.0,
+        gt=0,
+        description="Reference human oral dose in mg for in vivo exposure scaling.",
+    )
+
+
+class TherapeuticIndexResponse(BaseModel):
+    """Response payload for Therapeutic Index and Clinical Developability profile."""
+
+    smiles: str = Field(..., description="Input molecule SMILES.")
+    canonical_smiles: str = Field(..., description="Canonicalized SMILES.")
+    target_kd_nm: float = Field(..., description="Target binding affinity Kd in nM.")
+    target_pkd: float = Field(..., description="Target binding affinity pKd (-log10 Kd).")
+    herg_ic50_nm: float = Field(..., description="hERG potassium channel IC50 in nM.")
+    herg_safety_margin: float = Field(
+        ..., description="hERG Safety Margin ratio (IC50 / Kd). Ideal >= 100x."
+    )
+    herg_therapeutic_window_log10: float = Field(
+        ..., description="Therapeutic Window in log10 scale: log10(IC50 / Kd)."
+    )
+    herg_risk_tier: str = Field(
+        ..., description="Cardiotoxicity risk tier ('Safe', 'Borderline', 'High Risk')."
+    )
+    dili_risk_probability: float = Field(
+        ..., description="Predicted drug-induced liver injury risk (0~1)."
+    )
+    clintox_risk_probability: float = Field(
+        ..., description="Predicted FDA clinical trial toxicity failure risk (0~1)."
+    )
+    ames_mutagenicity_probability: float = Field(
+        ..., description="Predicted mutagenicity risk (0~1)."
+    )
+    clinical_developability_score: float = Field(
+        ..., description="Overall Clinical Developability Index (CDI, 0~100 pts)."
+    )
+    developability_tier: str = Field(
+        ...,
+        description="Developability tier ('Tier 1: High Clinical Potential', 'Tier 2', 'Tier 3').",
+    )
+    component_scores: ComponentScoresSchema = Field(
+        ..., description="Breakdown across the 4 pillars."
+    )
+    pbpk_cmax_total_ug_ml: Optional[float] = Field(
+        None, description="Predicted peak total plasma concentration (ug/mL) at reference dose."
+    )
+    pbpk_cmax_free_ug_ml: Optional[float] = Field(
+        None, description="Predicted peak unbound free drug concentration (ug/mL)."
+    )
+    in_vivo_herg_margin: Optional[float] = Field(
+        None,
+        description="In vivo free drug hERG safety margin (IC50 / Cmax_free). FDA recommends >= 30x.",
+    )
+    target_name: Optional[str] = Field(None, description="Target protein name or identifier.")
+    warnings: List[str] = Field(
+        default_factory=list, description="Pharmacological and regulatory warnings."
+    )
+    recommendations: List[str] = Field(
+        default_factory=list, description="Medicinal chemistry optimization recommendations."
+    )
+
+
+# Type aliases for explicit naming
+TherapeuticIndexSingleRequest = TherapeuticIndexRequest
+TherapeuticIndexSingleResponse = TherapeuticIndexResponse

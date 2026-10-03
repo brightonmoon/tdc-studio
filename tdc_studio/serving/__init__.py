@@ -22,6 +22,8 @@ from tdc_studio.serving.schema import (
     InferenceRequest,
     InferenceResponse,
     PBPKResponse,
+    TherapeuticIndexBatchRequest,
+    TherapeuticIndexBatchResponse,
     TherapeuticIndexItem,
     TherapeuticIndexRequest,
     TherapeuticIndexResponse,
@@ -69,6 +71,8 @@ __all__ = [
     "TherapeuticIndexRequest",
     "TherapeuticIndexItem",
     "TherapeuticIndexResponse",
+    "TherapeuticIndexBatchRequest",
+    "TherapeuticIndexBatchResponse",
     "export_model_checkpoint",
     "load_model_from_checkpoint",
 ]

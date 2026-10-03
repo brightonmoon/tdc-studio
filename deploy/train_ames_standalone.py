@@ -11,7 +11,7 @@ import os
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -42,8 +42,8 @@ def extract_features_for_smiles_list(smiles_list):
                 logp = float(Descriptors.MolLogP(mol))
                 mw = float(Descriptors.MolWt(mol))
                 tpsa = float(Descriptors.TPSA(mol))
-                hbd = float(Descriptors.NumHBD(mol))
-                hba = float(Descriptors.NumHBA(mol))
+                hbd = float(rdMolDescriptors.CalcNumHBD(mol))
+                hba = float(rdMolDescriptors.CalcNumHBA(mol))
                 phys = np.array([logp, mw, tpsa, hbd, hba], dtype=np.float32)
                 row = np.concatenate([alerts, fp, phys])
             else:
@@ -136,6 +136,11 @@ def main():
     }
     with open(os.path.join(args.export_dir, "ames_benchmark_summary.json"), "w") as f:
         json.dump(metrics, f, indent=2)
+
+    import joblib
+    model_save_path = os.path.join(args.export_dir, "ames_model.joblib")
+    joblib.dump(clf, model_save_path)
+    logger.info("Successfully saved trained AMES champion model to: %s", model_save_path)
 
 
 if __name__ == "__main__":

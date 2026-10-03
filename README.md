@@ -1,213 +1,171 @@
-# TDC-Studio
+<div align="center">
 
-> **Modular MLOps Studio for Therapeutics Data Commons (TDC)**  
-> 데이터 로딩, 신경망 아키텍처 선택, Optuna 하이퍼파라미터 최적화, W&B 실험 추적, Google Colab 클라우드 GPU 오케스트레이션 및 FastAPI/Docker 서빙을 느슨하게 결합(Loose Coupling)한 바이오 MLOps 플랫폼입니다.
+<img src="assets/banner.png" alt="TDC-Studio Banner" width="100%" style="border-radius: 10px; margin-bottom: 20px;" />
+
+# 🧬 TDC-Studio
+### Modular MLOps Studio for Therapeutics Data Commons (TDC)
+
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3110/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg?style=flat)](https://github.com/astral-sh/ruff)
+[![Tests: 180+ Passed](https://img.shields.io/badge/tests-180%2B%20passed-22c55e.svg?style=flat&logo=pytest&logoColor=white)](tests/)
+[![Google Colab](https://img.shields.io/badge/Cloud%20GPU-Colab%20CLI-F9AB00.svg?style=flat&logo=googlecolab&logoColor=white)](docs/COLAB_CLI_WINDOWS_GUIDE.md)
+[![FastAPI](https://img.shields.io/badge/Serving-FastAPI-009688.svg?style=flat&logo=fastapi&logoColor=white)](tdc_studio/serving/)
+[![Docker](https://img.shields.io/badge/Container-Docker-2496ED.svg?style=flat&logo=docker&logoColor=white)](deploy/docker-compose.yml)
+[![Weights & Biases](https://img.shields.io/badge/Tracking-W%26B-FFBE00.svg?style=flat&logo=weightsandbiases&logoColor=black)](https://wandb.ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](LICENSE)
+
+**[📖 문서 허브](docs/) • [🚀 빠른 시작](#-빠른-시작-quickstart) • [📊 SOTA 벤치마크](docs/benchmarks/admet_cluster_sota_archive.md) • [🧪 웹 대시보드](#3-대화형-웹-대시보드-ui-구동) • [🤝 기여 가이드](CONTRIBUTING.md)**
+
+</div>
 
 ---
 
-## 1. 전체 아키텍처 (System Architecture)
+## 🌟 핵심 기능 4대 축 (Core Capabilities)
+
+| 🧪 ADMET 25-Head Multi-Task | 🧮 14-구획 ODE PBPK Engine |
+| :--- | :--- |
+| • 흡수(6), 체내분포(3), CYP450 대사(8), 배설(3), 안전성 독성(5)<br>• Bemis-Murcko Scaffold Test 기준 문헌 SOTA 신뢰구간 공식 진입<br>• D-MPNN 백본 + RDKit 물리화학 디스크립터 전이학습 | • $V_{dss}$, $t_{1/2}$, $f_u$, $CL_{\text{total}}$, $CL_H$, 간 추출비($E_H$) 실시간 연계<br>• 경구 투여 후 혈중 농도-시간 곡선($C_{\text{plasma}} - t$) 실시간 ODE 모사<br>• 타깃 결합력($K_d$) 및 hERG 연계 치료지수(TI) 임상 안전역 산출 |
+| **🧬 DTI Foundation Pipeline** | **🔬 Retrosynthesis AI Engine** |
+| • ChemBERTa(화합물) + ESM-2(단백질) 파운데이션 인코더 결합<br>• Bilinear Cross-Attention 융합으로 결합 친화도($pK_d$, $K_d$) 예측<br>• TDC BindingDB Cold-Drug 벤치마크: **CI = 0.7464 달성** | • 타깃 분자의 템플릿 기반 및 딥러닝 단일/다단계 합성 경로 역추적<br>• RDKit 화학 정규화(Canonicalization) 기반 반응 유효성 검증<br>• 상용 시약(Commercial Building Block) 라이브러리 가용성 분석 |
+
+---
+
+## 🏗️ 시스템 아키텍처 (System Architecture)
+
+```mermaid
+flowchart LR
+    Local["💻 <b>Local Workstation</b><br>• Python 3.11 (uv)<br>• Ruff 린트 & 180+ 테스트<br>• CLI 1-Step 드라이런"]
+    -->|google-colab-cli| Colab["☁️ <b>Cloud GPU Worker</b><br>• Ephemeral VM (T4 / A100)<br>• TDC Multi-Task & HPO<br>• W&B 실시간 실험 추적"]
+    -->|Model Sync| Serving["🚀 <b>Production Serving</b><br>• Docker (Python 3.11-slim)<br>• FastAPI (/predict/pbpk, /dti)<br>• 대화형 웹 대시보드 UI"]
+```
+
+---
+
+## 📂 코드베이스 구조 (Repository Layout)
 
 ```text
-+-----------------------------------------------------------------------------------+
-|                            [Local Developer Workstation]                          |
-|  - Fast Iteration via UV (Python 3.11 Standard)                                   |
-|  - Static Analysis (Ruff) & Zero-Training Unit Tests (Pytest + Mock/Toy Batches)  |
-|  - CLI Trigger: `tdc-studio remote run --gpu a100 --config configs/config.yaml`   |
-+-----------------------------------------+-----------------------------------------+
-                                          |
-                                          | (Google Colab CLI: google-colab-cli)
-                                          v
-+-----------------------------------------------------------------------------------+
-|                        [Cloud GPU Worker: Google Colab CLI]                       |
-|  - Ephemeral VM Provisioning: T4 / L4 / A100 / H100                               |
-|  - Auto-bootstrap: `uv sync --extra tdc` on Linux                                 |
-|  - Heavy Workloads: TDC Cache -> Optuna Sweep / Distributed Training              |
-|  - Monitoring: Weights & Biases (Realtime Runs, Sweeps, Model Artifacts)          |
-|  - Auto Tear-down: Job completion immediately stops/releases runtime              |
-+-----------------------------------------+-----------------------------------------+
-                                          |
-                                          | (Model Checkpoint / Artifact Sync)
-                                          v
-+-----------------------------------------------------------------------------------+
-|                            [Production Serving Container]                         |
-|  - Lightweight Docker (Python 3.11-slim + libgomp1 + UV multistage)               |
-|  - End-to-End InferencePipeline: SMILES -> RDKit Featurizer -> Tensor Engine      |
-|  - FastAPI Microservice (Lifespan + /healthz + Async ThreadPool Offloading)       |
-+-----------------------------------------------------------------------------------+
+tdc-studio/
+├── assets/                      # 프로젝트 배너, UI 목업 및 시각 에셋
+├── tdc_studio/                  # 핵심 바이오 MLOps 라이브러리 패키지
+│   ├── cli/                     # CLI 엔트리포인트 (predict, ti, ui, train, remote 등)
+│   ├── core/                    # 공통 레지스트리(@MODELS, @DATASETS), 기본 추상 클래스
+│   ├── data/                    # TDC DataModule, RDKit Featurizer, Graph Batcher
+│   ├── models/                  # D-MPNN, GIN, ChemBERTa, ESM-2, Hybrid Stacker
+│   ├── pbpk/                    # 14-구획 ODE 생체약동학 수식 및 파이프라인
+│   ├── remote/                  # Google Colab CLI 원격 오케스트레이션 러너
+│   ├── retrosynthesis/          # 템플릿 및 딥러닝 역합성 경로 탐색 엔진
+│   ├── serving/                 # FastAPI 애플리케이션 및 추론 파이프라인
+│   └── ui/                      # Streamlit / Web UI 대시보드 인터페이스
+├── configs/                     # 선언적 YAML 설정 (ADMET 클러스터, DTI, 서빙, 트래킹)
+├── deploy/                      # Colab 학습 스크립트, Dockerfile, docker-compose.yml
+├── docs/                        # 시스템 상세 가이드, 아키텍처, 벤치마크 아카이브
+├── models/                      # 학습된 체크포인트 (.pt), 스케일러 (.pkl), 모델 아티팩트
+├── scripts/                     # W&B 모델 동기화, 배치 벤치마크 유틸리티 스크립트
+└── tests/                       # 180+ 회귀 및 단위 테스트 (Zero-training 원칙)
 ```
 
 ---
 
-## 2. 🏆 ADMET Benchmark SOTA & Engineering Recipes
+## ⚙️ 환경 설정 및 무결성 검증 (Setup & Verification)
 
-TDC-Studio는 데이터 희소성(Sample Scarcity)과 화학 골격 편향(Scaffold Shift)으로 인해 단일 모델로는 $R^2 \approx 0.5 \sim 0.6$에서 한계에 도달하던 기존 소규모 ADMET 예측의 한계를 극복하기 위해, **'5대 SOTA 엔지니어링 레시피'** 및 **'생물·물리화학적 Task Clustering 전이학습(Multi-Task Learning)'**을 확립했습니다.
+### (1) 환경 요구사항
+- **Python**: `3.11` (TDC 데이터셋 라이브러리 및 PyTorch Geometric C++ 바이너리 호환 필수)
+- **패키지 매니저**: [uv](https://github.com/astral-sh/uv) (가상환경 격리 및 초고속 의존성 동기화)
 
-### (1) 공식 TDC Caco-2 Wang 벤치마크 단계별 성과 (181개 Scaffold Test Set)
-> 공식 Bemis-Murcko Scaffold Test Set(181개 화합물)에 대해 테스트 세트 유출(Data Leakage) 0% 상태에서, 원래 물리적 스케일($\log P_{\text{app}}$)로 엄격히 역변환하여 산출된 결과입니다.
+### (2) 로컬 개발 환경 동기화
+```bash
+git clone https://github.com/brightonmoon/tdc-studio.git
+cd tdc-studio
 
-| 마일스톤 | 핵심 방법론 | Test $R^2$ | Test Pearson ($r$) | Test MAE | Test RMSE | 비고 |
-| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **초기 상태** | 5-Epoch MSE 미튜닝 Baseline | -0.16 ~ +0.05 | 0.3567 | 0.5855 | 0.8285 | 10초 파이프라인 검증 |
-| **Phase 1** | Target Standardization + 210 RDKit Descriptors | +0.5340 | 0.7788 | 0.3747 | 0.4685 | 스케일 불균형 해소 |
-| **Phase 2** | D-MPNN (원자-결합 지향 메시지 패싱) | +0.6012 | 0.8057 | 0.3476 | 0.4335 | 화학 결합 방향성 반영 |
-| **Phase 3** | Single-Task 5-Model Ensemble (Seeds 42~46) | +0.6292 | 0.8068 | 0.3420 | 0.4179 | 단일 태스크 한계($R^2 \approx 0.65$) |
-| **Phase 4** | Bio-Permeability MTL 단일 모델 (14,000+ 화합물) | +0.6986 | 0.8411 | 0.3241 | 0.3980 | 특성 전이로 0.65 돌파 |
-| **Phase 5** | **5-Model Bio-Permeability MTL Ensemble** | **+0.7059** <br> *(M2: **0.7327**)* | **0.8441** <br> *(M2: **0.8591**)* | **0.3195** <br> *(M2: 0.2996)* | **0.3932** <br> *(M2: 0.3748)* | **문헌 SOTA 신뢰구간 공식 진입** |
-| **Literature SOTA** | Chemprop D-MPNN-Des 5-Model Ensemble | **0.743 ± 0.018** | **~0.86** | **0.242 ± 0.011** | **0.325 ± 0.013** | TDC 공식 리더보드 기준 |
+# 개발 의존성을 포함하여 초고속 가상환경 동기화
+uv sync --extra dev
+```
 
-- 📖 **상세 기술 리포트:** [Caco-2 SOTA Evolution Report](docs/benchmarks/caco2_sota_progress_report.md)
-- 📖 **ADMET SOTA 엔지니어링 표준 가이드:** [ADMET SOTA Recipe & Task Clustering Map](docs/guides/admet_sota_recipe.md)
+### (3) 코드 무결성 검증 (린트 & 단위 테스트)
+```bash
+# 1. Ruff 정적 분석 검사
+uv run ruff check tdc_studio tests
 
-### (2) 공식 TDC Cluster 2: 혈장 분포 및 조직 침투 (PPBR / VDss / BBB) Tri-Hybrid SOTA
-> Bemis-Murcko Scaffold Test Set에 대해 분자 그래프 D-MPNN, 생물물리학 GBDT, ChemBERTa 대형 언어모델을 결합한 **Tri-Hybrid Foundation Stacker** 벤치마크 결과입니다.
-
-| 태스크 명칭 | 벤치마크 타깃 | 데이터 규모 | Test $R^2$ / AUROC | Spearman $\rho$ | MAE | 상태 / 판정 |
-| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **`ppbr_az`** | 혈장 단백 결합률 (%) | 1,797 | **`0.5525`** | **`0.7662`** | **`6.12%`** *(고결합 3.34%)* | **TDC 전체 벤치마크 역대 최고 순위 상관계수 달성 🏆** |
-| **`vdss_lombardo`**| 정상상태 분포용적 | 1,130 | **`0.5361`** | **`0.7778`** | **`0.336`** ($\log_{10}\text{ L/kg}$) | **SOTA 달성 (순수 GNN 대비 +0.1862 도약)** |
-| **`bbb_martins`** | 뇌혈관장벽 투과도 | 2,050 | **`0.9167`** (AUC) | — | ACC **85.2%** | **ADMETlab 3.0 목표치(0.908) 초과 달성** |
-| **`lipophilicity`** | 지질친화도 ($\log D_{7.4}$) | 4,200 | **`0.7602`** | **`0.9236`** | **`0.412`** | **목표치(0.74) 초과 달성 (Pearson r = 0.9168)** |
-
-- 💾 **배포 아티팩트:** `models/export/ppbr_tri_hybrid_sota.pt` (14.4MB), `models/export/vdss_tri_hybrid_sota.pt` (17.1MB)
-- 🔗 **W&B 공식 런:** [wandb.ai/tdc-studio/tdc-learning/runs/xxw7u6ph](https://wandb.ai/tdc-studio/tdc-learning/runs/xxw7u6ph)
-
-### (3) 공식 TDC Cluster 3: CYP450 8-Head 대사 매트릭스 벤치마크 성과 (Scaffold Test Set)
-> Veith et al. 5대 저해 효소(60,000+건)로 학습된 DMPNN 백본 지식을 Carbon-Mangels 3대 기질 희소 과제(각 660건)로 전이시키는 **2단계 전이학습(Two-Stage Protocol: Staged Unfreezing + Cosine Annealing)**을 적용하여 도출된 공식 벤치마크 결과입니다.
-
-| 태스크 분류 | 엔드포인트 명칭 | 데이터 규모 | Test AUROC | Accuracy (ACC) | Balanced ACC | Matthews Corr (MCC) | F1-Score | 상태 / 성과 판정 |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **CYP1A2** | `cyp1a2_veith` | 12,579 | **`0.9194`** | **84.3%** | 84.1% | **`+0.686`** | 0.827 | **SOTA 달성 (AUC > 0.90 돌파)** |
-| **CYP2C9** | `cyp2c9_veith` | 12,092 | **`0.8827`** | **81.3%** | 77.9% | **`+0.578`** | 0.713 | **매우 우수 (안정적 수렴)** |
-| **CYP3A4** | `cyp3a4_veith` | 12,328 | **`0.8784`** | **78.7%** | 77.6% | **`+0.566`** | 0.739 | **Primary 벤치마크 앵커 완결** |
-| **CYP2C19**| `cyp2c19_veith`| 12,665 | **`0.8774`** | **79.1%** | 78.8% | **`+0.586`** | 0.766 | **우수 (안정적 수렴)** |
-| **CYP2D6** | `cyp2d6_veith` | 13,130 | **`0.8323`** | **84.1%** | 69.1% | **`+0.470`** | 0.536 | **양호 (클래스 불균형 극복)** |
-| **CYP2D6 기질** | `cyp2d6_substrate` | 667 | **`0.9928`** | **97.7%** | 98.3% | **`+0.952`** | **0.968** | **준-완전 예측 (전이학습 극대화)** |
-| **CYP2C9 기질** | `cyp2c9_substrate` | 669 | **`0.9638`** | **97.0%** | 95.6% | **`+0.912`** | **0.931** | **압도적 SOTA (+31.9% 도약)** |
-| **CYP3A4 기질** | `cyp3a4_substrate` | 670 | **`0.9130`** | **90.2%** | 89.4% | **`+0.800`** | **0.918** | **목표 초과 달성 (+23.4% 폭증)** |
-| **기질 3종 평균**| **Substrates Transfer** | **2,000+** | **`0.9565`** | **95.0%** | **94.4%** | **`+0.888`** | **0.939** | **Cluster 3 태스크 공식 종결** |
-
-- 🔗 **W&B 공식 런 (Stage 1 Joint Pretraining):** [wandb.ai/tdc-studio/tdc-learning/runs/f9v2gcsr](https://wandb.ai/tdc-studio/tdc-learning/runs/f9v2gcsr)
-- 🔗 **W&B 공식 런 (Stage 2 Substrate Transfer):** [wandb.ai/tdc-studio/tdc-learning/runs/3qihar8z](https://wandb.ai/tdc-studio/tdc-learning/runs/3qihar8z)
-- 💾 **공식 체크포인트:** `models/export/cluster_3_cyp450/best_model.pt` (9.38MB)
-
-### (4) 공식 TDC Cluster 4: 체내 클리어런스 & 반감기 및 PBPK 생체 연계 엔진
-> 간세포/마이크로솜 고유 클리어런스와 소실 반감기를 D-MPNN MTL 및 Pearson 가중치 손실로 동시 최적화하고, Cluster 2의 $V_{dss}$ 및 $f_u$와 연계하여 **전신 생체 클리어런스($CL_{\text{total}} = \frac{V_{dss} \cdot \ln 2}{t_{1/2}}$)와 Well-Stirred 간 클리어런스($CL_H$)를 산출하는 전주기 PBPK 시뮬레이션 파이프라인**을 구축했습니다.
-
-| 태스크 명칭 | 벤치마크 과제 | 데이터 규모 | Test Spearman $\rho$ | Test Pearson ($r$) | Test MAE ($\log_{10}$) | 상태 / 성과 판정 |
-| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **`clearance_microsome_az`** | 간 마이크로솜 클리어런스 | 1,102 | **`0.6918`** | **`0.6046`** | **`0.369`** | **목표(0.575) 대폭 초과 달성 (+0.1168 SOTA 경신 🏆)** |
-| **`half_life_obach`** | 소실 반감기 ($t_{1/2}$) | 667 | **`0.5256`** | **`0.5062`** | **`0.363`** | **TDC 리더보드 SOTA 동등 수준 달성** |
-| **`clearance_hepatocyte_az`**| 간세포 클리어런스 | 1,213 | **`0.3356`** | 0.3154 | 0.470 | 안정 수렴 완료 |
-
-- 🧮 **PBPK 엔진 모듈:** [`tdc_studio/pbpk/engine.py`](tdc_studio/pbpk/engine.py), [`tdc_studio/serving/pbpk_pipeline.py`](tdc_studio/serving/pbpk_pipeline.py)
-- 🌐 **서빙 엔드포인트:** `POST /predict/pbpk` (SMILES 입력 시 $V_{dss}$, $t_{1/2}$, $f_u$, $CL_{\text{total}}$, $CL_H$, 간 추출비 $E_H$ 일괄 산출)
-- 🔗 **W&B 공식 런:** [wandb.ai/tdc-studio/tdc-learning/runs/rf7sv2a8](https://wandb.ai/tdc-studio/tdc-learning/runs/rf7sv2a8)
-- 💾 **공식 체크포인트:** `models/export/cluster_4_clearance/best_model.pt` (11.3MB)
-
-### (5) 공식 TDC Cluster 5: 심장 안전성(hERG) 및 광범위 독성(DILI / ClinTox) 방어벽
-> 13.4k 대규모 hERG_Karim 표상 전이와 간독성(DILI) 및 임상 독성 실패(ClinTox)를 결합한 고용량 8대 안전성 멀티태스크 벤치마크 결과입니다.
-
-| 안전성 평가 과제 | 엔드포인트 명칭 | 데이터 규모 | Test AUROC | Test MAE | 상태 / 성과 판정 |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| **`dili`** | 약물 유도 간독성 | 475 | **`0.9444`** | — | **목표(0.82) 대비 +12.4% 압도적 SOTA 달성 🏆** |
-| **`clintox`** | FDA 임상시험 독성 실패 | 1,484 | **`0.9739`** | — | **임상 독성 실패 97.4% 완벽 방어** |
-| **`herg_karim`** | hERG 대규모 문헌 셋 | 13,445 | **`0.8333`** | — | 1.34만 분자 대규모 결합 안정화 |
-| **`herg`** | hERG 심장 독성 (Wang) | 648 | **`0.8330`** | — | 골드 스탠다드 심장 안전성 방어벽 확립 (Val 피크: 0.8471) |
-| **`ld50_zhu`** | 급성 경구 치사량 | 7,385 | — | **`0.4394`** | **목표(0.584) 대비 오차 대폭 감축 (Pearson r = 0.5980)** |
-
-- 🔗 **W&B 공식 런:** [wandb.ai/tdc-studio/tdc-learning/runs/3zc46qjp](https://wandb.ai/tdc-studio/tdc-learning/runs/3zc46qjp)
-- 💾 **공식 체크포인트:** `models/export/cluster_5_safety/best_model.pt` (21.5MB)
-- 🔄 **W&B Model Registry 자동 동기화:** `uv run python scripts/sync_wandb_models.py` (전체 87개 런 인덱싱 및 로컬 동기화)
-
+# 2. 단위 테스트 실행 (Zero-training Mock/Toy 배치 기반으로 15초 이내 완료)
+uv run pytest -v
+```
 
 ---
 
-## 3. 🧬 DTI/DTA Phase B — Foundation Model 기반 Drug-Target 결합력 예측
+## 🚀 빠른 시작 (Quickstart & Workflow)
 
-TDC-Studio는 ADMET 예측을 넘어, **Drug-Target Affinity (DTA)** 예측을 위한 대형 사전학습(Foundation) 모델 파이프라인을 제공합니다. Phase B는 HuggingFace 기반의 ChemBERTa(화합물) + ESM-2(단백질) 파운데이션 인코더를 결합하여 **BindingDB Kd Cold-Drug 벤치마크에서 CI ≥ 0.70을 달성**합니다.
-
-### (1) Phase B 아키텍처
-
-```text
-                    ┌─────────────────────────┐
-    SMILES ─────▶   │  ChemBERTaEncoder        │  ─────┐
-                    │  DeepChem/ChemBERTa-77M  │       │   ┌──────────────────────────┐
-                    │  384d → 256d Projection  │       ├─▶ │  BilinearAttentionFusion  │ ─▶ pKd Score
-                    └─────────────────────────┘       │   └──────────────────────────┘
-                    ┌─────────────────────────┐       │
-    AA Seq ──────▶  │  ESM2Encoder             │  ─────┘
-                    │  facebook/esm2_t12_35M   │
-                    │  480d → 256d Projection  │
-                    │  + In-Memory Cache       │
-                    └─────────────────────────┘
-```
-
-| 컴포넌트 | HuggingFace 모델 ID | 출력 차원 | 특이사항 |
-|:---|:---|:---:|:---|
-| **ChemBERTaEncoder** | `DeepChem/ChemBERTa-77M-MTR` | 256 | Masked Mean Pooling, `freeze()`/`unfreeze(n)` |
-| **ESM2Encoder** | `facebook/esm2_t12_35M_UR50D` | 256 | max_length=1024, **고유 서열 인메모리 캐시** (15× 가속) |
-| **BilinearAttentionFusion** | — | 1 | 약물·단백질 교차 어텐션 융합 후 pKd 회귀 |
-
-> [!TIP] **YAML 2줄로 Phase A → B 업그레이드**: `drug_encoder` / `protein_encoder` 키만 교체하면 기존 Phase A GIN+CNN 파이프라인에서 Phase B 파운데이션 파이프라인으로 전환됩니다.
-
-### (2) 🏆 BindingDB Kd Cold-Drug 벤치마크 결과
-
-> 공식 TDC Cold-Drug Split (학습 약물과 완전히 다른 신약 후보 평가) 기준의 최종 테스트 결과입니다.
-
-| Phase | 약물 인코더 | 단백질 인코더 | Cold-Drug CI ↑ | MSE ↓ | RMSE ↓ | Pearson r ↑ |
-|:---:|:---|:---|:---:|:---:|:---:|:---:|
-| **Phase A** | GINE (GNN) | ProteinCNN | — | — | — | — |
-| **Phase B** | ChemBERTa-77M | ESM-2 35M | **0.7464 ✅** | **0.6609 ✅** | 0.8130 | 0.6508 |
-| **목표 기준** | — | — | ≥ 0.70 | ≤ 0.75 | — | — |
-
-- 📄 **상세 결과**: [`models/dti/phase_b/benchmark_summary.yaml`](models/dti/phase_b/benchmark_summary.yaml)
-- ⚙️ **학습 설정**: [`configs/config_dti_phase_b.yaml`](configs/config_dti_phase_b.yaml)
-- 🚀 **Colab 학습 스크립트**: [`deploy/train_dti_phase_b.py`](deploy/train_dti_phase_b.py)
-
-### (3) DTI/DTA Phase B 실행 가이드
-
-#### 로컬 무결성 검증 (Dry-run)
+### (1) ADMET & PBPK 일괄 예측 CLI
+SMILES 입력 시 25종 ADMET 지표와 14-구획 PBPK 파라미터를 일괄 산출합니다:
 ```bash
-# 모델 레지스트리, DataModule, forward/backward 통합 검증
-uv run python deploy/dti_phase_b_dry_run.py
+uv run tdc-studio predict "CC(=O)Oc1ccccc1C(=O)O"
 ```
 
-#### Colab GPU 학습 (세션 분리 권장)
+### (2) 치료지수(TI) 및 안전역 평가 CLI
+타깃 결합력($K_d$)과 hERG 심장 독성 예측값을 연계하여 치료 안전역을 판정합니다:
 ```bash
-# tdc-studio-dti 전용 세션으로 T4 GPU 학습 실행
-# (ADMET 학습과 세션 분리: tdc-studio-admet / tdc-studio-dti)
-uv run python -c "
-from tdc_studio.remote.colab_runner import ColabRunner
-runner = ColabRunner(session='tdc-studio-dti')
-runner.run_script('deploy/train_dti_phase_b.py',
-                  config='configs/config_dti_phase_b.yaml')
-"
+uv run tdc-studio ti "CC(=O)Oc1ccccc1C(=O)O" --kd 10.0
 ```
 
-#### Phase A → Phase B YAML 전환 (핵심 2줄 변경)
-```yaml
-# configs/config_dti_phase_b.yaml (변경된 핵심 항목)
-drug_encoder:
-  name: chemberta_encoder      # ← Phase A: gine_model
-  pretrained_model: DeepChem/ChemBERTa-77M-MTR
-
-protein_encoder:
-  name: esm2_encoder           # ← Phase A: protein_cnn
-  pretrained_model: facebook/esm2_t12_35M_UR50D
-  freeze_backbone: true
-```
-
-#### 단위 테스트 (Zero-training, 인터넷 없이 Mock 기반)
-uv run --extra dev pytest tests/test_pretrained_encoders.py tests/test_serving_api.py tests/test_cross_attention_fusion.py -v
-# 예상 출력: 17 passed
-```
-
-#### DTI 프로덕션 서빙 (/predict/dti)
+### (3) 대화형 웹 대시보드 UI 구동
+분자 구조 렌더링, ADMET 레이더 차트, PBPK 혈중 농도 시뮬레이션 곡선을 웹 브라우저에서 직접 조작합니다:
 ```bash
-# 1. 서빙 서버 구동 (DTI 모델 디렉토리 지정 시 자동 로딩)
-MODEL_DIR=models/export/dti_phase_c uv run tdc-studio serve --port 8000
+uv run tdc-studio ui --port 8000
+# 접속: http://localhost:8000/
+```
 
-# 2. DTI 결합 친화도 추론 요청 (pKd 및 Kd nM 산출)
+### (4) 로컬 무결성 1-Step 점검 (Dry-run)
+실제 대용량 학습 전 1-Batch 포워드/백워드 무결성을 즉시 검증합니다:
+```bash
+uv run tdc-studio train --config configs/config.yaml --dry-run
+uv run tdc-studio tune --config configs/config.yaml --n-trials 2 --dry-run
+```
+
+### (5) Google Colab 클라우드 GPU 원격 학습 위임
+로컬 리소스 소모 없이 Google Colab GPU 인스턴스(T4, A100 등)로 학습을 위임합니다:
+```bash
+# A100 GPU 할당 및 원격 실행
+uv run tdc-studio remote run --gpu a100 --command "tdc-studio train --config configs/admet/caco2.yaml"
+
+# 일회성 Colab Jupyter Notebook (.ipynb) 파일로 내보내기
+uv run tdc-studio remote export-notebook --output tdc_colab_runner.ipynb
+```
+
+### (6) 프로덕션 REST API 서빙
+```bash
+# FastAPI 서버 시작
+uv run tdc-studio serve --port 8000
+```
+
+<details>
+<summary><b>🔍 cURL 호출 및 API 응답 JSON 예시 보기 (클릭)</b></summary>
+
+#### PBPK 생체역학 파라미터 예측 쿼리
+```bash
+curl -X POST "http://localhost:8000/predict/pbpk" \
+     -H "Content-Type: application/json" \
+     -d '{"smiles": ["CC(=O)NC1=CC=C(O)C=C1"]}'
+```
+*응답 예시:*
+```json
+{
+  "smiles": "CC(=O)NC1=CC=C(O)C=C1",
+  "pbpk_parameters": {
+    "vdss_L_kg": 0.952,
+    "fu_percent": 78.4,
+    "clearance_total_mL_min_kg": 5.12,
+    "half_life_hours": 2.15,
+    "extraction_ratio_hepatic": 0.247
+  },
+  "therapeutic_index": {
+    "herg_safety_margin": "SAFE",
+    "risk_level": "LOW"
+  }
+}
+```
+
+#### DTI 약물-표적 결합 친화도($pK_d$, $K_d$) 예측 쿼리
+```bash
 curl -X POST "http://localhost:8000/predict/dti" \
      -H "Content-Type: application/json" \
      -d '{
@@ -216,89 +174,72 @@ curl -X POST "http://localhost:8000/predict/dti" \
        "return_kd_nm": true
      }'
 ```
-### (4) 브랜치 거버넌스
+</details>
 
-| 브랜치 | 목적 |
-|:---|:---|
-| `main` | Phase B 전체 코드 포함 (Fast-forward 병합 완료) |
-| `dta/phase-b-foundation` | DTI/DTA Phase C 연구를 위한 전용 보존 브랜치 |
-| `brightonmoon/ADMET` | ADMET 전용 개발 브랜치 |
+### (7) W&B Model Registry 자동 동기화 & Docker 실행
+```bash
+# 학습된 클라우드 체크포인트를 로컬 models/export/로 자동 인덱싱 및 동기화
+uv run python scripts/sync_wandb_models.py
 
----
-
-## 4. 4대 프로젝트 관리 체크리스트
-
-TDC-Studio는 실험의 재현성과 개발 속도를 보장하기 위해 다음 4대 체크리스트를 준수합니다:
-
-1. **설치 및 환경:** 런타임은 Python 3.11 기반의 `uv sync --extra dev`로 관리. ([가이드](docs/01_environment_setup.md))
-2. **품질 검증 (커밋 전 필수):** `uv run ruff check` 및 `uv run pytest -v` 통과 의무화. ([기여 규칙](CONTRIBUTING.md))
-3. **학습 실행:** 로컬은 `--dry-run` 1초 점검, 실제 학습은 `tdc-studio remote exec`으로 클라우드 위임. ([가이드](docs/03_training_and_hpo.md))
-4. **실험 기록:** `configs/tracking/`에 W&B 프로젝트명을 분리하여 Run 및 Artifact 추적. ([설정 가이드](configs/README.md))
+# 프로덕션 서빙 컨테이너 구동
+docker compose -f deploy/docker-compose.yml up -d
+```
 
 ---
 
-## 4. 문서 허브 (Documentation Index)
+## 🛡️ 에이전트 & 엔지니어링 개발 지침 (Agent Guidelines)
 
+TDC-Studio 기여 및 코드 수정 시 반드시 준수해야 하는 5대 원칙입니다:
+
+1. **Zero-Training 단위 테스트 원칙**:
+   - 단위 테스트에서 실제 대용량 데이터셋 다운로드나 긴 에포크 학습을 수행하지 않습니다.
+   - Mocking 및 `toy_batch`를 활용하여 15초 이내에 모든 회귀 테스트(`pytest`)가 통과되도록 유지합니다.
+2. **안전한 모델 직렬화 (`weights_only=True`)**:
+   - 모델 가중치 역직렬화 시 임의 코드 실행 취약점을 원천 방어하기 위해 `torch.load(..., weights_only=True)`를 강제합니다.
+3. **화학적 동등성 및 정규화 (Canonicalization)**:
+   - 분자 구조 비교 및 역합성 검증 시 RDKit `Chem.MolToSmiles(canonical=True)` 정규화를 필히 적용합니다.
+4. **NaN 손실 방어 및 마스킹**:
+   - 다중 작업(Multi-task) 학습 시 결측 레이블로 인한 기울기 왜곡을 방지하기 위해 `MaskedLoss`와 `zero_division=0` 가드를 유지합니다.
+5. **Colab 세션 분리 거버넌스**:
+   - GPU 리소스 경합 및 세션 충돌을 방지하기 위해 세션명을 분리합니다 (`tdc-studio-admet`, `tdc-studio-dti`, `tdc-studio-retro`).
+
+---
+
+## 📚 종합 문서 허브 (Documentation Index)
+
+자세한 벤치마크 결과, 이론적 설계 배경 및 로드맵은 다음 문서들을 참조하십시오:
+
+### 📊 벤치마크 및 실측 성과 아카이브
 | 문서 | 설명 |
 | :--- | :--- |
-| **[📋 학습 파이프라인 실행 체크리스트 & TODOLIST](docs/roadmaps/training_pipeline_todolist.md)** | **내일 즉시 시작 가능한 클러스터별 1-Epoch Smoke Test 및 실측 학습 로드맵** |
-| **[🎯 ADMETlab 3.0 기반 TDC 목표 성능 규격서](docs/benchmarks/admetlab3_tdc_target_performance.md)** | **NAR 2024 부록 기준 22+ TDC 전 태스크별 목표 성능 수치(R², RMSE, MAE, AUC, ACC)** |
-| **[📐 ADMET 5대 클러스터 모델 설계 청사진](docs/guides/admet_cluster_architectures.md)** | **Caco-2를 벤치마킹한 Lipo, PPBR/BBB/VDss, CYP450, Clearance, Tox 전용 모델 설계안** |
-| **[🏆 ADMET SOTA 엔지니어링 레시피 & 클러스터 맵](docs/guides/admet_sota_recipe.md)** | **5대 황금률, TDC 22+ 태스크 클러스터링 맵, 다중학습 및 앙상블 가이드** |
-| **[📊 PPBR 체내분포 SOTA & Tri-Hybrid 리포트](docs/benchmarks/ppbr_distribution_sota_progress_report.md)** | **Tri-Hybrid 스태커(R²=0.5412) 및 잔차 오차 진단, ChEMBL HSA 전이 실측 데이터** |
-| **[📊 Caco-2 SOTA 벤치마크 진화 리포트](docs/benchmarks/caco2_sota_progress_report.md)** | **초기 Baseline부터 SOTA 신뢰구간(0.7327) 도달까지의 전 과정 실측 데이터** |
-| **[🧬 DTI Phase B 실행 계획서](docs/dti/dti_phase_b_plan.md)** | **ChemBERTa + ESM-2 파운데이션 모델 설계 · 8단계 실행 로드맵 · 세션 거버넌스** |
-| **[📊 DTI Phase B 벤치마크 결과](models/dti/phase_b/benchmark_summary.yaml)** | **BindingDB Kd Cold-Drug: CI=0.7464 ✅, MSE=0.6609 ✅ (목표 초과 달성)** |
-| **[01. 환경 설정 및 설치](docs/01_environment_setup.md)** | Python 3.11 고정 이유, UV 가상환경, Colab CLI 인증 가이드 |
+| **[🏆 ADMET 5대 클러스터 SOTA 벤치마크 아카이브](docs/benchmarks/admet_cluster_sota_archive.md)** | **Caco-2, PPBR/VDss/BBB, CYP450, Clearance, Safety 전 클러스터 실측 수치, W&B 런 및 체크포인트** |
+| **[📊 Caco-2 SOTA 벤치마크 진화 리포트](docs/benchmarks/caco2_sota_progress_report.md)** | Baseline부터 SOTA 신뢰구간($R^2=0.7327$) 도달까지의 전 과정 실측 데이터 |
+| **[📊 PPBR 체내분포 Tri-Hybrid 리포트](docs/benchmarks/ppbr_distribution_sota_progress_report.md)** | Tri-Hybrid Stacker($R^2=0.5412$) 및 ChEMBL HSA 전이학습 실측 데이터 |
+| **[🎯 ADMETlab 3.0 대비 목표 성능 규격서](docs/benchmarks/admetlab3_tdc_target_performance.md)** | NAR 2024 부록 기준 22+ TDC 전 태스크별 목표 성능 수치 및 갭 분석 |
+| **[🧬 DTI Phase B 벤치마크 결과 리포트](docs/dti/dti_phase_b_benchmark_report.md)** | BindingDB Kd Cold-Drug CI = 0.7464 달성 실측 성과 및 Phase B 구조 명세서 |
+
+### 📐 설계 원리 및 도메인 가이드
+| 문서 | 설명 |
+| :--- | :--- |
+| **[🧪 22+ ADMET 지표 선정 근거 및 PBPK 설계 철학](docs/guides/admet_selection_and_pbpk_rationale.md)** | **TDC 38종 중 22+(25)종 선별 이유, 비선정/통합 4대 사유 표, 14-구획 PBPK 메커니즘** |
+| **[🏆 ADMET SOTA 엔지니어링 레시피 & 클러스터 맵](docs/guides/admet_sota_recipe.md)** | 5대 황금률, TDC 22+ 태스크 클러스터링 맵, 다중학습 및 앙상블 기법 가이드 |
+| **[📐 ADMET 5대 클러스터 모델 설계 청사진](docs/guides/admet_cluster_architectures.md)** | 클러스터별 최적 백본 신경망 구조 및 피처 파이프라인 상세 설계안 |
 | **[02. 알고리즘 선택 가이드](docs/02_algorithm_selection.md)** | ADMET/DTA 태스크별 의사결정 트리 및 추천 모델 백본 매트릭스 |
+
+### 🛠️ 엔지니어링 및 운영 가이드
+| 문서 | 설명 |
+| :--- | :--- |
+| **[01. 환경 설정 및 설치](docs/01_environment_setup.md)** | Python 3.11 고정 이유, UV 가상환경, Colab CLI 인증 가이드 |
 | **[03. 학습 및 HPO 운영](docs/03_training_and_hpo.md)** | 로컬 1-Step 드라이런, Colab GPU 위임 및 W&B 실시간 추적 |
 | **[04. 컴포넌트 확장 가이드](docs/04_extending_components.md)** | `@MODELS`, `@DATASETS` 데코레이터를 이용한 신규 모델/데이터 추가법 |
 | **[05. 서빙 및 컨테이너 배포](docs/05_serving_deployment.md)** | FastAPI API 명세서 및 Docker Compose 프로덕션 배포 |
 | **[설정(Configs) 명세](configs/README.md)** | YAML 선언적 설정 파일 구조 및 파라미터 규격 |
-| **[기여 및 품질 관리](CONTRIBUTING.md)** | 커밋 전 필수 검증 및 Zero-training 테스트 작성 원칙 |
+| **[기여 및 품질 관리 규칙](CONTRIBUTING.md)** | 커밋 전 필수 검증 및 Zero-training 테스트 작성 원칙 |
 
----
-
-## 5. 퀵스타트 (Quickstart)
-
-### (1) 환경 설치
-```bash
-git clone https://github.com/brightonmoon/tdc-studio.git
-cd tdc-studio
-uv sync --extra dev
-```
-
-### (2) 무결성 검증 (린트 & 단위 테스트)
-```bash
-# 린트 검사
-uv run ruff check tdc_studio tests
-
-# 단위 테스트 (Zero-training 원칙, 15초 이내 완료)
-uv run pytest -v
-```
-
-### (3) 주요 실행 명령어
-```bash
-# 1. 로컬 1-Step 무결성 사전 점검 (Dry-run)
-uv run tdc-studio train --config configs/config.yaml --dry-run
-uv run tdc-studio tune --config configs/config.yaml --n-trials 2 --dry-run
-
-# 2. 클라우드 GPU(Google Colab)로 학습 위임
-uv run tdc-studio remote run --gpu a100 --command "tdc-studio tune --config configs/config.yaml --n-trials 50"
-
-# 3. 일회성 Colab Jupyter Notebook (.ipynb) 추출
-uv run tdc-studio remote export-notebook --output tdc_colab_runner.ipynb
-
-# 4. FastAPI 서빙 서버 로컬 구동 (Swagger: http://localhost:8000/docs)
-uv run uvicorn api:app --port 8000
-
-# 5. PBPK 생체 약동학 실시간 예측 쿼리
-curl -X POST "http://localhost:8000/predict/pbpk" -H "Content-Type: application/json" -d '{"smiles": ["CC(=O)NC1=CC=C(O)C=C1"]}'
-
-# 6. W&B Model Registry SOTA 체크포인트 자동 동기화
-uv run python scripts/sync_wandb_models.py
-
-# 7. 프로덕션 Docker 컨테이너 구동
-docker compose -f deploy/docker-compose.yml up -d
-
-```
+### 📋 프로젝트 로드맵 및 연구 계획
+| 문서 | 설명 |
+| :--- | :--- |
+| **[📋 학습 파이프라인 실행 체크리스트 & TODOLIST](docs/roadmaps/training_pipeline_todolist.md)** | 클러스터별 1-Epoch Smoke Test 및 실측 학습 실행 로드맵 |
+| **[🔬 역합성 마스터 작업 계획서](docs/retrosynthesis/retrosynthesis_master_work_plan.md)** | 템플릿 기반 및 딥러닝 역합성 모듈 구현 마스터 플랜 |
+| **[🧬 DTI Phase C 고도화 계획서](docs/dti/dti_phase_c_advancement_plan.md)** | ESM-2 + ChemBERTa 결합 고도화 및 DTI 확장 계획 |
+| **[🧭 차기 단계 종합 작업 계획서](docs/roadmaps/next_phase_work_plan.md)** | TDC-Studio 전 모듈 통합 및 프로덕션 릴리스 로드맵 |

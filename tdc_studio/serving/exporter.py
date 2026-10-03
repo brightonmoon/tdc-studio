@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -312,3 +312,194 @@ def export_dti_package(
         json.dump(manifest, f, indent=2)
 
     return manifest
+
+
+def export_torchscript_model(
+    model: torch.nn.Module,
+    example_inputs: Any,
+    output_dir: str,
+    file_name: str = "model.torchscript.pt",
+    method: str = "trace",
+    strict: bool = False,
+) -> str:
+    """Compile and export PyTorch model into TorchScript format for C++ serving and GIL-free speedup.
+
+    Args:
+        model: Model module in eval mode.
+        example_inputs: Sample input tensor or tuple for tracing.
+        output_dir: Destination directory.
+        file_name: Output filename (default 'model.torchscript.pt').
+        method: 'trace' (torch.jit.trace) or 'script' (torch.jit.script).
+        strict: Strict tracing validation.
+
+    Returns:
+        Absolute path to the saved TorchScript artifact.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    model.eval()
+
+    if method == "script":
+        scripted = torch.jit.script(model)
+    else:
+        if isinstance(example_inputs, (list, tuple)):
+            scripted = torch.jit.trace(model, example_inputs, strict=strict)
+        else:
+            scripted = torch.jit.trace(model, (example_inputs,), strict=strict)
+
+    out_path = os.path.join(output_dir, file_name)
+    scripted.save(out_path)
+    return out_path
+
+
+def export_onnx_model(
+    model: torch.nn.Module,
+    example_inputs: Any,
+    output_dir: str,
+    file_name: str = "model.onnx",
+    input_names: Optional[List[str]] = None,
+    output_names: Optional[List[str]] = None,
+    dynamic_axes: Optional[Dict[str, Dict[int, str]]] = None,
+    opset_version: int = 17,
+) -> str:
+    """Export PyTorch neural network to Open Neural Network Exchange (ONNX) format.
+
+    Args:
+        model: Model module in eval mode.
+        example_inputs: Sample inputs matching forward signature.
+        output_dir: Destination directory.
+        file_name: Output filename (default 'model.onnx').
+        input_names: Input tensor name identifiers.
+        output_names: Output tensor name identifiers.
+        dynamic_axes: Dict mapping tensor names to dynamic dimension mappings (e.g. batch size).
+        opset_version: ONNX operator set version (default 17).
+
+    Returns:
+        Absolute path to the saved ONNX artifact.
+    """
+    import onnx
+
+    os.makedirs(output_dir, exist_ok=True)
+    model.eval()
+
+    out_path = os.path.join(output_dir, file_name)
+    input_names = input_names or ["input"]
+    output_names = output_names or ["output"]
+
+    if dynamic_axes is None:
+        dynamic_axes = {
+            input_names[0]: {0: "batch_size"},
+            output_names[0]: {0: "batch_size"},
+        }
+
+    if not isinstance(example_inputs, (tuple, list)):
+        args = (example_inputs,)
+    else:
+        args = example_inputs
+
+    torch.onnx.export(
+        model,
+        args,
+        out_path,
+        export_params=True,
+        opset_version=opset_version,
+        do_constant_folding=True,
+        input_names=input_names,
+        output_names=output_names,
+        dynamic_axes=dynamic_axes,
+    )
+
+    onnx_model = onnx.load(out_path)
+    onnx.checker.check_model(onnx_model)
+
+    return out_path
+
+
+def load_onnx_inference_session(onnx_path: str) -> Any:
+    """Load ONNX model into high-throughput ONNX Runtime InferenceSession.
+
+    Args:
+        onnx_path: Path to .onnx file.
+
+    Returns:
+        onnxruntime.InferenceSession instance.
+    """
+    import onnxruntime as ort
+
+    sess_options = ort.SessionOptions()
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.intra_op_num_threads = min(4, os.cpu_count() or 1)
+
+    session = ort.InferenceSession(onnx_path, sess_options, providers=["CPUExecutionProvider"])
+    return session
+
+
+class OptimizedServingRuntime:
+    """Unified high-performance runtime engine supporting PyTorch, TorchScript, and ONNX backends."""
+
+    def __init__(
+        self,
+        pytorch_model: Optional[torch.nn.Module] = None,
+        torchscript_path: Optional[str] = None,
+        onnx_path: Optional[str] = None,
+    ):
+        self.pytorch_model = pytorch_model
+        self.torchscript_model = None
+        self.onnx_session = None
+        self.active_backend = "pytorch"
+
+        if onnx_path and os.path.exists(onnx_path):
+            try:
+                self.onnx_session = load_onnx_inference_session(onnx_path)
+                self.active_backend = "onnx"
+            except Exception:
+                pass
+
+        if (
+            self.active_backend == "pytorch"
+            and torchscript_path
+            and os.path.exists(torchscript_path)
+        ):
+            try:
+                self.torchscript_model = torch.jit.load(torchscript_path, map_location="cpu")
+                self.torchscript_model.eval()
+                self.active_backend = "torchscript"
+            except Exception:
+                pass
+
+    def run_inference(self, inputs: Any) -> Any:
+        """Execute accelerated inference via the fastest available backend."""
+        import numpy as np
+
+        if self.active_backend == "onnx" and self.onnx_session is not None:
+            if isinstance(inputs, torch.Tensor):
+                np_in = inputs.detach().cpu().numpy()
+            else:
+                np_in = np.asarray(inputs)
+
+            input_name = self.onnx_session.get_inputs()[0].name
+            outputs = self.onnx_session.run(None, {input_name: np_in})
+            return outputs[0]
+
+        elif self.active_backend == "torchscript" and self.torchscript_model is not None:
+            if isinstance(inputs, np.ndarray):
+                t_in = torch.from_numpy(inputs)
+            else:
+                t_in = inputs
+            with torch.no_grad():
+                out = self.torchscript_model(t_in)
+                if isinstance(out, torch.Tensor):
+                    return out.detach().cpu().numpy()
+                return np.asarray(out)
+
+        elif self.pytorch_model is not None:
+            if isinstance(inputs, np.ndarray):
+                t_in = torch.from_numpy(inputs)
+            else:
+                t_in = inputs
+            with torch.no_grad():
+                out = self.pytorch_model(t_in)
+                if isinstance(out, torch.Tensor):
+                    return out.detach().cpu().numpy()
+                return np.asarray(out)
+
+        raise RuntimeError("No active model or backend initialized in OptimizedServingRuntime.")

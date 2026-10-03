@@ -22,6 +22,7 @@ models/checkpoint*/
 *.pt
 *.pth
 *.onnx
+*.joblib
 
 # Data caches
 /data/*
@@ -36,5 +37,7 @@ tdc_colab*.ipynb
 Thumbs.db
 data/cache/
 # Worktrees
-ADMET/
-greenling/
+/ADMET/
+/greenling/
+/retrosynthesis/
+

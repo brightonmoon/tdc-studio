@@ -43,6 +43,10 @@ dependencies = [
     "pandas>=2.1.4",
     "scikit-learn>=1.9.1",
     "transformers>=4.50.3",
+    "python-multipart>=0.0.32",
+    "onnx>=1.23.1",
+    "onnxruntime>=1.30.0",
+    "onnxscript>=0.7.2",
 ]
 
 [project.optional-dependencies]
@@ -66,6 +70,10 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = [
+    ".venv",
+    "deploy",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

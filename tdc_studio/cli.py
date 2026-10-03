@@ -31,13 +31,18 @@ app = typer.Typer(
 )
 remote_app = typer.Typer(help="Cloud GPU remote execution commands via Google Colab CLI")
 app.add_typer(remote_app, name="remote")
+retro_app = typer.Typer(help="AI Retrosynthesis single-step prediction and multi-step planning")
+app.add_typer(retro_app, name="retrosynthesis")
 
 console = Console()
 
 
 def load_yaml(path: str) -> dict:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Configuration file not found: {path}")
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f)
+    return data if data is not None else {}
 
 
 def _batch_to_device(batch: dict, device: Any) -> dict:
@@ -178,7 +183,10 @@ def train(
     pretrained_path = cfg.get("pretrained_checkpoint")
     if pretrained_path and os.path.exists(pretrained_path):
         console.print(f"[bold cyan]Loading pre-trained weights from: {pretrained_path}[/bold cyan]")
-        chk = torch.load(pretrained_path, map_location=device)
+        try:
+            chk = torch.load(pretrained_path, map_location=device, weights_only=True)
+        except Exception:
+            chk = torch.load(pretrained_path, map_location=device)
         state_dict = chk.get("state_dict", chk) if isinstance(chk, dict) else chk
         model_dict = model.state_dict()
         matched = {
@@ -933,6 +941,9 @@ def ensemble(
             console.print(
                 f"\n[bold cyan]─── Training Ensemble Model #{idx + 1}/{len(seed_list)} (Seed: {seed}) ───[/bold cyan]"
             )
+            import random
+
+            random.seed(seed)
             torch.manual_seed(seed)
             np.random.seed(seed)
             if torch.cuda.is_available():
@@ -1685,10 +1696,237 @@ def serve(
     if model_dir:
         abs_model_dir = str(Path(model_dir).resolve())
         os.environ["MODEL_DIR"] = abs_model_dir
-        console.print(f"Configured MODEL_DIR: [yellow]{abs_model_dir}[/yellow]")
-
-    console.print(f"[bold green]Starting TDC-Studio Serving API[/bold green] on {host}:{port}...")
+        console.print(
+            f"[bold green]Starting TDC-Studio Serving API & Biomedical Dashboard[/bold green] on http://{host}:{port}..."
+        )
+    console.print(
+        f"  👉 [bold cyan]Interactive Web Dashboard[/bold cyan]: http://localhost:{port}/"
+    )
+    console.print(
+        f"  👉 [bold dim]Swagger API Documentation[/bold dim]: http://localhost:{port}/docs"
+    )
     uvicorn.run("tdc_studio.serving.app:app", host=host, port=port, workers=workers)
+
+
+@app.command("ui")
+def ui_serve(
+    host: str = typer.Option("127.0.0.1", help="Host address"),
+    port: int = typer.Option(8000, help="Port to listen on"),
+    model_dir: Optional[str] = typer.Option(
+        None, "--model-dir", help="Path to exported model directory"
+    ),
+):
+    """Launch the interactive biomedical web dashboard."""
+    serve(host=host, port=port, workers=1, model_dir=model_dir)
+
+
+@app.command("batch-predict")
+def batch_predict_cli(
+    input_file: str = typer.Argument(..., help="Path to input file (CSV, TSV, or SDF)"),
+    output_file: Optional[str] = typer.Option(
+        None, "-o", "--output", help="Path to output file (default: <input>_admet_results.<format>)"
+    ),
+    export_format: str = typer.Option("csv", "--format", help="Output format ('csv' or 'xlsx')"),
+    model_dir: Optional[str] = typer.Option(
+        "models/export", "--model-dir", help="Path to exported model directory"
+    ),
+):
+    """Run batch 22+ ADMET, Lipinski Rule of 5, and PBPK screening on molecular libraries."""
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+    from rich.table import Table
+
+    from tdc_studio.serving.batch_engine import BatchScreeningEngine
+    from tdc_studio.serving.unified_pipeline import UnifiedADMETPipeline
+
+    in_path = Path(input_file).resolve()
+    if not in_path.exists():
+        console.print(f"[bold red]Error:[/bold red] Input file '{in_path}' does not exist.")
+        raise typer.Exit(code=1)
+
+    console.print("[bold cyan]TDC-Studio High-Throughput Batch Screening[/bold cyan]")
+    console.print(f"  📁 Reading molecular library from: [yellow]{in_path}[/yellow]")
+
+    pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
+    engine = BatchScreeningEngine(pipeline=pipeline)
+
+    with open(in_path, "rb") as f:
+        content = f.read()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[green]Screening compounds...", total=100)
+        df, summary = engine.screen_file(content, in_path.name)
+        progress.update(task, completed=100)
+
+    # Determine output path
+    if output_file is None:
+        stem = in_path.stem
+        out_ext = ".xlsx" if export_format.lower() == "xlsx" else ".csv"
+        out_path = in_path.parent / f"{stem}_admet_results{out_ext}"
+    else:
+        out_path = Path(output_file).resolve()
+
+    if str(out_path).lower().endswith(".xlsx"):
+        df.to_excel(out_path, index=False)
+    else:
+        df.to_csv(out_path, index=False)
+
+    console.print("\n[bold green]✅ Batch screening complete![/bold green]")
+    console.print(f"  💾 Results exported to: [bold underline]{out_path}[/bold underline]")
+
+    # Print summary table
+    table = Table(title="Batch Screening Summary Statistics", show_header=True)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_column("Percentage", justify="right", style="green")
+
+    total = summary["total_molecules"]
+    table.add_row("Total Compounds Screened", str(total), "100.0%")
+    table.add_row(
+        "Lipinski Rule of 5 Compliant", str(summary["ro5_passed"]), f"{summary['ro5_pass_rate']}%"
+    )
+    table.add_row(
+        "Low Cardiotoxicity (hERG < 0.5)",
+        str(summary["herg_safe_count"]),
+        f"{summary['herg_safe_rate']}%",
+    )
+    table.add_row(
+        "Non-Mutagenic (AMES < 0.5)",
+        str(summary["ames_safe_count"]),
+        f"{summary['ames_safe_rate']}%",
+    )
+    console.print(table)
+
+
+@app.command("ti")
+@app.command("therapeutic-index")
+def therapeutic_index_cli(
+    smiles: str = typer.Argument(..., help="Candidate drug molecule SMILES"),
+    kd: Optional[float] = typer.Option(None, "--kd", help="On-target binding affinity Kd in nM"),
+    target_seq: Optional[str] = typer.Option(
+        None, "--target-seq", help="Target amino acid sequence"
+    ),
+    dose: float = typer.Option(100.0, "--dose", help="Reference oral dose in mg"),
+    herg_ic50: Optional[float] = typer.Option(None, "--herg-ic50", help="Explicit hERG IC50 in nM"),
+    model_dir: Optional[str] = typer.Option(
+        "models/export", "--model-dir", help="Path to exported models"
+    ),
+):
+    """Evaluate Therapeutic Index, hERG Safety Window, and Clinical Developability."""
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from tdc_studio.evaluation.therapeutic_index import TherapeuticIndexEngine
+    from tdc_studio.serving.unified_pipeline import UnifiedADMETPipeline
+
+    console.print(
+        "\n[bold cyan]🧪 TDC-Studio Therapeutic Index & Clinical Developability Engine[/bold cyan]"
+    )
+    console.print(f"  Molecule: [bold yellow]{smiles}[/bold yellow]")
+
+    pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
+    engine = TherapeuticIndexEngine(admet_pipeline=pipeline)
+
+    profile = engine.compute(
+        smiles=smiles,
+        target_kd_nm=kd,
+        target_sequence=target_seq,
+        herg_ic50_nm=herg_ic50,
+        dose_mg=dose,
+    )
+
+    # Format colors
+    score = profile.clinical_developability_score
+    score_color = "green" if score >= 80 else ("yellow" if score >= 60 else "red")
+    tier_color = (
+        "green"
+        if "Safe" in profile.herg_risk_tier
+        else ("yellow" if "Borderline" in profile.herg_risk_tier else "red")
+    )
+
+    table = Table(title="Pharmacological Safety Margin & Potency Profile", show_header=True)
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_column("Assessment", style="bold")
+
+    table.add_row(
+        "Target Potency (Kd)", f"{profile.target_kd_nm:.2f} nM", f"pKd = {profile.target_pkd:.2f}"
+    )
+    table.add_row(
+        "hERG IC50 (Potassium Channel)", f"{profile.herg_ic50_nm:.1f} nM", "TDC Blocker Calibration"
+    )
+    table.add_row(
+        "hERG Safety Margin (IC50 / Kd)",
+        f"{profile.herg_safety_margin:.1f}x",
+        f"[{tier_color}]{profile.herg_risk_tier}[/{tier_color}]",
+    )
+    table.add_row(
+        "Therapeutic Window (log10)",
+        f"{profile.herg_therapeutic_window_log10:.2f}",
+        "Target Window >= 2.0",
+    )
+    table.add_row(
+        "DILI Hepatotoxicity Risk",
+        f"{profile.dili_risk_probability:.2%}",
+        "[green]Low[/green]" if profile.dili_risk_probability < 0.5 else "[red]High Risk[/red]",
+    )
+    table.add_row(
+        "ClinTox Clinical Failure Risk",
+        f"{profile.clintox_risk_probability:.2%}",
+        "[green]Low[/green]" if profile.clintox_risk_probability < 0.5 else "[red]High Risk[/red]",
+    )
+    table.add_row(
+        "AMES Mutagenicity Risk",
+        f"{profile.ames_mutagenicity_probability:.2%}",
+        "[green]Negative[/green]"
+        if profile.ames_mutagenicity_probability < 0.5
+        else "[red]Positive (Alert)[/red]",
+    )
+
+    if profile.pbpk_cmax_free_ug_ml is not None:
+        table.add_row(
+            f"PBPK Cmax (Free, {dose}mg dose)",
+            f"{profile.pbpk_cmax_free_ug_ml:.4f} ug/mL",
+            "Unbound in vivo systemic exposure",
+        )
+    if profile.in_vivo_herg_margin is not None:
+        table.add_row(
+            "In Vivo Free hERG Margin",
+            f"{profile.in_vivo_herg_margin:.1f}x",
+            "FDA S7B recommends >= 30x",
+        )
+
+    console.print(table)
+
+    comp = profile.component_scores
+    console.print(
+        Panel(
+            f"[bold {score_color}]Clinical Developability Index (CDI): {score:.1f} / 100[/bold {score_color}] "
+            f"([bold]{profile.developability_tier}[/bold])\n\n"
+            f"  • Potency Pillar: [cyan]{comp.potency:.1f} / 25[/cyan]\n"
+            f"  • Safety Window Pillar: [cyan]{comp.safety_window:.1f} / 25[/cyan]\n"
+            f"  • Organ Toxicology Pillar: [cyan]{comp.organ_toxicology:.1f} / 25[/cyan]\n"
+            f"  • Human PK Druggability Pillar: [cyan]{comp.human_pk:.1f} / 25[/cyan]",
+            title="[bold]Summary Developability Score[/bold]",
+            border_style=score_color,
+        )
+    )
+
+    if profile.warnings:
+        console.print("\n[bold yellow]⚠️ Pharmacological & Regulatory Warnings:[/bold yellow]")
+        for w in profile.warnings:
+            console.print(f"  • [yellow]{w}[/yellow]")
+
+    if profile.recommendations:
+        console.print("\n[bold green]💡 Medicinal Chemistry Recommendations:[/bold green]")
+        for r in profile.recommendations:
+            console.print(f"  • [green]{r}[/green]")
+    console.print()
 
 
 switch_app = typer.Typer(help="Manage and switch Colab CLI accounts (tokens)")
@@ -1958,6 +2196,98 @@ def export_notebook(
 
     export_notebook_file(output, repo_url=repo_url, run_command=command)
     console.print(f"[bold green]Generated Google Colab notebook at:[/bold green] {output}")
+
+
+@retro_app.command("single-step")
+def retro_single_step_cli(
+    smiles: str = typer.Option(..., "--smiles", "-s", help="Target molecule product SMILES"),
+    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of precursor candidate sets"),
+    reaction_type: Optional[int] = typer.Option(
+        None, "--reaction-type", "-t", help="USPTO reaction class (1-10)"
+    ),
+):
+    """Predict candidate precursor reactant sets for a target molecule."""
+    from tdc_studio.models.retrosynthesis.rule_policy import RuleRetroPolicy
+
+    policy = RuleRetroPolicy()
+    candidates = policy.predict_reactants(smiles, top_k=top_k, reaction_type=reaction_type)
+
+    console.print(f"[bold cyan]🎯 Target Molecule:[/bold cyan] {smiles}")
+    console.print(f"[bold green]Top-{len(candidates)} Retrosynthetic Precursors:[/bold green]")
+    for idx, (reactants, score) in enumerate(candidates, start=1):
+        console.print(f"  {idx}. [yellow]{reactants}[/yellow] (confidence: {score:.3f})")
+
+
+@retro_app.command("plan")
+def retro_plan_cli(
+    smiles: str = typer.Option(
+        ..., "--smiles", "-s", help="Target molecule SMILES to plan pathway for"
+    ),
+    top_k: int = typer.Option(
+        3,
+        "--top-k",
+        "-k",
+        help="Number of candidate routes to find (1 = optimal only, >1 = alternative routes)",
+    ),
+    banned: Optional[str] = typer.Option(
+        None, "--banned", help="Comma-separated SMILES to ban/exclude from commercial stock"
+    ),
+    min_diversity: float = typer.Option(
+        0.25, "--min-diversity", help="Minimum diversity distance between routes"
+    ),
+    max_depth: int = typer.Option(5, "--max-depth", "-d", help="Maximum search tree depth"),
+    timeout: float = typer.Option(5.0, "--timeout", help="Search timeout in seconds"),
+    compare: bool = typer.Option(
+        True, "--compare", help="Display comparative Markdown table of all routes"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Optional JSON output file path"
+    ),
+    render_mermaid: bool = typer.Option(False, "--render-mermaid", help="Print Mermaid diagram"),
+):
+    """Plan multi-step chemical synthesis route from commercial stock reagents."""
+    import json
+
+    from tdc_studio.retrosynthesis.planner import RetroPlanner
+
+    banned_list = [s.strip() for s in banned.split(",") if s.strip()] if banned else None
+
+    planner = RetroPlanner(policy_type="rule", max_depth=max_depth, timeout_sec=timeout)
+    routes = planner.plan_routes(
+        target_smiles=smiles,
+        top_k=top_k,
+        diversity_threshold=min_diversity,
+        banned_smiles=banned_list,
+        timeout_sec=timeout,
+    )
+
+    champion = routes[0] if routes else None
+
+    if compare and len(routes) > 1:
+        console.print("\n[bold cyan]📊 Multi-Route Comparison Summary:[/bold cyan]")
+        console.print(planner.render_comparison_table(routes))
+        console.print("\n" + "=" * 70 + "\n")
+
+    if champion:
+        tree_str = planner.render_tree(champion)
+        console.print(tree_str)
+
+    if render_mermaid:
+        console.print("\n[bold magenta]Mermaid Diagram(s):[/bold magenta]")
+        if len(routes) > 1:
+            console.print(planner.render_multi_mermaid(routes))
+        elif champion:
+            console.print(planner.render_mermaid(champion))
+
+    if output:
+        out_payload = {
+            "target_smiles": smiles,
+            "routes_count": len(routes),
+            "routes": [r.to_dict() for r in routes],
+        }
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(out_payload, f, indent=2)
+        console.print(f"[bold green]Saved routes JSON to:[/bold green] {output}")
 
 
 if __name__ == "__main__":

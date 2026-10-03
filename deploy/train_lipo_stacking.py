@@ -85,6 +85,11 @@ def main():
     with open(os.path.join(args.export_dir, "lipophilicity_stacking_summary.json"), "w") as f:
         json.dump(test_metrics, f, indent=2)
 
+    import joblib
+    save_path = os.path.join(args.export_dir, "lipo_stacker_model.joblib")
+    joblib.dump(stacker, save_path)
+    logger.info("Successfully saved Lipophilicity Stacker model to: %s", save_path)
+
 
 if __name__ == "__main__":
     main()

@@ -8,14 +8,15 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3110/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg?style=flat)](https://github.com/astral-sh/ruff)
-[![Tests: 180+ Passed](https://img.shields.io/badge/tests-180%2B%20passed-22c55e.svg?style=flat&logo=pytest&logoColor=white)](tests/)
+[![Tests: 215 Passed](https://img.shields.io/badge/tests-215%20passed-22c55e.svg?style=flat&logo=pytest&logoColor=white)](tests/)
+[![MCP Server: FastMCP 2.3](https://img.shields.io/badge/MCP%20Server-Standard%20v2.3-blueviolet.svg?style=flat&logo=anthropic&logoColor=white)](tdc_studio/mcp/)
 [![Google Colab](https://img.shields.io/badge/Cloud%20GPU-Colab%20CLI-F9AB00.svg?style=flat&logo=googlecolab&logoColor=white)](docs/COLAB_CLI_WINDOWS_GUIDE.md)
 [![FastAPI](https://img.shields.io/badge/Serving-FastAPI-009688.svg?style=flat&logo=fastapi&logoColor=white)](tdc_studio/serving/)
 [![Docker](https://img.shields.io/badge/Container-Docker-2496ED.svg?style=flat&logo=docker&logoColor=white)](deploy/docker-compose.yml)
 [![Weights & Biases](https://img.shields.io/badge/Tracking-W%26B-FFBE00.svg?style=flat&logo=weightsandbiases&logoColor=black)](https://wandb.ai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](LICENSE)
 
-**[📖 문서 허브](docs/) • [🚀 빠른 시작](#-빠른-시작-quickstart) • [📊 SOTA 벤치마크](docs/benchmarks/admet_cluster_sota_archive.md) • [🧪 웹 대시보드](#3-대화형-웹-대시보드-ui-구동) • [🤝 기여 가이드](CONTRIBUTING.md)**
+**[📖 문서 허브](docs/) • [🤖 AI 에이전트 연동 (MCP)](#-ai-에이전트-원클릭-연동-가이드-agentic-mcp-integration) • [🚀 빠른 시작](#-빠른-시작-quickstart--workflow) • [📊 SOTA 벤치마크](docs/benchmarks/admet_cluster_sota_archive.md) • [🧪 웹 대시보드](#3-대화형-웹-대시보드-ui-구동) • [🤝 기여 가이드](CONTRIBUTING.md)**
 
 </div>
 
@@ -35,9 +36,13 @@
 
 ```mermaid
 flowchart LR
-    Local["💻 <b>Local Workstation</b><br>• Python 3.11 (uv)<br>• Ruff 린트 & 180+ 테스트<br>• CLI 1-Step 드라이런"]
+    Agent["🤖 <b>AI Agent / LLM</b><br>• Claude / Antigravity<br>• Cursor / Copilot<br>• 자율 의사결정"]
+    <-->|MCP Protocol (stdio/SSE)| MCP["🔌 <b>TDC MCP Server</b><br>• 8대 Agentic Tools<br>• 25-ADMET / PBPK<br>• Retro* / Dossier"]
+    Local["💻 <b>Local Workstation</b><br>• Python 3.11 (uv)<br>• Ruff 린트 & 215 테스트<br>• CLI 1-Step 드라이런"]
     -->|google-colab-cli| Colab["☁️ <b>Cloud GPU Worker</b><br>• Ephemeral VM (T4 / A100)<br>• TDC Multi-Task & HPO<br>• W&B 실시간 실험 추적"]
-    -->|Model Sync| Serving["🚀 <b>Production Serving</b><br>• Docker (Python 3.11-slim)<br>• FastAPI (/predict/pbpk, /dti)<br>• 대화형 웹 대시보드 UI"]
+    -->|Model Sync| Serving["🚀 <b>Production Serving</b><br>• Docker (Python 3.11-slim)<br>• FastAPI (/predict/pbpk, /dti)<br>• 원클릭 IND Dossier (HTML)"]
+    MCP <--> Local
+    Serving <--> MCP
 ```
 
 ---
@@ -48,11 +53,16 @@ flowchart LR
 tdc-studio/
 ├── assets/                      # 프로젝트 배너, UI 목업 및 시각 에셋
 ├── tdc_studio/                  # 핵심 바이오 MLOps 라이브러리 패키지
-│   ├── cli/                     # CLI 엔트리포인트 (predict, ti, ui, train, remote 등)
+│   ├── cli/                     # CLI 엔트리포인트 (predict, ti, mcp, dossier, train 등)
 │   ├── core/                    # 공통 레지스트리(@MODELS, @DATASETS), 기본 추상 클래스
 │   ├── data/                    # TDC DataModule, RDKit Featurizer, Graph Batcher
+│   ├── dossier/                 # ICH CTD 비임상 후보 평가 보고서 생성 엔진
+│   ├── evaluation/              # CDI(치료지수), RetroMetrics, 평가 유틸리티
+│   ├── explainability/          # Integrated Gradients 원자 히트맵 및 Bioisostere 추천
+│   ├── generative/              # 자가교정 Lead Optimizer 및 Synthesizability Gate
+│   ├── mcp/                     # AI Agent 연동용 Universal Model Context Protocol 서버
 │   ├── models/                  # D-MPNN, GIN, ChemBERTa, ESM-2, Hybrid Stacker
-│   ├── pbpk/                    # 14-구획 ODE 생체약동학 수식 및 파이프라인
+│   ├── pbpk/                    # 14-구획 ODE 생체약동학 수식, 다회투여 & CYP DDI
 │   ├── remote/                  # Google Colab CLI 원격 오케스트레이션 러너
 │   ├── retrosynthesis/          # 템플릿 및 딥러닝 역합성 경로 탐색 엔진
 │   ├── serving/                 # FastAPI 애플리케이션 및 추론 파이프라인
@@ -62,8 +72,73 @@ tdc-studio/
 ├── docs/                        # 시스템 상세 가이드, 아키텍처, 벤치마크 아카이브
 ├── models/                      # 학습된 체크포인트 (.pt), 스케일러 (.pkl), 모델 아티팩트
 ├── scripts/                     # W&B 모델 동기화, 배치 벤치마크 유틸리티 스크립트
-└── tests/                       # 180+ 회귀 및 단위 테스트 (Zero-training 원칙)
+└── tests/                       # 215+ 회귀 및 단위 테스트 (Zero-training 원칙)
 ```
+
+---
+
+## 🤖 AI 에이전트 원클릭 연동 가이드 (Agentic MCP Integration)
+
+TDC-Studio는 **LLM(Claude Desktop, Cursor, Antigravity, Windsurf 등)이 직접 소형 특화 모델(SLMs)을 호출하여 자율적으로 신약을 설계하고 검증할 수 있는 표준 MCP(Model Context Protocol v2.3) 서버**를 기본 내장하고 있습니다.
+
+### ⚡ 1. AI 에이전트에게 전달하는 원클릭 설치 및 연동 프롬프트 (Agent Prompt)
+AI 코딩 에이전트(Antigravity, Cursor, Devin, Claude 등)의 대화창에 아래 프롬프트를 복사하여 붙여넣으면, **에이전트가 리포지토리를 직접 클론하고 환경을 구축하여 신약개발 도구를 즉시 사용**할 수 있습니다:
+
+```text
+https://github.com/brightonmoon/tdc-studio.git 리포지토리를 클론하고 `uv sync`를 실행해 개발 환경을 구축해줘.
+그 후 TDC-Studio MCP 서버(`uv run tdc-studio mcp --transport stdio`)를 연동하여, 내가 질의하는 화합물에 대해 25대 ADMET 지표 예측(`predict_admet_profile`), 다회투여 PBPK 시뮬레이션(`simulate_pbpk_regimen`), 약물상호작용 검증(`evaluate_drug_interactions`), 역합성 경로 탐색(`plan_retrosynthesis_route`), 비임상 IND Dossier 보고서 컴파일(`compile_candidate_dossier`) 도구를 호출해 신약 개발 협업을 진행해줘.
+```
+
+### 🔌 2. MCP 클라이언트 설정 JSON (Claude Desktop / Cursor / Antigravity)
+
+#### (1) Claude Desktop 연동 설정 (`claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "tdc-studio": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "<tdc-studio 리포지토리 로컬 절대경로>",
+        "run",
+        "tdc-studio",
+        "mcp",
+        "--transport",
+        "stdio"
+      ]
+    }
+  }
+}
+```
+
+#### (2) Cursor / VS Code MCP 연동 설정 (`.cursor/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "tdc-studio": {
+      "command": "uv",
+      "args": ["run", "tdc-studio", "mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+### 🛠️ 3. 에이전트가 호출 가능한 8대 도메인 특화 도구 (Agentic Tools)
+| 도구명 (Tool Name) | 핵심 기능 | 반환 데이터 및 효과 |
+| :--- | :--- | :--- |
+| **`predict_admet_profile`** | 25대 전주기 ADMET 지표 및 결함 진단 | C1~C5 정량 수치, 신호등(Green/Amber/Red), 레이더 스코어 |
+| **`explain_toxicity_hotspots`** | 독성 유발 작용단 국소화 및 동배체 추천 | Integrated Gradients 원자 기여도, Bioisostere 치환체 5종 |
+| **`evaluate_target_affinity`** | 단백질 결합력 및 포켓 핵심 잔기 분석 | $pK_d, K_d, K_i, \text{IC}_{50}$ (nM), 핵심 접촉 아미노산, PyMOL 스크립트 |
+| **`simulate_pbpk_regimen`** | 다회 투여(QD/BID) 정상상태 시뮬레이션 | $C_{ss,\max}, C_{ss,\min}$, 축적비($R_{ac}$), hERG 안전역($\ge 30\times$) 판정 |
+| **`evaluate_drug_interactions`** | CYP 기반 약물상호작용(DDI) 평가 | Midazolam, Warfarin 등 5대 지표 기질 대상 AUC 증가 배수(Fold Change) |
+| **`plan_retrosynthesis_route`** | 상용 시약 재고 연계 A* 역합성 탐색 | 단계별 반응 유형, 수율, 상용 시약 목록, Mermaid 플로우차트 |
+| **`optimize_lead_molecule`** | 단점 자가교정 폐루프 분자 최적화 | 결함 극복 변이체 생성 및 실제 역합성 경로 존재성 검증 |
+| **`compile_candidate_dossier`** | ICH CTD 비임상 후보 평가 보고서 생성 | 정량 데이터 + LLM 전문 고찰 결합 Standalone HTML & JSON 출력 |
+
+### 💬 4. 에이전트와의 실전 신약개발 협업 질의 예시
+* **[표적 결합 및 심장 안전성]**: *"HER2 표적($K_d < 20\text{nM}$)을 유지하면서 hERG 심장 독성을 낮춘 Imatinib 변이체를 설계하고, 1일 1회(QD) 100mg 투여 시의 정상상태 PBPK 혈중 농도를 계산해줘."*
+* **[약물상호작용 리스크]**: *"이 신약 후보물질과 와파린(Warfarin)을 병용 투여할 때 CYP2C9 저해로 인한 출혈 위험(AUC Fold Change)을 평가하고, 임상 모니터링 가이드를 작성해줘."*
+* **[원클릭 IND 보고서]**: *"후보물질에 대해 상용 시약 카탈로그(Enamine/Sigma)로부터 4단계 이내로 합성 가능한 역합성 경로를 찾고, 최종 비임상 IND Dossier 보고서를 생성해줘."*
 
 ---
 
@@ -87,7 +162,7 @@ uv sync --extra dev
 # 1. Ruff 정적 분석 검사
 uv run ruff check tdc_studio tests
 
-# 2. 단위 테스트 실행 (Zero-training Mock/Toy 배치 기반으로 15초 이내 완료)
+# 2. 단위 테스트 실행 (215개 전체 테스트 무결성 확인)
 uv run pytest -v
 ```
 
@@ -95,33 +170,50 @@ uv run pytest -v
 
 ## 🚀 빠른 시작 (Quickstart & Workflow)
 
-### (1) ADMET & PBPK 일괄 예측 CLI
+### (1) AI 에이전트 연동 MCP 서버 구동 (stdio / SSE)
+AI 에이전트(Claude Desktop, Cursor, Antigravity)와 실시간 표준 프로토콜로 통신합니다:
+```bash
+# 표준 입출력(stdio) 모드 (Claude Desktop, Cursor, CLI 연동)
+uv run tdc-studio mcp --transport stdio
+
+# 웹소켓/SSE 모드 (사내 웹 챗봇 및 원격 에이전트)
+uv run tdc-studio mcp --transport sse --host 127.0.0.1 --port 8000
+```
+
+### (2) 원클릭 비임상 IND Candidate Dossier 생성 CLI
+후보 분자의 25대 ADMET, 다회투여 PBPK, CYP DDI, 역합성 경로를 종합한 단독 실행형 HTML & JSON 보고서를 즉시 발행합니다:
+```bash
+uv run tdc-studio dossier "CC(=O)Oc1ccccc1C(=O)O" --target COX2 --dose 100.0
+# 산출물: reports/dossier_COX2.html (브라우저 열람), reports/dossier_COX2.json
+```
+
+### (3) ADMET & PBPK 일괄 예측 CLI
 SMILES 입력 시 25종 ADMET 지표와 14-구획 PBPK 파라미터를 일괄 산출합니다:
 ```bash
 uv run tdc-studio predict "CC(=O)Oc1ccccc1C(=O)O"
 ```
 
-### (2) 치료지수(TI) 및 안전역 평가 CLI
+### (4) 치료지수(TI) 및 안전역 평가 CLI
 타깃 결합력($K_d$)과 hERG 심장 독성 예측값을 연계하여 치료 안전역을 판정합니다:
 ```bash
 uv run tdc-studio ti "CC(=O)Oc1ccccc1C(=O)O" --kd 10.0
 ```
 
-### (3) 대화형 웹 대시보드 UI 구동
+### (5) 대화형 웹 대시보드 UI 구동
 분자 구조 렌더링, ADMET 레이더 차트, PBPK 혈중 농도 시뮬레이션 곡선을 웹 브라우저에서 직접 조작합니다:
 ```bash
 uv run tdc-studio ui --port 8000
 # 접속: http://localhost:8000/
 ```
 
-### (4) 로컬 무결성 1-Step 점검 (Dry-run)
+### (6) 로컬 무결성 1-Step 점검 (Dry-run)
 실제 대용량 학습 전 1-Batch 포워드/백워드 무결성을 즉시 검증합니다:
 ```bash
 uv run tdc-studio train --config configs/config.yaml --dry-run
 uv run tdc-studio tune --config configs/config.yaml --n-trials 2 --dry-run
 ```
 
-### (5) Google Colab 클라우드 GPU 원격 학습 위임
+### (7) Google Colab 클라우드 GPU 원격 학습 위임
 로컬 리소스 소모 없이 Google Colab GPU 인스턴스(T4, A100 등)로 학습을 위임합니다:
 ```bash
 # A100 GPU 할당 및 원격 실행
@@ -131,7 +223,7 @@ uv run tdc-studio remote run --gpu a100 --command "tdc-studio train --config con
 uv run tdc-studio remote export-notebook --output tdc_colab_runner.ipynb
 ```
 
-### (6) 프로덕션 REST API 서빙
+### (8) 프로덕션 REST API 서빙
 ```bash
 # FastAPI 서버 시작
 uv run tdc-studio serve --port 8000
@@ -176,7 +268,7 @@ curl -X POST "http://localhost:8000/predict/dti" \
 ```
 </details>
 
-### (7) W&B Model Registry 자동 동기화 & Docker 실행
+### (9) W&B Model Registry 자동 동기화 & Docker 실행
 ```bash
 # 학습된 클라우드 체크포인트를 로컬 models/export/로 자동 인덱싱 및 동기화
 uv run python scripts/sync_wandb_models.py

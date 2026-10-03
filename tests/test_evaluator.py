@@ -108,7 +108,68 @@ def test_is_metric_higher_better():
     assert is_metric_higher_better("ROC-AUC") is True
     assert is_metric_higher_better("accuracy") is True
     assert is_metric_higher_better("pearson") is True
+    assert is_metric_higher_better("ci") is True
+    assert is_metric_higher_better("concordance_index") is True
     assert is_metric_higher_better("mae") is False
     assert is_metric_higher_better("rmse") is False
     assert is_metric_higher_better("mse") is False
     assert is_metric_higher_better("composite") is False
+
+
+def test_fast_concordance_index_precision_and_speed():
+    """Verify O(N log N) CI on N=10,000 runs within 0.5s without subsampling error."""
+    import time
+
+    rng = np.random.default_rng(42)
+    n = 10000
+    y_true = rng.uniform(2.0, 10.0, size=n)
+    y_pred = y_true + rng.normal(0.0, 1.5, size=n)
+
+    evaluator = TherapeuticsEvaluator(task_type="dta")
+    t0 = time.perf_counter()
+    ci = evaluator.compute(y_pred, y_true, "ci")
+    t1 = time.perf_counter()
+
+    elapsed = t1 - t0
+    assert 0.75 < ci < 0.90
+    assert elapsed < 0.6, f"Concordance Index took {elapsed:.3f}s, expected < 0.6s"
+
+
+def test_concordance_index_ties_and_edge_cases():
+    evaluator = TherapeuticsEvaluator(task_type="dta")
+
+    # Perfect ranking
+    yt = np.array([1.0, 2.0, 3.0, 4.0])
+    yp = np.array([10.0, 20.0, 30.0, 40.0])
+    assert evaluator.compute(yp, yt, "ci") == 1.0
+
+    # Inverted ranking
+    yp_rev = np.array([40.0, 30.0, 20.0, 10.0])
+    assert evaluator.compute(yp_rev, yt, "ci") == 0.0
+
+    # Ties in predictions (should be awarded 0.5)
+    yp_ties = np.array([10.0, 10.0, 30.0, 40.0])
+    ci_ties = evaluator.compute(yp_ties, yt, "ci")
+    assert 0.8 < ci_ties < 1.0
+
+    # All identical predictions
+    yp_all_same = np.array([5.0, 5.0, 5.0, 5.0])
+    assert evaluator.compute(yp_all_same, yt, "ci") == 0.5
+
+    # All identical targets (no valid comparison pairs)
+    yt_all_same = np.array([3.0, 3.0, 3.0, 3.0])
+    assert evaluator.compute(yp, yt_all_same, "ci") == 0.5
+
+
+def test_dta_compute_all_suite():
+    evaluator = TherapeuticsEvaluator(task_type="dta")
+    yt = np.array([5.0, 6.0, 7.0, 8.0, 9.0])
+    yp = np.array([5.1, 5.9, 7.2, 7.8, 9.1])
+
+    dta_metrics = evaluator.compute_all(yp, yt, task_type="dta")
+    assert "ci" in dta_metrics
+    assert "mse" in dta_metrics
+    assert "rmse" in dta_metrics
+    assert "pearson" in dta_metrics
+    assert dta_metrics["ci"] > 0.9
+    assert dta_metrics["mse"] < 0.05

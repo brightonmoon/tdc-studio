@@ -19,9 +19,7 @@ class PositionalEncoding(nn.Module):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer("pe", pe.unsqueeze(0))
@@ -48,7 +46,9 @@ class Seq2SeqRetroModel(BaseRetroModel):
         self.tokenizer = ReactionTokenizer(max_length=self.max_length)
         self.vocab_size = self.tokenizer.vocab_size
 
-        self.embedding = nn.Embedding(self.vocab_size, self.d_model, padding_idx=self.tokenizer.pad_token_id)
+        self.embedding = nn.Embedding(
+            self.vocab_size, self.d_model, padding_idx=self.tokenizer.pad_token_id
+        )
         self.pos_encoder = PositionalEncoding(self.d_model, max_len=self.max_length)
 
         self.transformer = nn.Transformer(
@@ -69,8 +69,8 @@ class Seq2SeqRetroModel(BaseRetroModel):
         src = batch["input_ids"]  # [B, S]
         tgt = batch["target_ids"]  # [B, T]
 
-        src_key_padding_mask = (src == self.tokenizer.pad_token_id)
-        tgt_key_padding_mask = (tgt == self.tokenizer.pad_token_id)
+        src_key_padding_mask = src == self.tokenizer.pad_token_id
+        tgt_key_padding_mask = tgt == self.tokenizer.pad_token_id
 
         # Shift target for teacher forcing: decoder input is tgt[:, :-1], target is tgt[:, 1:]
         tgt_input = tgt[:, :-1]
@@ -113,7 +113,7 @@ class Seq2SeqRetroModel(BaseRetroModel):
             max_length=self.max_length,
         )
         src = input_ids.unsqueeze(0).to(device)  # [1, S]
-        src_mask = (src == self.tokenizer.pad_token_id)
+        src_mask = src == self.tokenizer.pad_token_id
         src_emb = self.pos_encoder(self.embedding(src))
 
         memory = self.transformer.encoder(src_emb, src_key_padding_mask=src_mask)
@@ -144,7 +144,9 @@ class Seq2SeqRetroModel(BaseRetroModel):
                 logits = self.fc_out(out[:, -1, :])  # [1, V]
                 log_probs = torch.log_softmax(logits, dim=-1)
 
-                top_log_probs, top_indices = torch.topk(log_probs, k=min(top_k * 2, self.vocab_size))
+                top_log_probs, top_indices = torch.topk(
+                    log_probs, k=min(top_k * 2, self.vocab_size)
+                )
                 for lp, idx in zip(top_log_probs[0], top_indices[0]):
                     new_candidates.append((seq + [idx.item()], log_prob + lp.item()))
 

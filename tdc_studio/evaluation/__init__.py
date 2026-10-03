@@ -16,6 +16,10 @@ from tdc_studio.evaluation.therapeutic_index import (
     ComponentScores,
     TherapeuticIndexEngine,
     TherapeuticIndexProfile,
+    calculate_clinical_progression_score,
+    calculate_dili_penalty,
+    calculate_therapeutic_index,
+    calibrate_herg_ic50_from_probability,
 )
 
 __all__ = [
@@ -23,6 +27,10 @@ __all__ = [
     "evaluate_predictions",
     "evaluate_all",
     "is_metric_higher_better",
+    "calculate_therapeutic_index",
+    "calibrate_herg_ic50_from_probability",
+    "calculate_dili_penalty",
+    "calculate_clinical_progression_score",
     "RetroBenchmarkEvaluator",
     "compute_top_k_exact_match",
     "compute_invalid_smiles_rate",

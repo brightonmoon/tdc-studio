@@ -13,6 +13,7 @@ from tdc_studio.serving.app import (
     set_dti_pipeline,
     set_pbpk_pipeline,
     set_pipeline,
+    set_ti_pipeline,
     set_unified_pipeline,
     set_vdss_pipeline,
 )
@@ -40,7 +41,9 @@ def test_healthz_endpoint_initial(test_client):
     set_vdss_pipeline(None)
     set_pbpk_pipeline(None)
     set_dti_pipeline(None)
+    set_dti_multi_pipeline(None)
     set_unified_pipeline(None)
+    set_ti_pipeline(None)
     resp = test_client.get("/healthz")
     assert resp.status_code == 200
     data = resp.json()
@@ -315,10 +318,12 @@ def test_dti_predict_with_attention_weights(test_client):
 
 def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
     """Verify that ChemBERTa encoder skips graph_transform parsing overhead."""
+
     class DummyChemBERTa(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.out_dim = 256
+
         def extract_features(self, batch):
             b = len(batch["drug_smiles_str"])
             return torch.zeros((b, 256))
@@ -339,6 +344,7 @@ def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
     # Monkeypatch graph_transform to fail if called
     def boom(smiles):
         raise RuntimeError("graph_transform should not be called!")
+
     monkeypatch.setattr(pipeline, "graph_transform", boom)
 
     preds = pipeline.predict(["CCO"], ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"])
@@ -591,6 +597,3 @@ def test_optimize_endpoint_with_retrosynthesis(test_client):
     assert "retrosynthesis_solved" in cand
     assert "synthetic_tractability_score" in cand
     assert cand["synthetic_tractability_score"] is not None
-
-
-

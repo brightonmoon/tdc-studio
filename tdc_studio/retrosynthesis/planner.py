@@ -107,4 +107,3 @@ class RetroPlanner:
     def render_tree(self, route: RetrosynthesisRoute) -> str:
         """Render route to text ASCII tree."""
         return RouteVisualizer.to_text_tree(route)
-

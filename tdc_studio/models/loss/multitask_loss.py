@@ -122,11 +122,15 @@ class MaskedMultiTaskLoss(nn.Module):
                 total_loss = total_loss + w * t_loss
 
         if valid_task_count > 0 and not self.use_uncertainty:
-            denom = sum(
-                self.task_weights.get(self.task_names[i], 1.0)
-                for i in range(self.num_tasks)
-                if mask[:, i].any()
-            ) if self.task_weights else float(valid_task_count)
+            denom = (
+                sum(
+                    self.task_weights.get(self.task_names[i], 1.0)
+                    for i in range(self.num_tasks)
+                    if mask[:, i].any()
+                )
+                if self.task_weights
+                else float(valid_task_count)
+            )
             total_loss = total_loss / max(1e-6, denom)
 
         return total_loss, task_losses

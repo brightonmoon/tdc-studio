@@ -267,4 +267,3 @@ class RetroStarSearcher:
         """Find the single optimal synthetic route (backward-compatible convenience wrapper)."""
         routes = self.search_top_k(target_smiles, top_k=1)
         return routes[0]
-

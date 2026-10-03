@@ -1,0 +1,11 @@
+type: "dta_loader"
+dataset_name: "DAVIS"
+split_type: "cold_protein"
+batch_size: 32
+max_epochs: 20
+params:
+  dataset_name: "DAVIS"
+  split_type: "cold_protein"
+  task_type: "dta"
+  metric_name: "ci"
+  log_transform: true

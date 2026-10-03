@@ -15,6 +15,12 @@ if (-not (Test-Path $FilePath)) {
     exit 1
 }
 
+# If isolated profile contains the session, use it; otherwise use active profile from colab_switch.ps1
+$isolatedProfile = "C:\Users\xps\.colab_munhyeongdo4"
+$isolatedSessions = Join-Path $isolatedProfile ".config\colab-cli\sessions.json"
+if ((Test-Path $isolatedSessions) -and ((Get-Content $isolatedSessions -Raw) -match [regex]::Escape($Session))) {
+    $env:USERPROFILE = $isolatedProfile
+}
 # 1. Read original python script content
 $originalCode = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
 

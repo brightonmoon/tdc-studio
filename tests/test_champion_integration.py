@@ -11,10 +11,14 @@ def test_champion_models_loading_and_inference():
     if os.path.exists(os.path.join(export_dir, "ames_champion", "ames_model.joblib")):
         assert pipeline.ames_champion is not None, "AMES champion model should be loaded"
 
-    if os.path.exists(os.path.join(export_dir, "clearance_cascade", "clearance_cascade_model.joblib")):
+    if os.path.exists(
+        os.path.join(export_dir, "clearance_cascade", "clearance_cascade_model.joblib")
+    ):
         assert pipeline.clearance_cascade is not None, "Clearance cascade model should be loaded"
 
-    if os.path.exists(os.path.join(export_dir, "lipophilicity_stacker", "lipo_stacker_model.joblib")):
+    if os.path.exists(
+        os.path.join(export_dir, "lipophilicity_stacker", "lipo_stacker_model.joblib")
+    ):
         assert pipeline.lipo_stacker is not None, "Lipophilicity stacker should be loaded"
 
     # Run inference on test molecule (Aspirin: CC(=O)Oc1ccccc1C(=O)O)

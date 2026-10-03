@@ -41,7 +41,9 @@ def test_retrosynthesis_plan_endpoint(client):
     assert response.status_code == 200
 
     data = response.json()
-    assert data["target_smiles"] == "CNC(=O)c1ccccc1" or data["target_smiles"] == "c1ccc(C(=O)NC)cc1"
+    assert (
+        data["target_smiles"] == "CNC(=O)c1ccccc1" or data["target_smiles"] == "c1ccc(C(=O)NC)cc1"
+    )
     assert data["solved"] is True
     assert data["total_depth"] >= 1
     assert data["cumulative_yield"] > 0.0

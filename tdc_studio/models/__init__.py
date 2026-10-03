@@ -35,5 +35,3 @@ __all__ = [
     "ChemBERTaEncoder",
     "ESM2Encoder",
 ]
-
-

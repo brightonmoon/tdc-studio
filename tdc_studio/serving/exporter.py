@@ -82,7 +82,9 @@ def load_model_from_checkpoint(
             config = embedded_cfg.get("model", embedded_cfg)
 
     if not config:
-        raise ServingError(f"Model configuration not found in {checkpoint_dir} or inside checkpoint weights.")
+        raise ServingError(
+            f"Model configuration not found in {checkpoint_dir} or inside checkpoint weights."
+        )
 
     # Auto-resolve model class if not provided
     if model_cls is None:
@@ -107,8 +109,6 @@ def load_model_from_checkpoint(
         model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model
-
-
 
 
 def export_production_package(
@@ -454,7 +454,11 @@ class OptimizedServingRuntime:
             except Exception:
                 pass
 
-        if self.active_backend == "pytorch" and torchscript_path and os.path.exists(torchscript_path):
+        if (
+            self.active_backend == "pytorch"
+            and torchscript_path
+            and os.path.exists(torchscript_path)
+        ):
             try:
                 self.torchscript_model = torch.jit.load(torchscript_path, map_location="cpu")
                 self.torchscript_model.eval()
@@ -499,4 +503,3 @@ class OptimizedServingRuntime:
                 return np.asarray(out)
 
         raise RuntimeError("No active model or backend initialized in OptimizedServingRuntime.")
-

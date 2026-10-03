@@ -110,9 +110,7 @@ class ForwardReactionDataModule(BaseTDCDataModule):
                 logger.info(f"Loading '{self.dataset_name}' via PyTDC...")
                 data = Reaction(name=self.dataset_name)
                 raw_splits = data.get_split(method=self.split_type, seed=self.seed)
-                self.splits = {
-                    k: v.reset_index(drop=True) for k, v in raw_splits.items()
-                }
+                self.splits = {k: v.reset_index(drop=True) for k, v in raw_splits.items()}
                 self.is_prepared = True
                 return
             except (ImportError, Exception) as exc:

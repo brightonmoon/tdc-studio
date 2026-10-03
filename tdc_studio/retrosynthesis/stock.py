@@ -17,30 +17,99 @@ logger = logging.getLogger("tdc_studio.retrosynthesis.stock")
 # Common organic building blocks across medicinal chemistry (halides, acids, amines, boronics)
 COMMON_BUILDING_BLOCKS = [
     # Simple Carboxylic Acids & Chlorides
-    "CC(=O)O", "CCC(=O)O", "CCCC(=O)O", "c1ccc(C(=O)O)cc1", "Cc1ccc(C(=O)O)cc1",
-    "COc1ccc(C(=O)O)cc1", "c1ccc(CC(=O)O)cc1", "O=C(O)c1ccncc1", "O=C(O)c1cccnc1",
-    "CC(=O)Cl", "c1ccc(C(=O)Cl)cc1", "c1ccc(S(=O)(=O)Cl)cc1", "CS(=O)(=O)Cl",
+    "CC(=O)O",
+    "CCC(=O)O",
+    "CCCC(=O)O",
+    "c1ccc(C(=O)O)cc1",
+    "Cc1ccc(C(=O)O)cc1",
+    "COc1ccc(C(=O)O)cc1",
+    "c1ccc(CC(=O)O)cc1",
+    "O=C(O)c1ccncc1",
+    "O=C(O)c1cccnc1",
+    "CC(=O)Cl",
+    "c1ccc(C(=O)Cl)cc1",
+    "c1ccc(S(=O)(=O)Cl)cc1",
+    "CS(=O)(=O)Cl",
     # Primary & Secondary Amines
-    "CN", "CCN", "CCCN", "CCCCN", "CC(C)N", "C1CCNCC1", "C1COCCN1", "C1CCCN1",
-    "c1ccc(N)cc1", "Cc1ccc(N)cc1", "COc1ccc(N)cc1", "c1ccc(CN)cc1", "c1ccc(CCN)cc1",
-    "NCc1ccccc1", "CNc1ccccc1", "Nc1ccncc1", "Nc1ccccc1N", "Nc1ccccc1O",
+    "CN",
+    "CCN",
+    "CCCN",
+    "CCCCN",
+    "CC(C)N",
+    "C1CCNCC1",
+    "C1COCCN1",
+    "C1CCCN1",
+    "c1ccc(N)cc1",
+    "Cc1ccc(N)cc1",
+    "COc1ccc(N)cc1",
+    "c1ccc(CN)cc1",
+    "c1ccc(CCN)cc1",
+    "NCc1ccccc1",
+    "CNc1ccccc1",
+    "Nc1ccncc1",
+    "Nc1ccccc1N",
+    "Nc1ccccc1O",
     # Halides & Alkylating Agents
-    "CI", "CBr", "CCI", "CCBr", "CCCl", "CCCBr", "CCCCBr",
-    "c1ccc(Br)cc1", "c1ccc(I)cc1", "c1ccc(Cl)cc1", "c1ccc(CBr)cc1", "c1ccc(CCl)cc1",
-    "Cc1ccc(Br)cc1", "COc1ccc(Br)cc1", "Brc1ccncc1", "Ic1ccccc1",
+    "CI",
+    "CBr",
+    "CCI",
+    "CCBr",
+    "CCCl",
+    "CCCBr",
+    "CCCCBr",
+    "c1ccc(Br)cc1",
+    "c1ccc(I)cc1",
+    "c1ccc(Cl)cc1",
+    "c1ccc(CBr)cc1",
+    "c1ccc(CCl)cc1",
+    "Cc1ccc(Br)cc1",
+    "COc1ccc(Br)cc1",
+    "Brc1ccncc1",
+    "Ic1ccccc1",
     # Boronic Acids & Esters (Suzuki precursors)
-    "OB(O)c1ccccc1", "Cc1ccc(B(O)O)cc1", "COc1ccc(B(O)O)cc1", "OB(O)c1ccncc1",
-    "OB(O)c1cccnc1", "OB(O)C1CC1", "OB(O)c1ccc(F)cc1", "OB(O)c1ccc(Cl)cc1",
+    "OB(O)c1ccccc1",
+    "Cc1ccc(B(O)O)cc1",
+    "COc1ccc(B(O)O)cc1",
+    "OB(O)c1ccncc1",
+    "OB(O)c1cccnc1",
+    "OB(O)C1CC1",
+    "OB(O)c1ccc(F)cc1",
+    "OB(O)c1ccc(Cl)cc1",
     # Alcohols & Phenols
-    "CO", "CCO", "CCCO", "CCCCO", "CC(C)O", "CC(C)(C)O", "c1ccc(O)cc1",
-    "Cc1ccc(O)cc1", "COc1ccc(O)cc1", "c1ccc(CO)cc1", "OCc1ccncc1",
+    "CO",
+    "CCO",
+    "CCCO",
+    "CCCCO",
+    "CC(C)O",
+    "CC(C)(C)O",
+    "c1ccc(O)cc1",
+    "Cc1ccc(O)cc1",
+    "COc1ccc(O)cc1",
+    "c1ccc(CO)cc1",
+    "OCc1ccncc1",
     # Aldehydes & Ketones
-    "C=O", "CC=O", "CCC=O", "c1ccc(C=O)cc1", "Cc1ccc(C=O)cc1", "COc1ccc(C=O)cc1",
-    "CC(=O)C", "CC(=O)c1ccccc1", "c1ccc(C(=O)c2ccccc2)cc1",
+    "C=O",
+    "CC=O",
+    "CCC=O",
+    "c1ccc(C=O)cc1",
+    "Cc1ccc(C=O)cc1",
+    "COc1ccc(C=O)cc1",
+    "CC(=O)C",
+    "CC(=O)c1ccccc1",
+    "c1ccc(C(=O)c2ccccc2)cc1",
     # Inorganic / Small reagents
-    "O", "N", "S", "Cl", "Br", "C#N", "O=CO",
+    "O",
+    "N",
+    "S",
+    "Cl",
+    "Br",
+    "C#N",
+    "O=CO",
     # Base building blocks
-    "c1ccccc1", "Cc1ccccc1", "c1ccncc1", "c1cncnc1",
+    "c1ccccc1",
+    "Cc1ccccc1",
+    "c1ccncc1",
+    "c1cncnc1",
 ]
 
 
@@ -165,9 +234,7 @@ class StockLibrary:
         """Retrieve delivery or procurement lead time in days."""
         return self.stock_manager.get_lead_time(smiles, default=default)
 
-    def check_all_in_stock(
-        self, smiles_list: List[str]
-    ) -> Tuple[bool, Dict[str, bool]]:
+    def check_all_in_stock(self, smiles_list: List[str]) -> Tuple[bool, Dict[str, bool]]:
         """Verify whether all precursor molecules in a reaction step are in stock."""
         status = {}
         all_present = True
@@ -180,5 +247,3 @@ class StockLibrary:
 
     def __len__(self) -> int:
         return max(len(self.inchikey_to_smiles), self.stock_manager.total_compounds())
-
-

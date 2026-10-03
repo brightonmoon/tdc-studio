@@ -18,7 +18,15 @@ def test_route_diversity_evaluator():
     r1 = RetrosynthesisRoute(
         target_smiles="c1ccc(C(=O)NC)cc1",
         steps=[
-            ReactionStep(1, ["c1ccc(C(=O)O)cc1", "CN"], "c1ccc(C(=O)NC)cc1", "Amide Coupling", 0.95, 85.0, 10.0)
+            ReactionStep(
+                1,
+                ["c1ccc(C(=O)O)cc1", "CN"],
+                "c1ccc(C(=O)NC)cc1",
+                "Amide Coupling",
+                0.95,
+                85.0,
+                10.0,
+            )
         ],
         solved=True,
     )
@@ -28,7 +36,15 @@ def test_route_diversity_evaluator():
     r2 = RetrosynthesisRoute(
         target_smiles="c1ccc(C(=O)NC)cc1",
         steps=[
-            ReactionStep(1, ["CN", "c1ccc(C(=O)O)cc1"], "c1ccc(C(=O)NC)cc1", "Amide Coupling", 0.92, 80.0, 11.0)
+            ReactionStep(
+                1,
+                ["CN", "c1ccc(C(=O)O)cc1"],
+                "c1ccc(C(=O)NC)cc1",
+                "Amide Coupling",
+                0.92,
+                80.0,
+                11.0,
+            )
         ],
         solved=True,
     )
@@ -38,7 +54,15 @@ def test_route_diversity_evaluator():
     r3 = RetrosynthesisRoute(
         target_smiles="c1ccc(C(=O)NC)cc1",
         steps=[
-            ReactionStep(1, ["c1ccc(C(=O)Cl)cc1", "CN"], "c1ccc(C(=O)NC)cc1", "Acid Chloride Amidation", 0.98, 92.0, 15.0)
+            ReactionStep(
+                1,
+                ["c1ccc(C(=O)Cl)cc1", "CN"],
+                "c1ccc(C(=O)NC)cc1",
+                "Acid Chloride Amidation",
+                0.98,
+                92.0,
+                15.0,
+            )
         ],
         solved=True,
     )
@@ -53,7 +77,9 @@ def test_route_diversity_evaluator():
     assert dist_13 >= 0.20
 
     # Diversity filtering should pick r1 and r3, skipping r2
-    diverse = RouteDiversityEvaluator.filter_diverse_routes([r1, r2, r3], max_routes=2, diversity_threshold=0.20)
+    diverse = RouteDiversityEvaluator.filter_diverse_routes(
+        [r1, r2, r3], max_routes=2, diversity_threshold=0.20
+    )
     assert len(diverse) == 2
     assert r1 in diverse
     assert r3 in diverse
@@ -134,12 +160,19 @@ def test_planner_banned_smiles_rerouting():
     assert canon_acid not in banned_route.starting_materials
 
 
-
 def test_visualizer_comparison_table_and_multi_mermaid():
     r1 = RetrosynthesisRoute(
         target_smiles="c1ccc(C(=O)NC)cc1",
         steps=[
-            ReactionStep(1, ["c1ccc(C(=O)O)cc1", "CN"], "c1ccc(C(=O)NC)cc1", "Amide Coupling", 0.95, 85.0, 10.0)
+            ReactionStep(
+                1,
+                ["c1ccc(C(=O)O)cc1", "CN"],
+                "c1ccc(C(=O)NC)cc1",
+                "Amide Coupling",
+                0.95,
+                85.0,
+                10.0,
+            )
         ],
         solved=True,
         rank=1,
@@ -149,7 +182,15 @@ def test_visualizer_comparison_table_and_multi_mermaid():
     r2 = RetrosynthesisRoute(
         target_smiles="c1ccc(C(=O)NC)cc1",
         steps=[
-            ReactionStep(1, ["c1ccc(C(=O)Cl)cc1", "CN"], "c1ccc(C(=O)NC)cc1", "Acid Chloride Coupling", 0.90, 80.0, 14.0)
+            ReactionStep(
+                1,
+                ["c1ccc(C(=O)Cl)cc1", "CN"],
+                "c1ccc(C(=O)NC)cc1",
+                "Acid Chloride Coupling",
+                0.90,
+                80.0,
+                14.0,
+            )
         ],
         solved=True,
         rank=2,

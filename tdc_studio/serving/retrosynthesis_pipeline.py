@@ -70,7 +70,9 @@ class RetrosynthesisInferencePipeline:
             timeout_sec=timeout_sec,
         )
 
-        champion: RetrosynthesisRoute = routes[0] if routes else RetrosynthesisRoute(target_smiles=smiles, solved=False)
+        champion: RetrosynthesisRoute = (
+            routes[0] if routes else RetrosynthesisRoute(target_smiles=smiles, solved=False)
+        )
 
         route_items = []
         for r in routes:
@@ -142,4 +144,3 @@ class RetrosynthesisInferencePipeline:
             routes=route_items,
             comparison_summary=summary_items,
         )
-

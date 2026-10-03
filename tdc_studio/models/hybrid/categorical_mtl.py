@@ -11,7 +11,6 @@ from tdc_studio.models.loss.multitask_loss import MaskedMultiTaskLoss
 
 
 @MODELS.register("categorical_mtl")
-
 class CategoricalMTLModel(BaseTherapeuticsModel):
     """3-Tier Hybrid Architecture for ADMET prediction.
 
@@ -63,7 +62,9 @@ class CategoricalMTLModel(BaseTherapeuticsModel):
         backbone_kwargs = config.get("backbone_config", {})
 
         # Default hidden dim depending on backbone type
-        default_backbone_dim = 256 if backbone_type == "gine" else (512 if backbone_type == "mlp_baseline" else 128)
+        default_backbone_dim = (
+            256 if backbone_type == "gine" else (512 if backbone_type == "mlp_baseline" else 128)
+        )
         self.backbone_hidden_dim = config.get("backbone_hidden_dim", default_backbone_dim)
 
         if "backbone_instance" in config:
@@ -126,7 +127,6 @@ class CategoricalMTLModel(BaseTherapeuticsModel):
         return loss
 
     def extract_features(self, batch: Dict[str, Any]) -> torch.Tensor:
-
         """Extract molecular representation from Tier 1 backbone."""
         if self.freeze_backbone:
             with torch.no_grad():
@@ -181,11 +181,13 @@ class CategoricalMTLModel(BaseTherapeuticsModel):
     def parameter_summary(self) -> Dict[str, int]:
         """Summarize trainable parameter count across tiers."""
         backbone_params = sum(p.numel() for p in self.backbone.parameters() if p.requires_grad)
-        frozen_backbone_params = sum(p.numel() for p in self.backbone.parameters() if not p.requires_grad)
-        head_params = sum(p.numel() for p in self.category_heads.parameters() if p.requires_grad)
-        adapter_params = sum(p.numel() for p in self.specialized_adapters.parameters() if p.requires_grad) + len(
-            self.adapter_scales
+        frozen_backbone_params = sum(
+            p.numel() for p in self.backbone.parameters() if not p.requires_grad
         )
+        head_params = sum(p.numel() for p in self.category_heads.parameters() if p.requires_grad)
+        adapter_params = sum(
+            p.numel() for p in self.specialized_adapters.parameters() if p.requires_grad
+        ) + len(self.adapter_scales)
         return {
             "trainable_backbone": backbone_params,
             "frozen_backbone": frozen_backbone_params,

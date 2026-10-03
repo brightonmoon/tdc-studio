@@ -507,9 +507,7 @@ class RuleRetroPolicy(BaseRetroModel):
                         sorted_reactants = ".".join(sorted(frag_smiles))
                         if sorted_reactants not in seen_reactants:
                             seen_reactants.add(sorted_reactants)
-                            candidates.append(
-                                (sorted_reactants, rule["prior"], rule["name"])
-                            )
+                            candidates.append((sorted_reactants, rule["prior"], rule["name"]))
             except Exception as exc:
                 logger.debug(f"Rule {rule['id']} execution error: {exc}")
 

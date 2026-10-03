@@ -225,39 +225,35 @@ flowchart TD
 
 ---
 
-#### 📌 [Phase 4] 원클릭 IND Dossier 자동 생성기 & 3-in-1 통합 웹 대시보드 (TODOLIST)
+#### 📌 [Phase 4] Universal 신약개발 MCP 서버 & 원클릭 IND Dossier 엔진 (feature/unified-studio-ui) - [완료 ✅]
 
-본 과제는 `tdc-studio`의 모든 백엔드 예측/시뮬레이션/최적화 엔진(DTI, 25-Task ADMET, XAI, PBPK, Retro*, CDI 스코어링)을 결합하여, 실제 제약/바이오 연구원과 규제 담당자가 사용할 수 있는 **산업급 엔드투엔드 워크스테이션 UI**와 **규제기관 제출용 비임상 평가 패키지(IND Dossier)**를 완성하는 최종 단계입니다.
+본 과제는 무거운 React Web UI(SPA)를 지양하고, **소형 도메인 모델(SLMs)과 LLM이 한 팀으로 협업할 수 있는 표준 Model Context Protocol (MCP) 프레임워크** 및 **원클릭 비임상 IND Candidate Dossier 자동 생성 엔진**을 완성한 마일스톤입니다.
 
 ```mermaid
 flowchart TD
-    subgraph UI_Shell ["3-in-1 Unified Web Studio UI (React 18 + Vite + Tailwind + Dockview)"]
-        subgraph Pane1 ["📌 [Pane 1] 2D/3D 분자 구조 워크벤치"]
-            Ketcher["2D Chemical Sketcher<br/>(@epam/ketcher-react)"]
-            Molstar["3D Protein-Ligand Viewer<br/>(Mol* / WebGL / WebGPU)"]
-        end
-
-        subgraph Pane2 ["📊 [Pane 2] ADMET & PBPK 동태 시뮬레이터"]
-            Radar["ADMET 5축 레이더 & Conformal 오차막대"]
-            XAI_View["Integrated Gradients 2D 위험도 히트맵"]
-            PBPK_Sim["PBPK 다이나믹 슬라이더 & Cp-t 곡선<br/>(용량, 투여경로, 95% 가상인구 밴드)"]
-        end
-
-        subgraph Pane3 ["🌳 [Pane 3] Retro* 합성 트리 & Lead Optimizer"]
-            ReactFlow["인터랙티브 역합성 DAG 트리<br/>(@xyflow/react)"]
-            Optimizer["자가교정 최적화 파레토 프론트 산점도"]
-        end
+    subgraph LLM ["🧠 Reasoning Layer (LLM: Claude / Antigravity / GPT)"]
+        Planner["자율 연구 계획 수립 & 가설 설정"]
+        Synthesizer["임상 함의 해석 & IND CTD 전문 서술"]
     end
 
-    Ketcher <-->|SMILES 양방향 동기화| Molstar
-    Pane1 -->|REST / WebSocket| Backend["FastAPI Serving App (tdc_studio/serving/app.py)"]
-    Backend --> Pane2
-    Backend --> Pane3
-    Pane3 -.->|최적화 후보 선택| Ketcher
+    subgraph MCP ["🔌 Universal Drug Discovery MCP Server (tdc_studio/mcp/)"]
+        direction TB
+        M_Tools["🛠️ 8대 Agentic Tools<br/>• predict_admet_profile • explain_toxicity_hotspots<br/>• evaluate_target_affinity • simulate_pbpk_regimen<br/>• evaluate_drug_interactions • plan_retrosynthesis_route<br/>• optimize_lead_molecule • compile_candidate_dossier"]
+        M_Res["📚 Domain Resources (FDA DDI, ICH CTD, ADMET Ranges)"]
+        M_Prompts["📝 Domain Prompts (Lead Optimization, IND Safety Review)"]
+    end
 
-    subgraph DossierPipeline ["원클릭 IND-Enabling Dossier 자동 생성 엔진 (tdc_studio/dossier/)"]
-        DataPayload["DossierDataPayload 취합<br/>(DTI + ADMET + PBPK + Retro* + TI)"]
-        Jinja["Jinja2 Semantic HTML5/CSS Paged Media"]
+    subgraph SLMs ["🔬 Domain SLM & Simulation Engines"]
+        ADMET["25-Task ADMET D-MPNN & Stacker"]
+        DTI["ChemBERTa + ESM-2 DTI Contact Map"]
+        PBPK["Repeat-Dose PBPK & CYP DDI Simulator"]
+        Retro["Retro* A* Commercial Synthesis Planner"]
+    end
+
+    LLM <-->|MCP 프로토콜 (stdio / SSE)| MCP
+    MCP <-->|수치/시뮬레이션 실행| SLMs
+    MCP --> Artifacts["📄 출판급 IND Dossier (HTML/JSON)<br/>🌐 독립형 인터랙티브 리포트"]
+```
         PDF["📄 Formal PDF Dossier (WeasyPrint / Typst)"]
         HTML["🌐 Standalone Interactive HTML (Base64 SVG 인라인)"]
         JSON["📊 eCTD Machine-Readable JSON"]
@@ -379,5 +375,5 @@ tdc_studio/
 | **Phase 1** | **[Track 2] LeadOptimizer ➔ Retro\* 결합** | - 자가교정 변이체 생성 시 3-Tier 합성성 자동 평가 및 Stock 경로 첨부<br>- `POST /optimize` 및 `OptimizedCandidateItem` 완결 연동 | **완료 (COMPLETE on `main`) ✅** |
 | **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기 (Ro5 $\to$ GBDT $\to$ D-MPNN $\to$ PBPK/Retro*)<br>- ONNX Runtime FP16/INT8 동적 양자화 가속 및 대규모 라이브러리 배치 스트리밍<br>- RDKit `rdMolStandardize` 염 제거 및 PAINS/Brenk 필터<br>- NSGA-II 다목적 파레토 비지배 정렬 & Tanimoto 다양성 선별<br>- Enamine 30만 상용 시약 스트리밍 로더 | **📋 TODOLIST (차기 브랜치)** |
 | **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 결합 포켓 잔기 슬라이싱 Cross-Attention DTA<br>- **Multi-Provider Pluggable 3D Docking Bridge** (`VinaLocalProvider`, `DiffDockCloudProvider`)<br>- 단백질 잔기 Cross-Attention 기여도 XAI 히트맵<br>- Conformal 능동 학습 기반 차기 합성 후보 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
-| **Phase 4** | **3-in-1 Studio UI & IND Dossier 보고서** | - **3-in-1 Unified Web Studio UI**: Ketcher 2D + Mol* 3D + ADMET/PBPK + Retro* DAG 트리 단일 워크스페이스 (`tdc_studio/ui/`)<br>- **Automated IND-Enabling Dossier Generator**: ICH M4 CTD Module 2/3/4 비임상 보고서 원클릭 생성 (`tdc_studio/dossier/`, PDF/HTML/JSON)<br>- **다회 투여 PBPK & DDI 시뮬레이터**: QD/BID 정상상태 축적비 및 CYP 저해 DDI 예측 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 4** | **Universal MCP 서버 & IND Dossier 보고서** | - **Universal Drug Discovery MCP Server**: 8대 Agentic Tools + 3대 리소스 + 2대 프롬프트 (`tdc_studio/mcp/`, stdio/SSE 지원)<br>- **Automated IND-Enabling Dossier Generator**: ICH M4 CTD Module 2.4/2.6 비임상 보고서 원클릭 생성 (`tdc_studio/dossier/`, HTML/JSON)<br>- **다회 투여 PBPK & DDI 시뮬레이터**: QD/BID 정상상태 축적비($R_{ac}$) 및 CYP 저해 DDI 예측 (`tdc_studio/pbpk/repeat_dose.py`, `ddi.py`) | **완료 (COMPLETE on `feature/unified-studio-ui`) ✅** |
 

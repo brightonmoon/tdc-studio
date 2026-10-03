@@ -137,6 +137,7 @@ class DTIInferencePipeline(InferencePipeline):
                 self.is_graph_drug = False
 
         from tdc_studio.evaluation.conformal import ConformalCalibrator
+
         self.conformal_calibrator = ConformalCalibrator(alpha=0.05)
 
     def set_conformal_calibrator(self, calibrator: Any) -> None:
@@ -146,10 +147,10 @@ class DTIInferencePipeline(InferencePipeline):
     def load_conformal_calibrator(self, filepath: str) -> None:
         """Load calibration parameters from JSON file."""
         from tdc_studio.evaluation.conformal import ConformalCalibrator
+
         self.conformal_calibrator = ConformalCalibrator.load(filepath)
 
     def inverse_transform(self, y_norm: float) -> Tuple[float, float]:
-
         """Convert normalized model prediction to pKd and Kd (nM).
 
         Returns:
@@ -213,12 +214,14 @@ class DTIInferencePipeline(InferencePipeline):
             # Target sequence tensor
             target_tensor = self.aa_tokenizer(clean_seq)
 
-            batch_items.append({
-                "drug_graph":      g,
-                "drug_smiles_str": clean_smiles,   # for HuggingFace / ChemBERTa encoder
-                "target_seq":      target_tensor,  # for ProteinCNN encoder
-                "target_seq_str":  clean_seq,      # for ESM-2 encoder (avoids decode fallback)
-            })
+            batch_items.append(
+                {
+                    "drug_graph": g,
+                    "drug_smiles_str": clean_smiles,  # for HuggingFace / ChemBERTa encoder
+                    "target_seq": target_tensor,  # for ProteinCNN encoder
+                    "target_seq_str": clean_seq,  # for ESM-2 encoder (avoids decode fallback)
+                }
+            )
 
         collated = molecule_collate_fn(batch_items)
         for k, v in collated.items():
@@ -277,7 +280,6 @@ class DTIInferencePipeline(InferencePipeline):
         return_full_matrix: bool = False,
         return_uncertainty: bool = True,
     ) -> Dict[str, Any]:
-
         """Run DTI prediction and return structured pKd, Kd (nM), and optional XAI contact map.
 
         Args:
@@ -335,7 +337,6 @@ class DTIInferencePipeline(InferencePipeline):
             res["conformal_upper_95"] = [round(u.upper, 4) for u in uq_preds]
             res["confidence_interval_width"] = [round(u.interval_width, 4) for u in uq_preds]
             res["is_in_domain"] = [u.is_in_domain for u in uq_preds]
-
 
         if return_attention and attn_list is not None:
             # Convert any numpy arrays in attn_list to lists for JSON serialization
@@ -540,5 +541,3 @@ class DTIMultiAffinityPipeline(DTIInferencePipeline):
                 res["contact_maps"] = contact_maps_batch
 
         return res
-
-

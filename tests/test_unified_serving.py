@@ -166,5 +166,3 @@ def test_optimize_endpoint_fastapi():
         "nitro_to_trifluoromethyl",
         "nitro_to_primary_amide",
     ]
-
-

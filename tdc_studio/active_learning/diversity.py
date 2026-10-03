@@ -5,12 +5,14 @@ ensuring that Top-K recommendations span structurally distinct chemical clusters
 rather than picking 10 trivial analogues of the same core scaffold.
 """
 
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, List, Optional
+
 import numpy as np
 
 try:
     from rdkit import Chem, DataStructs
     from rdkit.Chem import AllChem
+
     _RDKIT_AVAILABLE = True
 except ImportError:
     _RDKIT_AVAILABLE = False
@@ -45,8 +47,8 @@ def calculate_tanimoto_similarity(smiles1: str, smiles2: str) -> float:
 
     # Fallback: 3-character n-gram Jaccard similarity
     n = 3
-    set1 = set([smiles1[i:i+n] for i in range(max(1, len(smiles1) - n + 1))])
-    set2 = set([smiles2[i:i+n] for i in range(max(1, len(smiles2) - n + 1))])
+    set1 = set([smiles1[i : i + n] for i in range(max(1, len(smiles1) - n + 1))])
+    set2 = set([smiles2[i : i + n] for i in range(max(1, len(smiles2) - n + 1))])
     union_len = len(set1 | set2)
     if union_len == 0:
         return 0.0

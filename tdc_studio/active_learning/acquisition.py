@@ -7,6 +7,7 @@ to guide wet-lab experimental synthesis candidate selection.
 
 import math
 from typing import Optional, Union
+
 import numpy as np
 
 
@@ -17,7 +18,7 @@ def _normal_cdf(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
 
 def _normal_pdf(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
     """Standard normal probability density function phi(x)."""
-    return (1.0 / math.sqrt(2.0 * math.pi)) * np.exp(-0.5 * (x ** 2))
+    return (1.0 / math.sqrt(2.0 * math.pi)) * np.exp(-0.5 * (x**2))
 
 
 def conformal_expected_improvement(
@@ -105,4 +106,6 @@ def compute_acquisition_score(
     elif strat in ("greedy", "mean"):
         return np.asarray(pred_mean, dtype=np.float64)
     else:
-        raise ValueError(f"Unknown acquisition strategy '{strategy}'. Choose 'ei', 'ucb', or 'greedy'.")
+        raise ValueError(
+            f"Unknown acquisition strategy '{strategy}'. Choose 'ei', 'ucb', or 'greedy'."
+        )

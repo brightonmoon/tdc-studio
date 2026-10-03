@@ -8,11 +8,11 @@ Provides:
 """
 
 import logging
-from pathlib import Path
 import re
-from typing import Optional, Tuple
 import urllib.error
 import urllib.request
+from pathlib import Path
+from typing import Optional, Tuple
 
 logger = logging.getLogger("tdc_studio.docking.fetcher")
 

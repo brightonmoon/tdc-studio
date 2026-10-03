@@ -50,13 +50,19 @@ class PBPKResponse(BaseModel):
 # Unified 22 ADMET Full-Lifecycle & PBPK Schemas
 # ------------------------------------------------------------------------------
 
+
 class ADMETIndicatorResult(BaseModel):
     """Single ADMET property prediction and decision categorization."""
 
     name: str = Field(..., description="Benchmark task name.")
-    category: str = Field(..., description="ADMET cluster (absorption, distribution, metabolism, excretion, toxicity).")
+    category: str = Field(
+        ...,
+        description="ADMET cluster (absorption, distribution, metabolism, excretion, toxicity).",
+    )
     value: Optional[float] = Field(None, description="Numerical prediction (for regression).")
-    probability: Optional[float] = Field(None, description="Predicted probability (for classification).")
+    probability: Optional[float] = Field(
+        None, description="Predicted probability (for classification)."
+    )
     unit: str = Field(default="", description="Measurement or physical unit.")
     decision: str = Field(..., description="Medicinal chemistry qualitative decision tier.")
 
@@ -68,11 +74,17 @@ class PBPKProfileResult(BaseModel):
     half_life_hours: float = Field(..., description="Elimination half-life t1/2 (hours).")
     fraction_unbound: float = Field(..., description="Plasma unbound fraction (fu).")
     cl_total_l_h_kg: float = Field(..., description="Total systemic clearance (L/h/kg).")
-    hepatic_clearance_l_h_kg: float = Field(..., description="Well-stirred hepatic clearance CL_H (L/h/kg).")
+    hepatic_clearance_l_h_kg: float = Field(
+        ..., description="Well-stirred hepatic clearance CL_H (L/h/kg)."
+    )
     hepatic_extraction_ratio: float = Field(..., description="Hepatic extraction ratio (E_H).")
-    max_oral_bioavailability: float = Field(..., description="Theoretical maximal oral bioavailability F_H (1 - E_H).")
+    max_oral_bioavailability: float = Field(
+        ..., description="Theoretical maximal oral bioavailability F_H (1 - E_H)."
+    )
     t_half_tier: str = Field(..., description="Clinical elimination half-life classification.")
-    extraction_tier: str = Field(..., description="Hepatic extraction ratio classification (Low/Intermediate/High).")
+    extraction_tier: str = Field(
+        ..., description="Hepatic extraction ratio classification (Low/Intermediate/High)."
+    )
 
 
 class UnifiedADMETProfile(BaseModel):
@@ -81,13 +93,27 @@ class UnifiedADMETProfile(BaseModel):
     smiles: str = Field(..., description="Original input SMILES.")
     canonical_smiles: str = Field(..., description="Standardized canonical SMILES.")
     elapsed_ms: float = Field(..., description="End-to-end inference latency in milliseconds.")
-    drug_likeness_score: float = Field(..., description="Overall drug-likeness composite score (0-100).")
-    absorption: Dict[str, ADMETIndicatorResult] = Field(..., description="C1: Absorption & Permeability (6 tasks).")
-    distribution: Dict[str, ADMETIndicatorResult] = Field(..., description="C2: Distribution & Penetration (3 tasks).")
-    metabolism: Dict[str, ADMETIndicatorResult] = Field(..., description="C3: CYP450 8-Head Metabolism Matrix (8 tasks).")
-    excretion: Dict[str, ADMETIndicatorResult] = Field(..., description="C4: Elimination & Clearance (3 tasks).")
-    toxicity: Dict[str, ADMETIndicatorResult] = Field(..., description="C5: Cardiotoxicity & Safety Profile (2+ tasks).")
-    pbpk: Optional[PBPKProfileResult] = Field(None, description="Integrated in vivo PBPK PK profile.")
+    drug_likeness_score: float = Field(
+        ..., description="Overall drug-likeness composite score (0-100)."
+    )
+    absorption: Dict[str, ADMETIndicatorResult] = Field(
+        ..., description="C1: Absorption & Permeability (6 tasks)."
+    )
+    distribution: Dict[str, ADMETIndicatorResult] = Field(
+        ..., description="C2: Distribution & Penetration (3 tasks)."
+    )
+    metabolism: Dict[str, ADMETIndicatorResult] = Field(
+        ..., description="C3: CYP450 8-Head Metabolism Matrix (8 tasks)."
+    )
+    excretion: Dict[str, ADMETIndicatorResult] = Field(
+        ..., description="C4: Elimination & Clearance (3 tasks)."
+    )
+    toxicity: Dict[str, ADMETIndicatorResult] = Field(
+        ..., description="C5: Cardiotoxicity & Safety Profile (2+ tasks)."
+    )
+    pbpk: Optional[PBPKProfileResult] = Field(
+        None, description="Integrated in vivo PBPK PK profile."
+    )
 
 
 class UnifiedADMETRequest(BaseModel):
@@ -101,8 +127,12 @@ class UnifiedADMETRequest(BaseModel):
 class UnifiedADMETResponse(BaseModel):
     """Response payload for the Unified 22 ADMET + PBPK endpoint."""
 
-    results: List[UnifiedADMETProfile] = Field(..., description="Full-lifecycle ADMET profiles per compound.")
-    model_version: str = Field(default="TDC-Studio-Unified-v1", description="Serving model version identifier.")
+    results: List[UnifiedADMETProfile] = Field(
+        ..., description="Full-lifecycle ADMET profiles per compound."
+    )
+    model_version: str = Field(
+        default="TDC-Studio-Unified-v1", description="Serving model version identifier."
+    )
 
 
 class ExplainRequest(BaseModel):
@@ -119,7 +149,9 @@ class BioisostereRecommendationItem(BaseModel):
     """Bioisosteric modification suggestion."""
 
     transformation_name: str = Field(..., description="Name of the bioisostere rule.")
-    liability_addressed: str = Field(..., description="Target pharmacological/toxicological liability.")
+    liability_addressed: str = Field(
+        ..., description="Target pharmacological/toxicological liability."
+    )
     original_smiles: str = Field(..., description="Original molecule SMILES.")
     modified_smiles: str = Field(..., description="Suggested analogue SMILES.")
     rationale: str = Field(..., description="Medicinal chemistry rationale.")
@@ -132,9 +164,15 @@ class ExplainResponse(BaseModel):
     canonical_smiles: str = Field(..., description="Canonicalized SMILES.")
     predicted_score: float = Field(..., description="Model prediction score.")
     num_atoms: int = Field(..., description="Number of heavy atoms.")
-    atom_attributions: List[float] = Field(..., description="Raw Integrated Gradients attributions.")
-    normalized_attributions: List[float] = Field(..., description="Normalized attributions in [-1, 1].")
-    hotspot_atoms: List[int] = Field(..., description="Atom indices identified as liability hotspots.")
+    atom_attributions: List[float] = Field(
+        ..., description="Raw Integrated Gradients attributions."
+    )
+    normalized_attributions: List[float] = Field(
+        ..., description="Normalized attributions in [-1, 1]."
+    )
+    hotspot_atoms: List[int] = Field(
+        ..., description="Atom indices identified as liability hotspots."
+    )
     svg_data_uri: str = Field(..., description="Base64 Data URI of 2D highlighted molecular SVG.")
     bioisostere_recommendations: List[BioisostereRecommendationItem] = Field(
         default_factory=list, description="List of suggested bioisostere analogues."
@@ -145,20 +183,31 @@ class ExplainResponse(BaseModel):
 # Self-Correcting Generative Lead Optimization Schemas
 # ------------------------------------------------------------------------------
 
+
 class OptimizeRequest(BaseModel):
     """Request payload for closed-loop self-correcting lead optimization."""
 
     smiles: str = Field(..., description="Target lead molecule SMILES to optimize.", min_length=1)
     target_liability: Optional[str] = Field(
-        None, description="Optional target liability key (e.g. 'herg', 'ames', 'dili', 'clearance')."
+        None,
+        description="Optional target liability key (e.g. 'herg', 'ames', 'dili', 'clearance').",
     )
     target_sequence: Optional[str] = Field(
-        None, description="Optional target protein amino acid sequence for joint DTA potency scoring."
+        None,
+        description="Optional target protein amino acid sequence for joint DTA potency scoring.",
     )
-    weight_admet: float = Field(default=1.0, description="Weight for ADMET liability reduction in fitness.")
-    weight_dta: float = Field(default=0.5, description="Weight for DTA binding affinity gain in fitness.")
-    max_candidates: int = Field(default=5, description="Maximum number of top candidates to return.")
-    sa_threshold: float = Field(default=4.0, description="Maximum synthetic accessibility score allowed.")
+    weight_admet: float = Field(
+        default=1.0, description="Weight for ADMET liability reduction in fitness."
+    )
+    weight_dta: float = Field(
+        default=0.5, description="Weight for DTA binding affinity gain in fitness."
+    )
+    max_candidates: int = Field(
+        default=5, description="Maximum number of top candidates to return."
+    )
+    sa_threshold: float = Field(
+        default=4.0, description="Maximum synthetic accessibility score allowed."
+    )
 
 
 class LiabilityDiagnosticItem(BaseModel):
@@ -183,11 +232,19 @@ class OptimizedCandidateItem(BaseModel):
     parent_liability_value: float = Field(..., description="Parent liability value.")
     candidate_liability_value: float = Field(..., description="Candidate liability value.")
     liability_delta: float = Field(..., description="Improvement delta (positive is improved).")
-    sa_score: float = Field(..., description="Synthetic accessibility score (1-10, <=3.5 is ideal).")
-    scaffold_preserved: bool = Field(..., description="Whether Bemis-Murcko core scaffold is retained.")
+    sa_score: float = Field(
+        ..., description="Synthetic accessibility score (1-10, <=3.5 is ideal)."
+    )
+    scaffold_preserved: bool = Field(
+        ..., description="Whether Bemis-Murcko core scaffold is retained."
+    )
     fitness_score: float = Field(..., description="Multi-objective Pareto fitness score.")
-    parent_dta_pkd: Optional[float] = Field(None, description="Parent molecule baseline affinity pKd.")
-    candidate_dta_pkd: Optional[float] = Field(None, description="Candidate molecule predicted affinity pKd.")
+    parent_dta_pkd: Optional[float] = Field(
+        None, description="Parent molecule baseline affinity pKd."
+    )
+    candidate_dta_pkd: Optional[float] = Field(
+        None, description="Candidate molecule predicted affinity pKd."
+    )
     dta_delta: Optional[float] = Field(None, description="Affinity delta (positive is improved).")
 
 
@@ -213,10 +270,10 @@ class OptimizeResponse(BaseModel):
     )
 
 
-
 # ------------------------------------------------------------------------------
 # Drug-Target Interaction (DTI) Schemas
 # ------------------------------------------------------------------------------
+
 
 class ResidueContactDetail(BaseModel):
     """Detailed structural contact information for a protein target residue."""
@@ -286,7 +343,8 @@ class DTIInferenceResponse(BaseModel):
         None, description="2D Contact Maps [L_drug, L_target] if return_full_matrix=True."
     )
     top_contact_residues: Optional[List[List[ResidueContactDetail]]] = Field(
-        None, description="Top-K contact residues per drug-target pair for structural pocket analysis."
+        None,
+        description="Top-K contact residues per drug-target pair for structural pocket analysis.",
     )
     top_contact_atoms: Optional[List[List[AtomContactDetail]]] = Field(
         None, description="Top-K interacting drug atoms or tokens per pair."
@@ -312,7 +370,6 @@ class DTIInferenceResponse(BaseModel):
     model_name: str = Field(default="GraphDTA-Model", description="Serving model identifier.")
     count: int = Field(..., description="Number of drug-target pairs evaluated.")
     elapsed_ms: Optional[float] = Field(None, description="Inference latency in milliseconds.")
-
 
 
 class DTIMultiAffinityInferenceRequest(BaseModel):
@@ -357,7 +414,8 @@ class DTIMultiAffinityInferenceResponse(BaseModel):
     ki_nm: Optional[List[float]] = Field(None, description="Predicted Ki in nM.")
     ic50_nm: Optional[List[float]] = Field(None, description="Predicted IC50 in nM.")
     consistency_scores: Optional[List[float]] = Field(
-        None, description="Affinity Consistency Score (ACS, 0-100) evaluating Kd/Ki/IC50 physical harmony."
+        None,
+        description="Affinity Consistency Score (ACS, 0-100) evaluating Kd/Ki/IC50 physical harmony.",
     )
     consistency_tiers: Optional[List[str]] = Field(
         None, description="Qualitative consistency tier: 'High', 'Moderate', or 'Review Required'."
@@ -436,7 +494,9 @@ class TherapeuticIndexItem(BaseModel):
     )
     dili_prob: float = Field(..., description="Predicted hepatotoxicity DILI probability.")
     dili_decision: str = Field(..., description="DILI classification decision tier.")
-    dili_penalty: float = Field(..., description="DILI penalty points deducted from clinical score.")
+    dili_penalty: float = Field(
+        ..., description="DILI penalty points deducted from clinical score."
+    )
     drug_likeness_score: float = Field(
         ..., description="Composite ADMET drug-likeness score (0 to 100)."
     )

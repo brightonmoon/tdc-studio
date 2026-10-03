@@ -7,15 +7,17 @@ Ranks and selects the "Top 10 Priority Candidates" for chemical synthesis and bi
 4. Automated priority tiering and rationale generation for medicinal chemists.
 """
 
-from dataclasses import asdict, dataclass
 import logging
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
 from tdc_studio.active_learning.acquisition import compute_acquisition_score
-from tdc_studio.active_learning.diversity import calculate_tanimoto_similarity, maxmin_diversity_picker
+from tdc_studio.active_learning.diversity import (
+    calculate_tanimoto_similarity,
+    maxmin_diversity_picker,
+)
 
 logger = logging.getLogger("tdc_studio.active_learning.recommender")
 
@@ -23,16 +25,17 @@ logger = logging.getLogger("tdc_studio.active_learning.recommender")
 @dataclass
 class WetLabCandidate:
     """Individual compound recommended for laboratory synthesis and assay validation."""
+
     rank: int
     smiles: str
-    predicted_affinity: float       # Predicted pKd / pKi
-    lower_95: float                 # 95% Conformal Lower Bound
-    upper_95: float                 # 95% Conformal Upper Bound
-    conformal_uncertainty: float    # Interval half-width q_hat
-    acquisition_score: float        # EI / UCB metric
-    min_tanimoto_distance: float    # Distance to other selected candidates (1 - Tanimoto)
-    synthesis_priority: str         # "Urgent (Top 1-3)", "High (Top 4-6)", "Standard (Top 7-10)"
-    rationale: str                  # Explainable decision context for wet-lab scientists
+    predicted_affinity: float  # Predicted pKd / pKi
+    lower_95: float  # 95% Conformal Lower Bound
+    upper_95: float  # 95% Conformal Upper Bound
+    conformal_uncertainty: float  # Interval half-width q_hat
+    acquisition_score: float  # EI / UCB metric
+    min_tanimoto_distance: float  # Distance to other selected candidates (1 - Tanimoto)
+    synthesis_priority: str  # "Urgent (Top 1-3)", "High (Top 4-6)", "Standard (Top 7-10)"
+    rationale: str  # Explainable decision context for wet-lab scientists
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -122,7 +125,9 @@ class ActiveLearningRecommender:
             # Compute min distance to other selected candidates
             other_smiles = [s for j, s in enumerate(selected_smiles) if j != (rank - 1)]
             if other_smiles:
-                min_dist = min(1.0 - calculate_tanimoto_similarity(smi, o_smi) for o_smi in other_smiles)
+                min_dist = min(
+                    1.0 - calculate_tanimoto_similarity(smi, o_smi) for o_smi in other_smiles
+                )
             else:
                 min_dist = 1.0
 

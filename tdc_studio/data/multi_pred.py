@@ -135,17 +135,29 @@ class DTADataModule(BaseTDCDataModule):
 
                 n_d, n_t = len(unique_drugs), len(unique_targets)
                 tr_d = set(unique_drugs[: int(n_d * self.frac[0])])
-                val_d = set(unique_drugs[int(n_d * self.frac[0]) : int(n_d * (self.frac[0] + self.frac[1]))])
+                val_d = set(
+                    unique_drugs[int(n_d * self.frac[0]) : int(n_d * (self.frac[0] + self.frac[1]))]
+                )
                 te_d = set(unique_drugs[int(n_d * (self.frac[0] + self.frac[1])) :])
 
                 tr_t = set(unique_targets[: int(n_t * self.frac[0])])
-                val_t = set(unique_targets[int(n_t * self.frac[0]) : int(n_t * (self.frac[0] + self.frac[1]))])
+                val_t = set(
+                    unique_targets[
+                        int(n_t * self.frac[0]) : int(n_t * (self.frac[0] + self.frac[1]))
+                    ]
+                )
                 te_t = set(unique_targets[int(n_t * (self.frac[0] + self.frac[1])) :])
 
                 self.splits = {
-                    "train": df[df["Drug"].isin(tr_d) & df["Target"].isin(tr_t)].reset_index(drop=True),
-                    "valid": df[df["Drug"].isin(val_d) & df["Target"].isin(val_t)].reset_index(drop=True),
-                    "test": df[df["Drug"].isin(te_d) & df["Target"].isin(te_t)].reset_index(drop=True),
+                    "train": df[df["Drug"].isin(tr_d) & df["Target"].isin(tr_t)].reset_index(
+                        drop=True
+                    ),
+                    "valid": df[df["Drug"].isin(val_d) & df["Target"].isin(val_t)].reset_index(
+                        drop=True
+                    ),
+                    "test": df[df["Drug"].isin(te_d) & df["Target"].isin(te_t)].reset_index(
+                        drop=True
+                    ),
                 }
             else:
                 n = len(df)
@@ -171,17 +183,31 @@ class DTADataModule(BaseTDCDataModule):
 
                     n_d, n_t = len(unique_drugs), len(unique_targets)
                     tr_d = set(unique_drugs[: int(n_d * self.frac[0])])
-                    val_d = set(unique_drugs[int(n_d * self.frac[0]) : int(n_d * (self.frac[0] + self.frac[1]))])
+                    val_d = set(
+                        unique_drugs[
+                            int(n_d * self.frac[0]) : int(n_d * (self.frac[0] + self.frac[1]))
+                        ]
+                    )
                     te_d = set(unique_drugs[int(n_d * (self.frac[0] + self.frac[1])) :])
 
                     tr_t = set(unique_targets[: int(n_t * self.frac[0])])
-                    val_t = set(unique_targets[int(n_t * self.frac[0]) : int(n_t * (self.frac[0] + self.frac[1]))])
+                    val_t = set(
+                        unique_targets[
+                            int(n_t * self.frac[0]) : int(n_t * (self.frac[0] + self.frac[1]))
+                        ]
+                    )
                     te_t = set(unique_targets[int(n_t * (self.frac[0] + self.frac[1])) :])
 
                     self.splits = {
-                        "train": raw_df[raw_df["Drug"].isin(tr_d) & raw_df["Target"].isin(tr_t)].reset_index(drop=True),
-                        "valid": raw_df[raw_df["Drug"].isin(val_d) & raw_df["Target"].isin(val_t)].reset_index(drop=True),
-                        "test": raw_df[raw_df["Drug"].isin(te_d) & raw_df["Target"].isin(te_t)].reset_index(drop=True),
+                        "train": raw_df[
+                            raw_df["Drug"].isin(tr_d) & raw_df["Target"].isin(tr_t)
+                        ].reset_index(drop=True),
+                        "valid": raw_df[
+                            raw_df["Drug"].isin(val_d) & raw_df["Target"].isin(val_t)
+                        ].reset_index(drop=True),
+                        "test": raw_df[
+                            raw_df["Drug"].isin(te_d) & raw_df["Target"].isin(te_t)
+                        ].reset_index(drop=True),
                     }
                 else:
                     self.splits = data.get_split(
@@ -190,7 +216,11 @@ class DTADataModule(BaseTDCDataModule):
                         frac=self.frac,
                     )
             except Exception as exc:
-                if getattr(self, "max_samples", None) is not None or "tdc" in str(exc).lower() or "pytdc" in str(exc).lower():
+                if (
+                    getattr(self, "max_samples", None) is not None
+                    or "tdc" in str(exc).lower()
+                    or "pytdc" in str(exc).lower()
+                ):
                     drugs = [
                         "CC(=O)NC1=CC=CC=C1",
                         "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
@@ -204,13 +234,15 @@ class DTADataModule(BaseTDCDataModule):
                     recs = []
                     num_recs = max(40, int(getattr(self, "max_samples", 40) or 40))
                     for i in range(num_recs):
-                        recs.append({
-                            "Drug_ID": f"d_{i}",
-                            "Drug": drugs[i % len(drugs)],
-                            "Target_ID": f"t_{i}",
-                            "Target": targets[i % len(targets)],
-                            "Y": float(np.random.uniform(5.0, 500.0)),
-                        })
+                        recs.append(
+                            {
+                                "Drug_ID": f"d_{i}",
+                                "Drug": drugs[i % len(drugs)],
+                                "Target_ID": f"t_{i}",
+                                "Target": targets[i % len(targets)],
+                                "Y": float(np.random.uniform(5.0, 500.0)),
+                            }
+                        )
                     df_syn = pd.DataFrame(recs)
                     n = len(df_syn)
                     n_train = int(n * self.frac[0])

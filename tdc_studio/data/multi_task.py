@@ -21,21 +21,41 @@ KNOWN_TDC_TASKS: Dict[str, Dict[str, str]] = {
     # Absorption
     "caco2_wang": {"category": "absorption", "type": "regression", "metric": "mae"},
     "hia_hou": {"category": "absorption", "type": "binary_classification", "metric": "roc_auc"},
-    "pgp_broccatelli": {"category": "absorption", "type": "binary_classification", "metric": "roc_auc"},
-    "bioavailability_ma": {"category": "absorption", "type": "binary_classification", "metric": "roc_auc"},
+    "pgp_broccatelli": {
+        "category": "absorption",
+        "type": "binary_classification",
+        "metric": "roc_auc",
+    },
+    "bioavailability_ma": {
+        "category": "absorption",
+        "type": "binary_classification",
+        "metric": "roc_auc",
+    },
     # Distribution
-    "bbb_martins": {"category": "distribution", "type": "binary_classification", "metric": "roc_auc"},
+    "bbb_martins": {
+        "category": "distribution",
+        "type": "binary_classification",
+        "metric": "roc_auc",
+    },
     "ppbr_az": {"category": "distribution", "type": "regression", "metric": "mae"},
     "vdss_lombardo": {"category": "distribution", "type": "regression", "metric": "mae"},
     # Metabolism
     "cyp2d6_veith": {"category": "metabolism", "type": "binary_classification", "metric": "pr_auc"},
     "cyp3a4_veith": {"category": "metabolism", "type": "binary_classification", "metric": "pr_auc"},
     "cyp2c9_veith": {"category": "metabolism", "type": "binary_classification", "metric": "pr_auc"},
-    "cyp2c19_veith": {"category": "metabolism", "type": "binary_classification", "metric": "pr_auc"},
+    "cyp2c19_veith": {
+        "category": "metabolism",
+        "type": "binary_classification",
+        "metric": "pr_auc",
+    },
     "cyp1a2_veith": {"category": "metabolism", "type": "binary_classification", "metric": "pr_auc"},
     # Excretion
     "half_life_obach": {"category": "excretion", "type": "regression", "metric": "spearman"},
-    "clearance_hepatocyte_az": {"category": "excretion", "type": "regression", "metric": "spearman"},
+    "clearance_hepatocyte_az": {
+        "category": "excretion",
+        "type": "regression",
+        "metric": "spearman",
+    },
     "clearance_microsome_az": {"category": "excretion", "type": "regression", "metric": "spearman"},
     # Toxicity
     "herg": {"category": "toxicity", "type": "binary_classification", "metric": "roc_auc"},
@@ -43,9 +63,17 @@ KNOWN_TDC_TASKS: Dict[str, Dict[str, str]] = {
     "dili": {"category": "toxicity", "type": "binary_classification", "metric": "roc_auc"},
     "clintox": {"category": "toxicity", "type": "binary_classification", "metric": "roc_auc"},
     "skin_reaction": {"category": "toxicity", "type": "binary_classification", "metric": "roc_auc"},
-    "carcinogens_lagunin": {"category": "toxicity", "type": "binary_classification", "metric": "roc_auc"},
+    "carcinogens_lagunin": {
+        "category": "toxicity",
+        "type": "binary_classification",
+        "metric": "roc_auc",
+    },
     # Physicochemical
-    "lipophilicity_astrazeneca": {"category": "physicochemical", "type": "regression", "metric": "mae"},
+    "lipophilicity_astrazeneca": {
+        "category": "physicochemical",
+        "type": "regression",
+        "metric": "mae",
+    },
     "solubility_aqsoldb": {"category": "physicochemical", "type": "regression", "metric": "mae"},
     "hydration_free_energy": {"category": "physicochemical", "type": "regression", "metric": "mae"},
 }
@@ -164,7 +192,11 @@ class MultiTaskDataModule(BaseTDCDataModule):
 
             for t_name in self.task_names:
                 try:
-                    loader_cls = Tox if t_name in ("herg", "ames", "dili", "clintox", "skin_reaction") else ADME
+                    loader_cls = (
+                        Tox
+                        if t_name in ("herg", "ames", "dili", "clintox", "skin_reaction")
+                        else ADME
+                    )
                     data = loader_cls(name=t_name)
                     df_t = data.get_data()
                     sub_df = df_t[["Drug", "Y"]].rename(columns={"Y": t_name})

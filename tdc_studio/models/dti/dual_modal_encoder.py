@@ -14,9 +14,9 @@ Design rationale:
 Registered as "dual_modal_drug_encoder" and "dual_modal_drug" in MODELS.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
 import logging
-import math
+from typing import Any, Dict, List, Optional
+
 import torch
 import torch.nn as nn
 
@@ -74,7 +74,9 @@ def generate_3d_coordinates(smiles: str, num_attempts: int = 3) -> Optional[torc
 class SpatialRBFDistanceEncoder(nn.Module):
     """Encodes 3D interatomic pairwise distances into Radial Basis Function (RBF) kernels."""
 
-    def __init__(self, num_rbf: int = 32, d_min: float = 0.5, d_max: float = 15.0, hidden_dim: int = 256):
+    def __init__(
+        self, num_rbf: int = 32, d_min: float = 0.5, d_max: float = 15.0, hidden_dim: int = 256
+    ):
         super().__init__()
         self.num_rbf = num_rbf
         centers = torch.linspace(d_min, d_max, num_rbf)
@@ -252,7 +254,9 @@ class DualModalDrugEncoder(nn.Module):
         elif "drug_graph" in batch and hasattr(batch["drug_graph"], "smiles"):
             smiles_list = batch["drug_graph"].smiles
         else:
-            raise KeyError("Batch must contain 'drug_smiles_str' or 'smiles' for DualModalDrugEncoder.")
+            raise KeyError(
+                "Batch must contain 'drug_smiles_str' or 'smiles' for DualModalDrugEncoder."
+            )
 
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]

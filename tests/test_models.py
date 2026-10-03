@@ -162,5 +162,3 @@ def test_dmpnn_with_descriptors():
     preds = model(batch)
     assert preds.shape == torch.Size([2, 1])
     assert not torch.isnan(preds).any()
-
-

@@ -87,7 +87,9 @@ def _load_tdc_fallback(
         df = pd.read_csv(io.StringIO(resp.text), sep="\t")
         df.to_csv(cache_file, sep="\t", index=False)
 
-    smiles_col = "Drug" if "Drug" in df.columns else ("smiles" if "smiles" in df.columns else df.columns[1])
+    smiles_col = (
+        "Drug" if "Drug" in df.columns else ("smiles" if "smiles" in df.columns else df.columns[1])
+    )
     if split_type == "scaffold":
         return _scaffold_split(df, smiles_col=smiles_col, seed=seed)
     else:

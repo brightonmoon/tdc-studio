@@ -1,6 +1,6 @@
 """Multi-Provider 3D Molecular Docking Bridge and Structure Downloader."""
 
-from typing import Any, Dict
+from typing import Any
 
 from tdc_studio.docking.base import BaseDockingEngine, DockingPose, DockingResult
 from tdc_studio.docking.cloud_clients import (

@@ -82,7 +82,9 @@ def load_model_from_checkpoint(
             config = embedded_cfg.get("model", embedded_cfg)
 
     if not config:
-        raise ServingError(f"Model configuration not found in {checkpoint_dir} or inside checkpoint weights.")
+        raise ServingError(
+            f"Model configuration not found in {checkpoint_dir} or inside checkpoint weights."
+        )
 
     # Auto-resolve model class if not provided
     if model_cls is None:
@@ -107,8 +109,6 @@ def load_model_from_checkpoint(
         model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model
-
-
 
 
 def export_production_package(

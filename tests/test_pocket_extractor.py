@@ -1,6 +1,5 @@
 """Unit tests for BindingPocketExtractor and active pocket window extraction."""
 
-import pytest
 from tdc_studio.features.pocket_extractor import BindingPocketExtractor
 
 

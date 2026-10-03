@@ -198,4 +198,3 @@ def test_cli_dti_train_dry_run(tmp_path):
     assert "Starting Training Pipeline" in result.output
     assert "Task: dta" in result.output
     assert "Training Pipeline Finished" in result.output
-

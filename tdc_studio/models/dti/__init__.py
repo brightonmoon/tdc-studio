@@ -28,4 +28,3 @@ __all__ = [
     "FewShotDTAAdapter",
     "FewShotTrainer",
 ]
-

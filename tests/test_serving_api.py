@@ -306,10 +306,12 @@ def test_dti_predict_with_attention_weights(test_client):
 
 def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
     """Verify that ChemBERTa encoder skips graph_transform parsing overhead."""
+
     class DummyChemBERTa(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.out_dim = 256
+
         def extract_features(self, batch):
             b = len(batch["drug_smiles_str"])
             return torch.zeros((b, 256))
@@ -330,6 +332,7 @@ def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
     # Monkeypatch graph_transform to fail if called
     def boom(smiles):
         raise RuntimeError("graph_transform should not be called!")
+
     monkeypatch.setattr(pipeline, "graph_transform", boom)
 
     preds = pipeline.predict(["CCO"], ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"])
@@ -522,6 +525,3 @@ def test_affinity_consistency_score_logic():
     score3, tier3 = compute_affinity_consistency_score(pkd=7.0, pki=5.5, pic50=9.0)
     assert score3 < 60.0
     assert tier3 == "Review Required"
-
-
-

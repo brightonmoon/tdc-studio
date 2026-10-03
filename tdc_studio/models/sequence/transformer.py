@@ -56,4 +56,3 @@ class SequenceTransformerModel(BaseTherapeuticsModel):
     def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
         pooled = self.extract_features(batch)
         return self.head(pooled)
-

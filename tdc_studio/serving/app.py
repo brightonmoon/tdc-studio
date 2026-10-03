@@ -15,7 +15,6 @@ from tdc_studio.explainability.attribution import MolecularExplainer
 from tdc_studio.explainability.bioisostere import BioisostereRecommender
 from tdc_studio.explainability.visualizer import AttributionVisualizer
 from tdc_studio.serving.exporter import load_model_from_checkpoint
-
 from tdc_studio.serving.pipeline import (
     DTIInferencePipeline,
     DTIMultiAffinityPipeline,
@@ -117,7 +116,9 @@ def get_dti_pipeline() -> Optional[DTIInferencePipeline]:
     return _dti_pipeline
 
 
-def set_dti_multi_pipeline(pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None) -> None:
+def set_dti_multi_pipeline(
+    pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None
+) -> None:
     """Setter for global DTI Multi-Affinity inference pipeline."""
     global _dti_multi_pipeline, _dti_model_meta
     _dti_multi_pipeline = pipeline
@@ -238,9 +239,7 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
                 set_dti_multi_pipeline(pipeline, meta=config)
                 set_dti_pipeline(pipeline, meta=config)
             else:
-                pipeline = DTIInferencePipeline(
-                    model=model, device=device, scaler_meta=scaler_meta
-                )
+                pipeline = DTIInferencePipeline(model=model, device=device, scaler_meta=scaler_meta)
                 set_dti_pipeline(pipeline, meta=config)
                 set_dti_multi_pipeline(
                     DTIMultiAffinityPipeline(model=model, device=device, scaler_meta=scaler_meta),
@@ -289,7 +288,12 @@ def load_all_serving_models() -> None:
 
     # Autodiscover DTI pipeline if not yet initialized
     if get_dti_pipeline() is None:
-        for candidate in ["models/dti/phase_c_adv", "models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
+        for candidate in [
+            "models/dti/phase_c_adv",
+            "models/dti/phase_c",
+            "models/dti/phase_b",
+            "models/export/dti",
+        ]:
             cfg_p = os.path.join(candidate, "config.json")
             if os.path.isdir(candidate) and os.path.exists(cfg_p):
                 init_pipeline_from_directory(candidate)
@@ -544,7 +548,6 @@ def get_optimizer() -> Any:
     return _optimizer
 
 
-
 @app.post("/optimize", response_model=OptimizeResponse)
 async def optimize_molecule(request: OptimizeRequest):
     """Automatically diagnose, localize, and repair liabilities using closed-loop self-correction."""
@@ -609,10 +612,10 @@ async def optimize_molecule(request: OptimizeRequest):
         raise HTTPException(status_code=500, detail=f"Lead optimization error: {str(e)}")
 
 
-
 # ------------------------------------------------------------------------------
 # Drug-Target Interaction (DTI) Endpoints
 # ------------------------------------------------------------------------------
+
 
 @app.post("/predict/dti", response_model=DTIInferenceResponse)
 async def predict_dti(request: DTIInferenceRequest):
@@ -642,7 +645,9 @@ async def predict_dti(request: DTIInferenceRequest):
             request.return_full_matrix,
         )
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-        model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention"))
+        model_name = _dti_model_meta.get(
+            "type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention")
+        )
 
         return DTIInferenceResponse(
             predictions_pkd=result["predictions_pkd"],
@@ -751,4 +756,3 @@ async def predict_therapeutic_index(request: TherapeuticIndexRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Therapeutic Index evaluation error: {str(e)}")
-

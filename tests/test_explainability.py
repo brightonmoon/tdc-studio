@@ -69,7 +69,9 @@ def test_bioisostere_recommender():
     cooh_suggestions = recommender.recommend(aspirin, liability_focus="dili")
     assert len(cooh_suggestions) > 0
     first = cooh_suggestions[0]
-    assert "tetrazole" in first["transformation_name"] or "sulfonamide" in first["transformation_name"]
+    assert (
+        "tetrazole" in first["transformation_name"] or "sulfonamide" in first["transformation_name"]
+    )
     assert first["modified_smiles"] != aspirin
 
     # 2. Test Nitro replacement on Nitrobenzene

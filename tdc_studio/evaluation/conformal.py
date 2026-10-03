@@ -9,11 +9,11 @@ Theoretical guarantee:
 under exchangeability of calibration and test data, with no distributional assumptions.
 """
 
-from dataclasses import asdict, dataclass
 import json
 import logging
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -97,7 +97,9 @@ class ConformalCalibrator:
 
         # Standard Conformal Quantile calculation: ceil((n + 1) * (1 - alpha)) / n
         level = np.clip(np.ceil((n + 1) * (1.0 - self.alpha)) / n, 0.0, 1.0)
-        self.q_hat = float(np.quantile(residuals, level, method="higher" if hasattr(np, "quantile") else "linear"))
+        self.q_hat = float(
+            np.quantile(residuals, level, method="higher" if hasattr(np, "quantile") else "linear")
+        )
         self.calibrated = True
 
         logger.info(
@@ -131,7 +133,9 @@ class ConformalCalibrator:
             q = self.q_hat
             is_cal = True
 
-        is_scalar = isinstance(y_pred, (int, float)) or (isinstance(y_pred, torch.Tensor) and y_pred.numel() == 1)
+        is_scalar = isinstance(y_pred, (int, float)) or (
+            isinstance(y_pred, torch.Tensor) and y_pred.numel() == 1
+        )
         if is_scalar:
             val = float(y_pred.item() if isinstance(y_pred, torch.Tensor) else y_pred)
             in_domain = True
@@ -158,7 +162,11 @@ class ConformalCalibrator:
         for idx, v in enumerate(vals):
             in_dom = True
             if distance_to_domain is not None:
-                d = float(distance_to_domain[idx] if hasattr(distance_to_domain, "__getitem__") else distance_to_domain)
+                d = float(
+                    distance_to_domain[idx]
+                    if hasattr(distance_to_domain, "__getitem__")
+                    else distance_to_domain
+                )
                 in_dom = d <= ad_limit
 
             results.append(

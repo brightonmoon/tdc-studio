@@ -8,14 +8,12 @@ Addresses the 1,024 AA truncation limitation:
   (default 128-256 AA) with exact 1-to-1 residue coordinate mapping.
 """
 
-import hashlib
-import json
 import logging
 import os
 import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -130,7 +128,7 @@ class BindingPocketExtractor:
             return conf_indices
 
         diff = conf_coords[:, None, :] - conf_coords[None, :, :]
-        dists = np.sqrt(np.sum(diff ** 2, axis=-1))
+        dists = np.sqrt(np.sum(diff**2, axis=-1))
         # Neighbors within 10.0 Angstrom
         neighbor_counts = np.sum((dists < 10.0) & (dists > 0.1), axis=-1)
 
@@ -274,7 +272,7 @@ def parse_p2rank_predictions(
     headers = [h.strip().lower() for h in lines[header_idx].split(",")]
     pockets = []
 
-    for line in lines[header_idx + 1:]:
+    for line in lines[header_idx + 1 :]:
         parts = [p.strip() for p in line.split(",")]
         if len(parts) < len(headers):
             continue
@@ -302,16 +300,18 @@ def parse_p2rank_predictions(
                     res_1based.append(val)
                     res_0based.append(val - 1)
 
-            pockets.append({
-                "rank": rank,
-                "name": name,
-                "score": score,
-                "probability": probability,
-                "center": (cx, cy, cz),
-                "residue_indices_1based": res_1based,
-                "residue_indices_0based": res_0based,
-                "raw_residue_ids": raw_ids,
-            })
+            pockets.append(
+                {
+                    "rank": rank,
+                    "name": name,
+                    "score": score,
+                    "probability": probability,
+                    "center": (cx, cy, cz),
+                    "residue_indices_1based": res_1based,
+                    "residue_indices_0based": res_0based,
+                    "raw_residue_ids": raw_ids,
+                }
+            )
         except (ValueError, KeyError) as e:
             logger.debug("Skipping unparseable P2Rank line '%s': %s", line, e)
             continue
@@ -371,6 +371,7 @@ def slice_pocket_embeddings(
     # Handle PyTorch Tensor
     if hasattr(embeddings, "ndim") and hasattr(embeddings, "device"):
         import torch
+
         seq_len = embeddings.shape[-2]
         clamped_idx = [i for i in valid_indices if i < seq_len]
         if not clamped_idx:

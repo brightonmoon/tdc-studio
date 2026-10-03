@@ -85,11 +85,14 @@ class TherapeuticIndexPipeline:
         # 2. Safety Profile Prediction (ADMET C1~C5)
         admet_profile = self.admet_pipeline.predict_single(smiles)
         herg_obj = admet_profile.toxicity.get("herg")
-        herg_prob = float(herg_obj.probability) if herg_obj and herg_obj.probability is not None else 0.5
-
+        herg_prob = (
+            float(herg_obj.probability) if herg_obj and herg_obj.probability is not None else 0.5
+        )
 
         dili_obj = admet_profile.toxicity.get("dili")
-        dili_prob = float(dili_obj.probability) if dili_obj and dili_obj.probability is not None else 0.3
+        dili_prob = (
+            float(dili_obj.probability) if dili_obj and dili_obj.probability is not None else 0.3
+        )
         dili_decision_admet = dili_obj.decision if dili_obj else "Low Hepatotoxicity Risk"
 
         drug_likeness_score = float(admet_profile.drug_likeness_score)

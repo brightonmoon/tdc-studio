@@ -62,6 +62,7 @@ def _canonicalize_smiles(s: Any) -> Optional[str]:
 def _clean_corrupted_tdc_file(name: str) -> None:
     """Detect and remove corrupted TDC cache files (e.g. 504 Gateway Timeout HTML errors)."""
     from pathlib import Path
+
     tab_path = Path("data") / f"{name}.tab"
     if tab_path.exists():
         try:
@@ -73,9 +74,12 @@ def _clean_corrupted_tdc_file(name: str) -> None:
             pass
 
 
-def _fetch_tdc_dataset(name: str, split_type: str = "scaffold", seed: int = 42, get_split: bool = False) -> Any:
+def _fetch_tdc_dataset(
+    name: str, split_type: str = "scaffold", seed: int = 42, get_split: bool = False
+) -> Any:
     """Fetch TDC dataset from ADME or Tox with automated fallback or local external cache."""
     from pathlib import Path
+
     if name.lower() == "chembl_hsa":
         p = Path("data/external/chembl_hsa_processed.csv")
         if p.exists():
@@ -92,12 +96,18 @@ def _fetch_tdc_dataset(name: str, split_type: str = "scaffold", seed: int = 42, 
     for attempt in range(3):
         try:
             loader = primary_cls(name=name)
-            return loader.get_split(method=split_type, seed=seed) if get_split else loader.get_data()
+            return (
+                loader.get_split(method=split_type, seed=seed) if get_split else loader.get_data()
+            )
         except BaseException:
             _clean_corrupted_tdc_file(name)
             try:
                 loader = secondary_cls(name=name)
-                return loader.get_split(method=split_type, seed=seed) if get_split else loader.get_data()
+                return (
+                    loader.get_split(method=split_type, seed=seed)
+                    if get_split
+                    else loader.get_data()
+                )
             except BaseException:
                 _clean_corrupted_tdc_file(name)
                 if attempt == 2:
@@ -145,7 +155,11 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         # Parse task list
         raw_tasks = tasks or [
             {"name": "caco2_wang", "category": "absorption", "type": "regression"},
-            {"name": "lipophilicity_astrazeneca", "category": "physicochemical", "type": "regression"},
+            {
+                "name": "lipophilicity_astrazeneca",
+                "category": "physicochemical",
+                "type": "regression",
+            },
             {"name": "solubility_aqsoldb", "category": "physicochemical", "type": "regression"},
             {"name": "hia_hou", "category": "absorption", "type": "binary_classification"},
         ]
@@ -153,7 +167,21 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         self.task_configs: List[Dict[str, Any]] = []
         for t in raw_tasks:
             if isinstance(t, str):
-                is_clf = any(term in t.lower() for term in ("inhib", "substrate", "hia", "bbb", "herg", "ames", "dili", "reaction", "carcinogen", "clintox"))
+                is_clf = any(
+                    term in t.lower()
+                    for term in (
+                        "inhib",
+                        "substrate",
+                        "hia",
+                        "bbb",
+                        "herg",
+                        "ames",
+                        "dili",
+                        "reaction",
+                        "carcinogen",
+                        "clintox",
+                    )
+                )
                 self.task_configs.append(
                     {
                         "name": t,
@@ -245,14 +273,19 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         tab_path = Path("data/herg_central.tab")
         if not tab_path.exists():
             from tdc.single_pred import Tox
+
             _ = Tox(name="herg_central", label_name="hERG_at_1uM")
 
         df = pd.read_csv(tab_path, sep="\t")
-        smiles_col = "X" if "X" in df.columns else ("Drug" if "Drug" in df.columns else df.columns[1])
+        smiles_col = (
+            "X" if "X" in df.columns else ("Drug" if "Drug" in df.columns else df.columns[1])
+        )
         df = df.rename(columns={smiles_col: "Drug"})
 
         # Mapping config tasks (label_name -> task_name)
-        col_map = {t["label_name"]: t["name"] for t in self.task_configs if t["label_name"] in df.columns}
+        col_map = {
+            t["label_name"]: t["name"] for t in self.task_configs if t["label_name"] in df.columns
+        }
         df = df.rename(columns=col_map)
 
         if self.max_samples is not None:
@@ -278,7 +311,11 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         )
 
         def _extract_primary(df: pd.DataFrame) -> pd.DataFrame:
-            smiles_col = "Drug" if "Drug" in df.columns else ("smiles" if "smiles" in df.columns else df.columns[1])
+            smiles_col = (
+                "Drug"
+                if "Drug" in df.columns
+                else ("smiles" if "smiles" in df.columns else df.columns[1])
+            )
             sub = df[[smiles_col, "Y"]].rename(columns={smiles_col: "Drug", "Y": primary_task})
             sub["Canon_SMILES"] = sub["Drug"].apply(_canonicalize_smiles)
             return sub.dropna(subset=["Canon_SMILES"]).reset_index(drop=True)
@@ -299,7 +336,11 @@ class ADMETClusterDataModule(BaseTDCDataModule):
                 continue
             try:
                 aux_d = _fetch_tdc_dataset(name=t_name, get_split=False)
-                smiles_col = "Drug" if "Drug" in aux_d.columns else ("smiles" if "smiles" in aux_d.columns else aux_d.columns[1])
+                smiles_col = (
+                    "Drug"
+                    if "Drug" in aux_d.columns
+                    else ("smiles" if "smiles" in aux_d.columns else aux_d.columns[1])
+                )
                 sub = aux_d[[smiles_col, "Y"]].rename(columns={smiles_col: "Drug", "Y": t_name})
                 sub["Canon_SMILES"] = sub["Drug"].apply(_canonicalize_smiles)
                 aux_data_dict[t_name] = sub.dropna(subset=["Canon_SMILES"])
@@ -340,8 +381,12 @@ class ADMETClusterDataModule(BaseTDCDataModule):
             res = first[["Canon_SMILES", "Drug", primary_task]]
             for other in dfs[1:]:
                 task_cols = [c for c in other.columns if c not in ("Drug", "Canon_SMILES")]
-                other_cols = ["Canon_SMILES"] + (["Drug"] if "Drug" in other.columns else []) + task_cols
-                merged = pd.merge(res, other[other_cols], on="Canon_SMILES", how="outer", suffixes=("", "_other"))
+                other_cols = (
+                    ["Canon_SMILES"] + (["Drug"] if "Drug" in other.columns else []) + task_cols
+                )
+                merged = pd.merge(
+                    res, other[other_cols], on="Canon_SMILES", how="outer", suffixes=("", "_other")
+                )
                 if "Drug_other" in merged.columns:
                     merged["Drug"] = merged["Drug"].fillna(merged["Drug_other"])
                     merged = merged.drop(columns=["Drug_other"])
@@ -423,7 +468,12 @@ class ADMETClusterDataModule(BaseTDCDataModule):
         if self.synthetic_df is None and self.max_samples is None:
             import hashlib
             from pathlib import Path
-            task_str = "_".join(sorted(self.task_names)) + "_" + "_".join(f"{k}:{v}" for k, v in sorted(self.task_transforms.items()) if v)
+
+            task_str = (
+                "_".join(sorted(self.task_names))
+                + "_"
+                + "_".join(f"{k}:{v}" for k, v in sorted(self.task_transforms.items()) if v)
+            )
             cache_name = f"{self.dataset_name}_{self.primary_task}_{self.split_type}_{self.seed}_{self.modality}_{self.use_descriptors}_{self.standardize_target}_{hashlib.md5(task_str.encode()).hexdigest()[:8]}.pt"
             cache_dir = Path("data/cache")
             cache_dir.mkdir(parents=True, exist_ok=True)

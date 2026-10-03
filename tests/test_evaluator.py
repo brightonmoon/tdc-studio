@@ -113,6 +113,7 @@ def test_is_metric_higher_better():
 def test_fast_concordance_index_precision_and_speed():
     """Verify O(N log N) CI on N=10,000 runs within 0.5s without subsampling error."""
     import time
+
     rng = np.random.default_rng(42)
     n = 10000
     y_true = rng.uniform(2.0, 10.0, size=n)

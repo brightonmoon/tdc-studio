@@ -8,14 +8,13 @@ only 10 to 50 in-house measured assay data points:
 4. Supports independent serialisation of adapter checkpoints (<500 KB) for lightweight sharing and deployment.
 """
 
-import copy
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Union
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 logger = logging.getLogger("tdc_studio.models.dti.adapter")
 
@@ -101,7 +100,7 @@ class LoRALinear(nn.Module):
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
         # Initialize A with Kaiming uniform, B with zeros
-        nn.init.kaiming_uniform_(self.lora_A, a=5 ** 0.5)
+        nn.init.kaiming_uniform_(self.lora_A, a=5**0.5)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         base_out = self.linear(x)
@@ -143,15 +142,20 @@ class FewShotDTAAdapter(nn.Module):
             drug_dim = self.base_model.fusion.bilinear.in1_features
             target_dim = self.base_model.fusion.bilinear.in2_features
         else:
-            drug_dim = getattr(self.base_model, "drug_out_dim", getattr(self.base_model.fusion, "drug_dim", 256))
-            target_dim = getattr(self.base_model, "target_out_dim", getattr(self.base_model.fusion, "target_dim", 256))
+            drug_dim = getattr(
+                self.base_model, "drug_out_dim", getattr(self.base_model.fusion, "drug_dim", 256)
+            )
+            target_dim = getattr(
+                self.base_model,
+                "target_out_dim",
+                getattr(self.base_model.fusion, "target_dim", 256),
+            )
 
         self.drug_adapter = ResidualBottleneckAdapter(drug_dim, bottleneck_dim=bottleneck_dim)
         self.target_adapter = ResidualBottleneckAdapter(target_dim, bottleneck_dim=bottleneck_dim)
 
         self.use_output_delta = use_output_delta
         if use_output_delta:
-            fusion_hidden = getattr(self.base_model.fusion, "hidden_dim", 512)
             # Small delta head mapping adapted representations to delta affinity
             self.delta_head = nn.Sequential(
                 nn.Linear(drug_dim + target_dim, bottleneck_dim),
@@ -194,7 +198,12 @@ class FewShotDTAAdapter(nn.Module):
         # 3. Base fusion prediction with adapted representations
         extra_kwargs = {
             k: batch[k]
-            for k in ("pocket_coords", "residue_importance", "target_padding_mask", "drug_padding_mask")
+            for k in (
+                "pocket_coords",
+                "residue_importance",
+                "target_padding_mask",
+                "drug_padding_mask",
+            )
             if k in batch
         }
 

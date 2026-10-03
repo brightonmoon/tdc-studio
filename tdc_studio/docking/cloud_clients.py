@@ -10,11 +10,11 @@ Integrates commercial and cloud diffusion docking APIs:
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
 import urllib.error
 import urllib.request
+from pathlib import Path
+from typing import Any, Optional, Tuple, Union
 
 from tdc_studio.docking.base import BaseDockingEngine, DockingPose, DockingResult
 
@@ -31,8 +31,12 @@ class BioNeMoDiffDockEngine(BaseDockingEngine):
         allow_mock: bool = True,
     ):
         super().__init__(name="bionemo_diffdock")
-        self.api_key = api_key or os.environ.get("BIONEMO_API_KEY") or os.environ.get("NVCF_API_KEY")
-        self.endpoint_url = endpoint_url or "https://health.api.nvidia.com/v1/biology/nvidia/diffdock"
+        self.api_key = (
+            api_key or os.environ.get("BIONEMO_API_KEY") or os.environ.get("NVCF_API_KEY")
+        )
+        self.endpoint_url = (
+            endpoint_url or "https://health.api.nvidia.com/v1/biology/nvidia/diffdock"
+        )
         self.allow_mock = allow_mock
 
     def is_available(self) -> bool:
@@ -125,7 +129,9 @@ class BioNeMoDiffDockEngine(BaseDockingEngine):
         self, ligand_smiles: str, receptor: Path, num_poses: int, t0: float
     ) -> DockingResult:
         poses = [
-            DockingPose(pose_id=i, affinity_kcal_mol=-8.8 + (i - 1) * 0.35, rmsd_lb=round((i - 1) * 0.75, 2))
+            DockingPose(
+                pose_id=i, affinity_kcal_mol=-8.8 + (i - 1) * 0.35, rmsd_lb=round((i - 1) * 0.75, 2)
+            )
             for i in range(1, num_poses + 1)
         ]
         return DockingResult(
@@ -168,7 +174,11 @@ class NeurosnapEngine(BaseDockingEngine):
         receptor = Path(receptor_path)
         if not self.is_available() and self.allow_mock:
             poses = [
-                DockingPose(pose_id=i, affinity_kcal_mol=-8.6 + (i - 1) * 0.3, rmsd_lb=round((i - 1) * 0.6, 2))
+                DockingPose(
+                    pose_id=i,
+                    affinity_kcal_mol=-8.6 + (i - 1) * 0.3,
+                    rmsd_lb=round((i - 1) * 0.6, 2),
+                )
                 for i in range(1, num_poses + 1)
             ]
             return DockingResult(
@@ -235,7 +245,11 @@ class TamarindEngine(BaseDockingEngine):
         receptor = Path(receptor_path)
         if not self.is_available() and self.allow_mock:
             poses = [
-                DockingPose(pose_id=i, affinity_kcal_mol=-8.5 + (i - 1) * 0.4, rmsd_lb=round((i - 1) * 0.7, 2))
+                DockingPose(
+                    pose_id=i,
+                    affinity_kcal_mol=-8.5 + (i - 1) * 0.4,
+                    rmsd_lb=round((i - 1) * 0.7, 2),
+                )
                 for i in range(1, num_poses + 1)
             ]
             return DockingResult(

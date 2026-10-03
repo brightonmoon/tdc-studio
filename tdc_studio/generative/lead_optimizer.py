@@ -73,7 +73,6 @@ class OptimizationReport:
     parent_dta_pkd: Optional[float] = None
 
 
-
 class SelfCorrectingOptimizer:
     """Closed-loop generative lead optimizer combining Unified ADMET, XAI, and Bioisosteres."""
 
@@ -330,7 +329,9 @@ class SelfCorrectingOptimizer:
 
             # Fitness: multi-objective weighted combination of ADMET recovery + DTA potency
             dta_term = weight_dta * dta_delta if dta_delta is not None else 0.0
-            fitness = weight_admet * delta + dta_term - 0.05 * (sa - 2.0) + (0.2 if scaffold_ok else -0.5)
+            fitness = (
+                weight_admet * delta + dta_term - 0.05 * (sa - 2.0) + (0.2 if scaffold_ok else -0.5)
+            )
 
             candidate_obj = OptimizedCandidate(
                 smiles=cand_smi,
@@ -366,4 +367,3 @@ class SelfCorrectingOptimizer:
             target_protein_sequence=target_seq,
             parent_dta_pkd=parent_dta_pkd,
         )
-

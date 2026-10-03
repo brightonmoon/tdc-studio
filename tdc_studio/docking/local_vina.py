@@ -8,13 +8,12 @@ Provides:
 """
 
 import logging
-from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from pathlib import Path
+from typing import Any, List, Optional, Tuple, Union
 
 from tdc_studio.docking.base import BaseDockingEngine, DockingPose, DockingResult
 
@@ -23,6 +22,7 @@ logger = logging.getLogger("tdc_studio.docking.vina")
 try:
     from rdkit import Chem
     from rdkit.Chem import AllChem, Descriptors
+
     _RDKIT_AVAILABLE = True
 except ImportError:
     _RDKIT_AVAILABLE = False
@@ -48,6 +48,7 @@ def _smiles_to_pdbqt(smiles: str, output_path: Path) -> bool:
         # Try Meeko if available
         try:
             from meeko import MoleculePreparation
+
             preparator = MoleculePreparation()
             mol_setups = preparator.prepare(mol)
             for setup in mol_setups:
@@ -63,7 +64,9 @@ def _smiles_to_pdbqt(smiles: str, output_path: Path) -> bool:
         for atom in mol.GetAtoms():
             pos = conf.GetAtomPosition(atom.GetIdx())
             elem = atom.GetSymbol()
-            charge = atom.GetDoubleProp("_GasteigerCharge") if atom.HasProp("_GasteigerCharge") else 0.0
+            charge = (
+                atom.GetDoubleProp("_GasteigerCharge") if atom.HasProp("_GasteigerCharge") else 0.0
+            )
             line = (
                 f"ATOM  {atom.GetIdx() + 1:5d} {elem:<4s} LIG A   1    "
                 f"{pos.x:8.3f}{pos.y:8.3f}{pos.z:8.3f}  1.00  0.00    {charge:+6.3f} {elem:>2s}"
@@ -96,7 +99,11 @@ def _parse_vina_output(output_text: str) -> List[DockingPose]:
                     aff = float(parts[1])
                     rmsd_lb = float(parts[2])
                     rmsd_ub = float(parts[3])
-                    poses.append(DockingPose(pose_id=mode, affinity_kcal_mol=aff, rmsd_lb=rmsd_lb, rmsd_ub=rmsd_ub))
+                    poses.append(
+                        DockingPose(
+                            pose_id=mode, affinity_kcal_mol=aff, rmsd_lb=rmsd_lb, rmsd_ub=rmsd_ub
+                        )
+                    )
                 except ValueError:
                     pass
             elif not line.strip():
@@ -129,12 +136,9 @@ class AutoDockVinaEngine(BaseDockingEngine):
                 self.executable = shutil.which("smina")
 
         # Check Python bindings
-        self.has_python_vina = False
-        try:
-            import vina  # type: ignore
-            self.has_python_vina = True
-        except ImportError:
-            pass
+        import importlib.util
+
+        self.has_python_vina = importlib.util.find_spec("vina") is not None
 
     def is_available(self) -> bool:
         """Check if native binary or Python bindings are present."""
@@ -193,17 +197,28 @@ class AutoDockVinaEngine(BaseDockingEngine):
 
                 cmd = [
                     self.executable or "vina",
-                    "--receptor", str(receptor),
-                    "--ligand", str(lig_pdbqt),
-                    "--out", str(out_pdbqt),
-                    "--center_x", str(center[0]),
-                    "--center_y", str(center[1]),
-                    "--center_z", str(center[2]),
-                    "--size_x", str(box_size[0]),
-                    "--size_y", str(box_size[1]),
-                    "--size_z", str(box_size[2]),
-                    "--num_modes", str(num_poses),
-                    "--exhaustiveness", str(exhaustiveness),
+                    "--receptor",
+                    str(receptor),
+                    "--ligand",
+                    str(lig_pdbqt),
+                    "--out",
+                    str(out_pdbqt),
+                    "--center_x",
+                    str(center[0]),
+                    "--center_y",
+                    str(center[1]),
+                    "--center_z",
+                    str(center[2]),
+                    "--size_x",
+                    str(box_size[0]),
+                    "--size_y",
+                    str(box_size[1]),
+                    "--size_z",
+                    str(box_size[2]),
+                    "--num_modes",
+                    str(num_poses),
+                    "--exhaustiveness",
+                    str(exhaustiveness),
                 ]
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 stdout = proc.stdout + "\n" + proc.stderr
@@ -274,7 +289,9 @@ class AutoDockVinaEngine(BaseDockingEngine):
             e = round(base_energy + (i - 1) * 0.45, 2)
             rmsd_lb = round((i - 1) * 0.85, 2)
             rmsd_ub = round((i - 1) * 1.25, 2)
-            poses.append(DockingPose(pose_id=i, affinity_kcal_mol=e, rmsd_lb=rmsd_lb, rmsd_ub=rmsd_ub))
+            poses.append(
+                DockingPose(pose_id=i, affinity_kcal_mol=e, rmsd_lb=rmsd_lb, rmsd_ub=rmsd_ub)
+            )
 
         return DockingResult(
             engine=self.name,
@@ -284,5 +301,8 @@ class AutoDockVinaEngine(BaseDockingEngine):
             ligand_smiles=ligand_smiles,
             receptor_path=str(receptor),
             execution_time_sec=time.time() - t0,
-            metadata={"is_mock": True, "note": "Simulated energy via empirical molecular weight model."},
+            metadata={
+                "is_mock": True,
+                "note": "Simulated energy via empirical molecular weight model.",
+            },
         )

@@ -6,37 +6,35 @@
 - SelfCorrectingOptimizer with joint DTA potency + ADMET optimization
 """
 
-import math
-import tempfile
 import numpy as np
-import pytest
 import torch
 import torch.nn as nn
 
 from tdc_studio.core.registry import MODELS
-from tdc_studio.models.dti.fusion import PocketCrossAttentionFusion
+from tdc_studio.evaluation.conformal import ConformalCalibrator
+from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
 from tdc_studio.models.dti.dual_modal_encoder import (
     DualModalDrugEncoder,
     SpatialRBFDistanceEncoder,
-    generate_3d_coordinates,
 )
-from tdc_studio.evaluation.conformal import ConformalCalibrator, ConformalPrediction
+from tdc_studio.models.dti.fusion import PocketCrossAttentionFusion
 from tdc_studio.serving.pipeline import DTIInferencePipeline
-from tdc_studio.generative.lead_optimizer import SelfCorrectingOptimizer
-
 
 # ------------------------------------------------------------------------------
 # 1. PocketCrossAttentionFusion Tests
 # ------------------------------------------------------------------------------
 
+
 def test_pocket_cross_attention_forward():
-    fusion = PocketCrossAttentionFusion({
-        "drug_dim": 64,
-        "target_dim": 64,
-        "hidden_dim": 64,
-        "num_heads": 2,
-        "out_dim": 1,
-    })
+    fusion = PocketCrossAttentionFusion(
+        {
+            "drug_dim": 64,
+            "target_dim": 64,
+            "hidden_dim": 64,
+            "num_heads": 2,
+            "out_dim": 1,
+        }
+    )
 
     B, L_drug, L_pocket = 2, 16, 32
     h_drug = torch.randn(B, L_drug, 64)
@@ -75,12 +73,14 @@ def test_pocket_cross_attention_forward():
 
 
 def test_pocket_cross_attention_registry():
-    model = MODELS.build({
-        "type": "pocket_cross_attention",
-        "drug_dim": 32,
-        "target_dim": 32,
-        "hidden_dim": 32,
-    })
+    model = MODELS.build(
+        {
+            "type": "pocket_cross_attention",
+            "drug_dim": 32,
+            "target_dim": 32,
+            "hidden_dim": 32,
+        }
+    )
     assert isinstance(model, PocketCrossAttentionFusion)
 
 
@@ -88,12 +88,15 @@ def test_pocket_cross_attention_registry():
 # 2. DualModalDrugEncoder Tests
 # ------------------------------------------------------------------------------
 
+
 def test_dual_modal_drug_encoder():
-    encoder = DualModalDrugEncoder({
-        "hidden_dim": 64,
-        "out_dim": 64,
-        "use_3d_coordinates": True,
-    })
+    encoder = DualModalDrugEncoder(
+        {
+            "hidden_dim": 64,
+            "out_dim": 64,
+            "use_3d_coordinates": True,
+        }
+    )
 
     smiles_list = ["CCO", "c1ccccc1O", "CC(=O)Oc1ccccc1C(=O)O"]
     batch = {"drug_smiles_str": smiles_list}
@@ -116,6 +119,7 @@ def test_spatial_rbf_encoder():
 # ------------------------------------------------------------------------------
 # 3. ConformalCalibrator Tests
 # ------------------------------------------------------------------------------
+
 
 def test_conformal_calibrator_exact_coverage():
     np.random.seed(42)
@@ -140,10 +144,7 @@ def test_conformal_calibrator_exact_coverage():
     uq_list = calibrator.predict_interval(y_test_pred)
     assert len(uq_list) == M
 
-    covered = sum(
-        (uq.lower <= true_val <= uq.upper)
-        for uq, true_val in zip(uq_list, y_test_true)
-    )
+    covered = sum((uq.lower <= true_val <= uq.upper) for uq, true_val in zip(uq_list, y_test_true))
     empirical_coverage = covered / M
     # Should satisfy empirical coverage >= 1 - alpha - small tolerance
     assert empirical_coverage >= 0.93
@@ -169,6 +170,7 @@ def test_conformal_calibrator_save_load(tmp_path):
 # ------------------------------------------------------------------------------
 # 4. DTIInferencePipeline with Conformal UQ
 # ------------------------------------------------------------------------------
+
 
 def test_dti_pipeline_with_conformal_uq():
     class DummyDTA(nn.Module):
@@ -202,6 +204,7 @@ def test_dti_pipeline_with_conformal_uq():
 # ------------------------------------------------------------------------------
 # 5. Joint Lead Optimization (DTA + ADMET)
 # ------------------------------------------------------------------------------
+
 
 def test_joint_lead_optimization():
     class MockDTAPipeline:

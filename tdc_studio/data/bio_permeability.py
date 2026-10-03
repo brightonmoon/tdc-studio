@@ -92,7 +92,9 @@ class BioPermeabilityDataModule(BaseTDCDataModule):
                 self.task_configs.append(
                     {
                         "name": t,
-                        "category": "absorption" if "caco" in t or "hia" in t else "physicochemical",
+                        "category": "absorption"
+                        if "caco" in t or "hia" in t
+                        else "physicochemical",
                         "type": "binary_classification" if "hia" in t else "regression",
                     }
                 )

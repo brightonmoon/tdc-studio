@@ -435,9 +435,7 @@ class PocketCrossAttentionFusion(CrossAttentionFusion):
 
         if return_attention:
             contact_map = (
-                attn_d2t.mean(dim=1)
-                if (attn_d2t is not None and attn_d2t.dim() == 4)
-                else attn_d2t
+                attn_d2t.mean(dim=1) if (attn_d2t is not None and attn_d2t.dim() == 4) else attn_d2t
             )
             if contact_map is not None:
                 if drug_padding_mask is not None and drug_padding_mask.any():
@@ -455,4 +453,3 @@ class PocketCrossAttentionFusion(CrossAttentionFusion):
                 "pocket_residue_importance": pocket_residue_importance,
             }
         return affinity
-

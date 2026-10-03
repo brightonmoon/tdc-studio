@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 @dataclass
 class DockingPose:
     """Individual 3D binding conformation and associated score."""
+
     pose_id: int
     affinity_kcal_mol: float
     rmsd_lb: float = 0.0
@@ -19,9 +20,10 @@ class DockingPose:
 @dataclass
 class DockingResult:
     """Comprehensive result of a 3D molecular docking execution."""
+
     engine: str
     success: bool
-    top_affinity: float                 # Best binding energy (kcal/mol; lower/more negative is stronger)
+    top_affinity: float  # Best binding energy (kcal/mol; lower/more negative is stronger)
     poses: List[DockingPose]
     ligand_smiles: str
     receptor_path: str

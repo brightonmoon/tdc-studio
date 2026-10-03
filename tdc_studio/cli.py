@@ -139,14 +139,8 @@ def train(
     data_module = data_cls(**data_params)
 
     data_module.prepare_data()
-    batch_size = int(
-        data_cfg.get("batch_size")
-        or cfg.get("training", {}).get("batch_size")
-        or 32
-    )
-    train_loader, val_loader, test_loader = data_module.setup_loaders(
-        batch_size=batch_size
-    )
+    batch_size = int(data_cfg.get("batch_size") or cfg.get("training", {}).get("batch_size") or 32)
+    train_loader, val_loader, test_loader = data_module.setup_loaders(batch_size=batch_size)
 
     task_type = data_module.task_type
     primary_task = (
@@ -161,7 +155,11 @@ def train(
         or (
             "val_loss"
             if task_type == "multi_task"
-            else ("ci" if task_type in ("dta", "multi_dta") else ("mae" if task_type == "regression" else "roc_auc"))
+            else (
+                "ci"
+                if task_type in ("dta", "multi_dta")
+                else ("mae" if task_type == "regression" else "roc_auc")
+            )
         )
     )
     higher_is_better = (
@@ -183,7 +181,11 @@ def train(
         chk = torch.load(pretrained_path, map_location=device)
         state_dict = chk.get("state_dict", chk) if isinstance(chk, dict) else chk
         model_dict = model.state_dict()
-        matched = {k: v for k, v in state_dict.items() if k in model_dict and v.shape == model_dict[k].shape}
+        matched = {
+            k: v
+            for k, v in state_dict.items()
+            if k in model_dict and v.shape == model_dict[k].shape
+        }
         model_dict.update(matched)
         model.load_state_dict(model_dict)
         console.print(
@@ -222,12 +224,18 @@ def train(
     if checkpoint_dir == "./models/checkpoint" and "export" in cfg and "save_dir" in cfg["export"]:
         checkpoint_dir = cfg["export"]["save_dir"]
 
-    max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", cfg.get("training", {}).get("max_epochs", 5)))
+    max_epochs = (
+        1
+        if dry_run
+        else (epochs or cfg.get("max_epochs", cfg.get("training", {}).get("max_epochs", 5)))
+    )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(1, max_epochs), eta_min=float(cfg.get("min_lr", 1e-6))
     )
     early_stopping_patience = (
-        early_stopping if early_stopping is not None else cfg.get("early_stopping", cfg.get("training", {}).get("early_stopping_patience", None))
+        early_stopping
+        if early_stopping is not None
+        else cfg.get("early_stopping", cfg.get("training", {}).get("early_stopping_patience", None))
     )
     best_metric = -float("inf") if higher_is_better else float("inf")
     best_epoch = 0
@@ -257,7 +265,9 @@ def train(
                 model.drug_encoder.unfreeze(last_n_layers=s2_layers)
                 existing_params = {p for pg in optimizer.param_groups for p in pg["params"]}
                 new_params = [
-                    p for p in model.drug_encoder.parameters() if p.requires_grad and p not in existing_params
+                    p
+                    for p in model.drug_encoder.parameters()
+                    if p.requires_grad and p not in existing_params
                 ]
                 if new_params:
                     optimizer.add_param_group(
@@ -266,7 +276,9 @@ def train(
                 for pg in optimizer.param_groups[:-1]:
                     pg["lr"] = s2_head_lr
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, T_max=max(1, max_epochs - epoch), eta_min=float(cfg.get("min_lr", 1e-7))
+                    optimizer,
+                    T_max=max(1, max_epochs - epoch),
+                    eta_min=float(cfg.get("min_lr", 1e-7)),
                 )
 
             # --- Train Epoch ---

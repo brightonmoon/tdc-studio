@@ -179,10 +179,16 @@ class GraphDTAModel(BaseTherapeuticsModel):
         pocket_indices = batch.get("pocket_indices")
         if pocket_indices is not None and h_target.dim() == 3:
             from tdc_studio.features.pocket_extractor import slice_pocket_embeddings
+
             h_target = slice_pocket_embeddings(h_target, pocket_indices)
 
         extra_kwargs: Dict[str, Any] = {}
-        for k in ("pocket_coords", "residue_importance", "target_padding_mask", "drug_padding_mask"):
+        for k in (
+            "pocket_coords",
+            "residue_importance",
+            "target_padding_mask",
+            "drug_padding_mask",
+        ):
             if k in batch:
                 val = batch[k]
                 if (
@@ -194,9 +200,9 @@ class GraphDTAModel(BaseTherapeuticsModel):
                     target_dim_check = val.shape[-2] if k == "pocket_coords" else val.shape[-1]
                     if target_dim_check > len(pocket_indices):
                         from tdc_studio.features.pocket_extractor import slice_pocket_embeddings
+
                         val = slice_pocket_embeddings(val, pocket_indices)
                 extra_kwargs[k] = val
-
 
         if return_attention:
             try:

@@ -14,6 +14,7 @@ from rdkit.Chem import AllChem
 @dataclass
 class BioisostereTransformation:
     """Transformation rule definition."""
+
     name: str
     target_smarts: str
     replacement_smiles: str
@@ -38,7 +39,6 @@ BIOISOSTERE_RULES: List[BioisostereTransformation] = [
         liability_addressed="Permeability & Metabolic Stability",
         rationale="Acyl/alkyl sulfonamide mimics acid hydrogen bonding while significantly improving membrane permeability.",
     ),
-
     # 2. Basic aliphatic amine liabilities (hERG potassium channel blockade)
     BioisostereTransformation(
         name="amine_to_morpholine",
@@ -61,7 +61,6 @@ BIOISOSTERE_RULES: List[BioisostereTransformation] = [
         liability_addressed="hERG Cardiotoxicity Blocker",
         rationale="Converting amine to neutral amide eliminates cationic charge at pH 7.4 entirely.",
     ),
-
     # 3. Nitro group liabilities (AMES Mutagenicity & reactive metabolites)
     BioisostereTransformation(
         name="nitro_to_cyano",
@@ -77,7 +76,6 @@ BIOISOSTERE_RULES: List[BioisostereTransformation] = [
         liability_addressed="AMES Genotoxicity & Mutagenicity",
         rationale="Trifluoromethyl retains steric bulk and electron deficiency while eliminating mutagenic electrophilicity.",
     ),
-
     # 4. Labile ester liabilities (Rapid clearance & short half-life)
     BioisostereTransformation(
         name="ester_to_amide",
@@ -93,7 +91,6 @@ BIOISOSTERE_RULES: List[BioisostereTransformation] = [
         liability_addressed="Hydrolytic Clearance Liability",
         rationale="1,2,4-Oxadiazole heterocyclic ring is a classic non-hydrolyzable bioisostere of ester groups.",
     ),
-
     # 5. Aromatic metabolic soft spots (CYP450 rapid clearance)
     BioisostereTransformation(
         name="aryl_h_to_fluoro",
@@ -154,13 +151,15 @@ class BioisostereRecommender:
                             mod_s = Chem.MolToSmiles(mod)
                             if mod_s not in seen_smiles:
                                 seen_smiles.add(mod_s)
-                                suggestions.append({
-                                    "transformation_name": rule.name,
-                                    "liability_addressed": rule.liability_addressed,
-                                    "original_smiles": smiles,
-                                    "modified_smiles": mod_s,
-                                    "rationale": rule.rationale,
-                                })
+                                suggestions.append(
+                                    {
+                                        "transformation_name": rule.name,
+                                        "liability_addressed": rule.liability_addressed,
+                                        "original_smiles": smiles,
+                                        "modified_smiles": mod_s,
+                                        "rationale": rule.rationale,
+                                    }
+                                )
                                 if len(suggestions) >= max_suggestions:
                                     return suggestions
                         except Exception:

@@ -138,12 +138,36 @@ class LipoMotifExtractor:
             vec[16] = float(i_count)
 
             # 7. Functional groups and ionization triggers
-            cf3_matches = len(mol.GetSubstructMatches(SMARTS_PATTERNS["cf3"])) if SMARTS_PATTERNS["cf3"] else 0
-            cooh_matches = len(mol.GetSubstructMatches(SMARTS_PATTERNS["cooh"])) if SMARTS_PATTERNS["cooh"] else 0
-            aliph_amine_matches = len(mol.GetSubstructMatches(SMARTS_PATTERNS["aliphatic_amine"])) if SMARTS_PATTERNS["aliphatic_amine"] else 0
-            arom_amine_matches = len(mol.GetSubstructMatches(SMARTS_PATTERNS["aromatic_amine"])) if SMARTS_PATTERNS["aromatic_amine"] else 0
-            sulfon_matches = len(mol.GetSubstructMatches(SMARTS_PATTERNS["sulfonamide"])) if SMARTS_PATTERNS["sulfonamide"] else 0
-            tetra_matches = len(mol.GetSubstructMatches(SMARTS_PATTERNS["tetrazole"])) if SMARTS_PATTERNS["tetrazole"] else 0
+            cf3_matches = (
+                len(mol.GetSubstructMatches(SMARTS_PATTERNS["cf3"]))
+                if SMARTS_PATTERNS["cf3"]
+                else 0
+            )
+            cooh_matches = (
+                len(mol.GetSubstructMatches(SMARTS_PATTERNS["cooh"]))
+                if SMARTS_PATTERNS["cooh"]
+                else 0
+            )
+            aliph_amine_matches = (
+                len(mol.GetSubstructMatches(SMARTS_PATTERNS["aliphatic_amine"]))
+                if SMARTS_PATTERNS["aliphatic_amine"]
+                else 0
+            )
+            arom_amine_matches = (
+                len(mol.GetSubstructMatches(SMARTS_PATTERNS["aromatic_amine"]))
+                if SMARTS_PATTERNS["aromatic_amine"]
+                else 0
+            )
+            sulfon_matches = (
+                len(mol.GetSubstructMatches(SMARTS_PATTERNS["sulfonamide"]))
+                if SMARTS_PATTERNS["sulfonamide"]
+                else 0
+            )
+            tetra_matches = (
+                len(mol.GetSubstructMatches(SMARTS_PATTERNS["tetrazole"]))
+                if SMARTS_PATTERNS["tetrazole"]
+                else 0
+            )
 
             vec[17] = float(cf3_matches)
             vec[18] = float(cooh_matches)

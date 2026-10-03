@@ -46,7 +46,6 @@ HIGHER_IS_BETTER_METRICS = {
 }
 
 
-
 def _fast_fenwick_concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Compute exact Concordance Index in O(N log N) using a Binary Indexed Tree.
 
@@ -108,7 +107,7 @@ def _fast_fenwick_concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> f
         # Insert all elements of this group into BIT
         for k in range(i, j):
             _update(int(ranks_sorted[k]), 1)
-        total_processed += (j - i)
+        total_processed += j - i
         i = j
 
     valid_pairs = concordant + discordant + tied_pred
@@ -134,12 +133,14 @@ def _concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     try:
         from lifelines.utils import concordance_index
+
         return float(concordance_index(y_true, y_pred))
     except (ImportError, Exception):
         pass
 
     try:
         from tdc import Evaluator
+
         eval_fn = Evaluator(name="c-index")
         return float(eval_fn(y_true.tolist(), y_pred.tolist()))
     except (ImportError, Exception):
@@ -149,7 +150,6 @@ def _concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 
 def _to_numpy(data: Union[torch.Tensor, np.ndarray, Sequence[float]]) -> np.ndarray:
-
     """Convert input to a 1D float numpy array."""
     if isinstance(data, torch.Tensor):
         arr = data.detach().cpu().numpy()
@@ -226,7 +226,6 @@ class TherapeuticsEvaluator:
 
         if metric in ("ci", "concordance_index", "c_index"):
             return _concordance_index(y_true, y_pred)
-
 
         if metric in ("composite", "composite_score", "balanced", "balanced_regression"):
             mae_val = float(mean_absolute_error(y_true, y_pred))
@@ -318,9 +317,9 @@ class TherapeuticsEvaluator:
             metrics["composite"] = self.compute(preds, targets, "composite")
         elif task in ("dta", "drug_target_affinity"):
             # Primary metrics for Drug Cold Split evaluation
-            metrics["ci"] = self.compute(preds, targets, "ci")         # 1순위: Cold Drug CI
-            metrics["mse"] = self.compute(preds, targets, "mse")       # 1순위: Cold Drug MSE
-            metrics["rmse"] = self.compute(preds, targets, "rmse")     # 보조
+            metrics["ci"] = self.compute(preds, targets, "ci")  # 1순위: Cold Drug CI
+            metrics["mse"] = self.compute(preds, targets, "mse")  # 1순위: Cold Drug MSE
+            metrics["rmse"] = self.compute(preds, targets, "rmse")  # 보조
             metrics["pearson"] = self.compute(preds, targets, "pearson")
         elif task in ("binary_classification", "classification"):
             metrics["roc_auc"] = self.compute(preds, targets, "roc_auc")
@@ -331,7 +330,6 @@ class TherapeuticsEvaluator:
             metrics["accuracy"] = self.compute(preds, targets, "accuracy")
 
         return metrics
-
 
 
 def evaluate_predictions(

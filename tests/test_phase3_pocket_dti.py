@@ -1,24 +1,19 @@
 """Comprehensive Test Suite for Phase 3: Pocket-Aware DTI & Active Learning (Tasks 3-1 ~ 3-5)."""
 
-from pathlib import Path
 import tempfile
-import numpy as np
-import pytest
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+from pathlib import Path
 
-# Task 3-1 & Task 3-5
-from tdc_studio.features.pocket_extractor import (
-    BindingPocketExtractor,
-    extract_pocket_residue_mask,
-    parse_p2rank_predictions,
-    slice_pocket_embeddings,
+import numpy as np
+import torch
+from torch.utils.data import DataLoader, Dataset
+
+# Task 3-3
+from tdc_studio.active_learning import (
+    conformal_expected_improvement,
+    conformal_upper_confidence_bound,
+    recommend_top_wetlab_candidates,
 )
-from tdc_studio.features.target_attention import (
-    TargetAttentionAnalyzer,
-    analyze_target_attention,
-)
+
 # Task 3-2
 from tdc_studio.docking import (
     AutoDockVinaEngine,
@@ -29,15 +24,17 @@ from tdc_studio.docking import (
     TamarindEngine,
     get_docking_engine,
 )
-# Task 3-3
-from tdc_studio.active_learning import (
-    ActiveLearningRecommender,
-    calculate_tanimoto_similarity,
-    conformal_expected_improvement,
-    conformal_upper_confidence_bound,
-    maxmin_diversity_picker,
-    recommend_top_wetlab_candidates,
+
+# Task 3-1 & Task 3-5
+from tdc_studio.features.pocket_extractor import (
+    extract_pocket_residue_mask,
+    parse_p2rank_predictions,
+    slice_pocket_embeddings,
 )
+from tdc_studio.features.target_attention import (
+    analyze_target_attention,
+)
+
 # Task 3-4
 from tdc_studio.models.dti import (
     FewShotDTAAdapter,
@@ -46,10 +43,10 @@ from tdc_studio.models.dti import (
     ResidualBottleneckAdapter,
 )
 
-
 # =====================================================================
 # Task 3-1: Pocket-Specific Slicing & P2Rank Parser Tests
 # =====================================================================
+
 
 def test_p2rank_parser_and_mask():
     mock_p2rank_csv = """name,   rank,   score,  probability,   center_x,   center_y,   center_z,   residue_ids, surf_atom_ids
@@ -65,7 +62,9 @@ pocket2,  2,    11.20,        0.315,     30.120,     10.500,     15.200,  A_100 
     assert pockets[0]["residue_indices_0based"] == [744, 745, 749, 789, 790]
 
     # Test mask extraction
-    mask = extract_pocket_residue_mask(seq_len=800, pocket_indices=[744, 745, 749, 789, 790], zero_indexed=True)
+    mask = extract_pocket_residue_mask(
+        seq_len=800, pocket_indices=[744, 745, 749, 789, 790], zero_indexed=True
+    )
     assert mask.shape == (800,)
     assert mask[744] is True or mask[744] == 1
     assert mask[789] is True or mask[789] == 1
@@ -93,9 +92,18 @@ def test_slice_pocket_embeddings():
 
 def test_graph_dta_model_with_pocket_indices():
     cfg = {
-        "drug_encoder": {"type": "protein_cnn", "out_dim": 128}, # Use CNN for drug as quick mock encoder
+        "drug_encoder": {
+            "type": "protein_cnn",
+            "out_dim": 128,
+        },  # Use CNN for drug as quick mock encoder
         "target_encoder": {"type": "protein_cnn", "out_dim": 128},
-        "fusion": {"type": "cross_attention", "drug_dim": 128, "target_dim": 128, "hidden_dim": 128, "num_heads": 2},
+        "fusion": {
+            "type": "cross_attention",
+            "drug_dim": 128,
+            "target_dim": 128,
+            "hidden_dim": 128,
+            "num_heads": 2,
+        },
     }
     # ProteinCNN expects batch["target_seq"]
     model = GraphDTAModel(cfg)
@@ -105,7 +113,7 @@ def test_graph_dta_model_with_pocket_indices():
     batch = {
         "drug_graph": torch.randint(0, 20, (2, 40)),
         "target_seq": torch.randint(0, 20, (2, 300)),
-        "pocket_indices": [5, 12, 18, 24, 30, 45, 52, 60], # 8 pocket residues
+        "pocket_indices": [5, 12, 18, 24, 30, 45, 52, 60],  # 8 pocket residues
     }
     with torch.no_grad():
         out = model(batch, return_sequence=True)
@@ -116,6 +124,7 @@ def test_graph_dta_model_with_pocket_indices():
 # Task 3-2: Multi-Provider 3D Docking Bridge & Fetcher Tests
 # =====================================================================
 
+
 def test_structure_fetcher_routing():
     with tempfile.TemporaryDirectory() as tmpdir:
         fetcher = StructureFetcher(cache_dir=tmpdir)
@@ -125,7 +134,9 @@ def test_structure_fetcher_routing():
 
         # Write dummy PDB into cache to verify hit
         dummy_pdb = fetcher.rcsb_dir / "1M17.pdb"
-        dummy_pdb.write_text("HEADER    EGFR KINASE DOMAIN\nATOM      1  N   MET A   1\n", encoding="utf-8")
+        dummy_pdb.write_text(
+            "HEADER    EGFR KINASE DOMAIN\nATOM      1  N   MET A   1\n", encoding="utf-8"
+        )
 
         path, src = fetcher.fetch_structure("1m17")
         assert src == "rcsb"
@@ -147,12 +158,14 @@ def test_docking_engine_factory_and_mock_docking():
 
     # Test mock/simulation execution
     with tempfile.NamedTemporaryFile(suffix=".pdb", delete=False) as f:
-        f.write(b"HEADER TEST PDB\nATOM      1  CA  MET A   1       0.0   0.0   0.0  1.00 90.00           C\n")
+        f.write(
+            b"HEADER TEST PDB\nATOM      1  CA  MET A   1       0.0   0.0   0.0  1.00 90.00           C\n"
+        )
         pdb_path = f.name
 
     try:
         res = vina_engine.dock(
-            ligand_smiles="CC(=O)Oc1ccccc1C(=O)O", # Aspirin
+            ligand_smiles="CC(=O)Oc1ccccc1C(=O)O",  # Aspirin
             receptor_path=pdb_path,
             center=(10.0, 15.0, -5.0),
             num_poses=5,
@@ -180,10 +193,11 @@ def test_docking_engine_factory_and_mock_docking():
 # Task 3-3: Active Learning & Top 10 Experiment Recommender Tests
 # =====================================================================
 
+
 def test_conformal_bayesian_acquisition():
     # Expected Improvement
     mu = np.array([8.5, 7.2, 9.1, 8.0])
-    q = np.array([0.4, 0.5, 0.3, 0.9]) # Conformal margin
+    q = np.array([0.4, 0.5, 0.3, 0.9])  # Conformal margin
     current_best = 8.6
 
     ei = conformal_expected_improvement(mu, q, current_best=current_best)
@@ -200,18 +214,18 @@ def test_conformal_bayesian_acquisition():
 
 def test_diversity_and_top10_recommender():
     candidates = [
-        "CC(=O)Oc1ccccc1C(=O)O",                     # Aspirin
-        "CC(=O)Nc1ccc(O)cc1",                        # Paracetamol
-        "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",              # Caffeine
-        "CC(C)Cc1ccc(cc1)C(C)C(=O)O",                # Ibuprofen
-        "COc1ccc2[nH]c(S(=O)Cc3ncc(C)c(OC)c3C)nc2c1",# Omeprazole
-        "c1ccc(cc1)C(=O)O",                          # Benzoic acid
-        "c1ccccc1O",                                 # Phenol
-        "Cc1ccccc1",                                 # Toluene
-        "CCN(CC)CC",                                 # Triethylamine
-        "c1ccncc1",                                  # Pyridine
-        "c1ncccc1C#N",                               # 2-cyanopyridine
-        "CCOC(=O)c1ccccc1O",                         # Ethyl salicylate
+        "CC(=O)Oc1ccccc1C(=O)O",  # Aspirin
+        "CC(=O)Nc1ccc(O)cc1",  # Paracetamol
+        "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",  # Caffeine
+        "CC(C)Cc1ccc(cc1)C(C)C(=O)O",  # Ibuprofen
+        "COc1ccc2[nH]c(S(=O)Cc3ncc(C)c(OC)c3C)nc2c1",  # Omeprazole
+        "c1ccc(cc1)C(=O)O",  # Benzoic acid
+        "c1ccccc1O",  # Phenol
+        "Cc1ccccc1",  # Toluene
+        "CCN(CC)CC",  # Triethylamine
+        "c1ccncc1",  # Pyridine
+        "c1ncccc1C#N",  # 2-cyanopyridine
+        "CCOC(=O)c1ccccc1O",  # Ethyl salicylate
     ]
     preds = [8.5, 8.4, 8.2, 8.1, 8.9, 7.9, 7.8, 7.5, 6.8, 7.1, 7.3, 8.3]
     uncertainties = 0.5
@@ -239,6 +253,7 @@ def test_diversity_and_top10_recommender():
 # Task 3-4: Few-shot LoRA / Residual Adapter Tests
 # =====================================================================
 
+
 def test_residual_bottleneck_adapter():
     in_dim = 64
     adapter = ResidualBottleneckAdapter(in_dim=in_dim, bottleneck_dim=16, scale=0.5)
@@ -253,10 +268,18 @@ def test_few_shot_adapter_fine_tuning():
     cfg = {
         "drug_encoder": {"type": "protein_cnn", "out_dim": 64},
         "target_encoder": {"type": "protein_cnn", "out_dim": 64},
-        "fusion": {"type": "cross_attention", "drug_dim": 64, "target_dim": 64, "hidden_dim": 64, "num_heads": 2},
+        "fusion": {
+            "type": "cross_attention",
+            "drug_dim": 64,
+            "target_dim": 64,
+            "hidden_dim": 64,
+            "num_heads": 2,
+        },
     }
     base_model = GraphDTAModel(cfg)
-    adapter_model = FewShotDTAAdapter(base_model=base_model, bottleneck_dim=16, use_output_delta=True)
+    adapter_model = FewShotDTAAdapter(
+        base_model=base_model, bottleneck_dim=16, use_output_delta=True
+    )
 
     # Check parameter freezing: base parameters must not have gradients
     for p in base_model.parameters():
@@ -265,16 +288,19 @@ def test_few_shot_adapter_fine_tuning():
     trainable_params = adapter_model.get_trainable_parameters()
     assert len(trainable_params) > 0
     total_trainable = sum(p.numel() for p in trainable_params)
-    assert total_trainable < 50_000 # Lightweight parameter footprint
+    assert total_trainable < 50_000  # Lightweight parameter footprint
 
     # Create tiny in-house measured assay dataset (16 samples)
     dummy_drug = torch.randint(0, 20, (16, 20))
     dummy_target = torch.randint(0, 20, (16, 50))
-    dummy_affinity = torch.tensor([8.0 + 0.1 * i for i in range(16)], dtype=torch.float32).unsqueeze(-1)
+    dummy_affinity = torch.tensor(
+        [8.0 + 0.1 * i for i in range(16)], dtype=torch.float32
+    ).unsqueeze(-1)
 
     class SmallDataset(Dataset):
         def __len__(self):
             return 16
+
         def __getitem__(self, idx):
             return {
                 "drug_graph": dummy_drug[idx],
@@ -304,6 +330,7 @@ def test_few_shot_adapter_fine_tuning():
 # Task 3-5: Target Residue Cross-Attention XAI Tests
 # =====================================================================
 
+
 def test_target_attention_analyzer():
     # 2D contact map [L_drug=10, L_target=8]
     contact_map = np.zeros((10, 8), dtype=np.float32)
@@ -312,8 +339,8 @@ def test_target_attention_analyzer():
     contact_map[:, 5] = 1.2
     contact_map[:, 0] = 0.2
 
-    target_seq = "ACDEFGHIKLMN" # 12 residues
-    coordinate_map = [740, 741, 745, 750, 789, 790, 795, 800] # Mapping to EGFR catalytic cleft
+    target_seq = "ACDEFGHIKLMN"  # 12 residues
+    coordinate_map = [740, 741, 745, 750, 789, 790, 795, 800]  # Mapping to EGFR catalytic cleft
 
     result = analyze_target_attention(
         contact_map=contact_map,

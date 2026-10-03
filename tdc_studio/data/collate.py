@@ -93,4 +93,3 @@ def molecule_collate_fn(batch_items: List[Dict[str, Any]]) -> Dict[str, Any]:
             batch[str_key] = [item[str_key] for item in valid_items]
 
     return batch
-

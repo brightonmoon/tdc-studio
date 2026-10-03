@@ -1,3 +1,4 @@
+# ruff: noqa: E402, F401
 """DTI Phase A Dry-Run — 패키지 자동설치 없음, synthetic 데이터만 사용.
 
 의존성 가정:
@@ -15,12 +16,15 @@
   6. Evaluator DTA metrics
 """
 
-import sys, os
+import os
+import sys
 
 # ── workspace 복원 (colab exec bundle 방식) ──────────────────────────────────
 _bundle_b64 = globals().get("BUNDLE_B64", None)
 if _bundle_b64:
-    import base64, io, zipfile
+    import base64
+    import io
+    import zipfile
     print("[BUNDLE] Extracting workspace...")
     data = base64.b64decode(_bundle_b64)
     workspace = os.path.abspath("tdc-studio")
@@ -41,6 +45,7 @@ print("[DTI DRY-RUN] Environment check")
 print("=" * 60)
 
 import torch
+
 print(f"  torch        : {torch.__version__}  CUDA={torch.cuda.is_available()}")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"  device       : {device}")
@@ -54,12 +59,13 @@ except ImportError as e:
 
 try:
     from rdkit import Chem
-    print(f"  rdkit        : available")
+    print("  rdkit        : available")
 except ImportError:
     print("  [FAIL] rdkit not found — cannot run SmilesToGraphTransform")
     sys.exit(1)
 
 import numpy as np
+
 print(f"  numpy        : {np.__version__}")
 print()
 
@@ -125,6 +131,7 @@ print("[TEST 3] DTADataModule — synthetic + cold_drug")
 print("=" * 60)
 
 import pandas as pd
+
 from tdc_studio.data.multi_pred import DTADataModule
 
 SMILES = [

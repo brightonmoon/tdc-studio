@@ -191,6 +191,14 @@ def train(
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay
     )
+    use_pcgrad = bool(cfg.get("use_pcgrad", False) or model_cfg.get("use_pcgrad", False))
+    if use_pcgrad:
+        from tdc_studio.models.loss.pcgrad import PCGrad
+
+        optimizer = PCGrad(optimizer)
+        console.print(
+            "[bold magenta]PCGrad (Projecting Conflicting Gradients) optimizer active for multi-task learning![/bold magenta]"
+        )
 
     console.print(
         f"Device: [cyan]{device}[/cyan] | Task: [cyan]{task_type}[/cyan] | Target Metric: [yellow]{target_metric}[/yellow] (higher_is_better={higher_is_better})"
@@ -227,7 +235,8 @@ def train(
                 )
                 for param in model.parameters():
                     param.requires_grad = True
-                optimizer = torch.optim.AdamW(model.parameters(), lr=lr * 0.5, weight_decay=weight_decay)
+                base_opt = torch.optim.AdamW(model.parameters(), lr=lr * 0.5, weight_decay=weight_decay)
+                optimizer = PCGrad(base_opt) if use_pcgrad else base_opt
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, T_max=max(1, max_epochs - epoch), eta_min=float(cfg.get("min_lr", 1e-6))
                 )
@@ -242,18 +251,38 @@ def train(
                 optimizer.zero_grad()
                 preds = model(dev_batch)
                 mask = dev_batch.get("mask")
-                if mask is not None:
-                    loss = model.compute_loss(preds, dev_batch["labels"], mask=mask)
+
+                if use_pcgrad and hasattr(model, "loss_fn") and model.loss_fn is not None:
+                    loss_res = model.compute_loss(preds, dev_batch["labels"], mask=mask, return_per_task=True)
+                    if isinstance(loss_res, tuple) and len(loss_res) == 3:
+                        loss, _, task_loss_list = loss_res
+                    else:
+                        loss = loss_res
+                        task_loss_list = []
+
+                    if not torch.isfinite(loss):
+                        optimizer.zero_grad()
+                        continue
+
+                    if task_loss_list:
+                        optimizer.pc_backward(task_loss_list)
+                    else:
+                        loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
                 else:
-                    loss = model.compute_loss(preds, dev_batch["labels"])
+                    if mask is not None:
+                        loss = model.compute_loss(preds, dev_batch["labels"], mask=mask)
+                    else:
+                        loss = model.compute_loss(preds, dev_batch["labels"])
 
-                if not torch.isfinite(loss):
-                    optimizer.zero_grad()
-                    continue
+                    if not torch.isfinite(loss):
+                        optimizer.zero_grad()
+                        continue
 
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
 
                 train_loss_sum += float(loss.item())
                 train_batches += 1
@@ -1641,7 +1670,7 @@ def batch_predict_cli(
     model_dir: Optional[str] = typer.Option("models/export", "--model-dir", help="Path to exported model directory"),
 ):
     """Run batch 22+ ADMET, Lipinski Rule of 5, and PBPK screening on molecular libraries."""
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
     from rich.table import Table
 
     from tdc_studio.serving.batch_engine import BatchScreeningEngine
@@ -1652,7 +1681,7 @@ def batch_predict_cli(
         console.print(f"[bold red]Error:[/bold red] Input file '{in_path}' does not exist.")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold cyan]TDC-Studio High-Throughput Batch Screening[/bold cyan]")
+    console.print("[bold cyan]TDC-Studio High-Throughput Batch Screening[/bold cyan]")
     console.print(f"  📁 Reading molecular library from: [yellow]{in_path}[/yellow]")
 
     pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
@@ -1685,7 +1714,7 @@ def batch_predict_cli(
     else:
         df.to_csv(out_path, index=False)
 
-    console.print(f"\n[bold green]✅ Batch screening complete![/bold green]")
+    console.print("\n[bold green]✅ Batch screening complete![/bold green]")
     console.print(f"  💾 Results exported to: [bold underline]{out_path}[/bold underline]")
 
     # Print summary table

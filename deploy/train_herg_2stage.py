@@ -124,7 +124,7 @@ def main():
         if os.path.exists(cp):
             karim_csv = cp
             break
-    if os.path.exists(karim_csv):
+    if karim_csv and os.path.exists(karim_csv):
         import pandas as pd
         karim_df = pd.read_csv(karim_csv, sep="\t")
         karim_split = create_scaffold_split(karim_df, seed=42, frac=[0.7, 0.1, 0.2], entity="Drug")

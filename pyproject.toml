@@ -47,6 +47,7 @@ dependencies = [
     "onnx>=1.23.1",
     "onnxruntime>=1.30.0",
     "onnxscript>=0.7.2",
+    "catboost>=1.2.10",
 ]
 
 [project.optional-dependencies]

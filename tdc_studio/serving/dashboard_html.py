@@ -1,6 +1,6 @@
 """Embedded Interactive Biomedical Web Dashboard for TDC-Studio Serving Service."""
 
-DASHBOARD_HTML = """<!DOCTYPE html>
+DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -534,7 +534,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
         Upload a chemical library to batch-screen <strong>Lipinski Rule of 5</strong>, <strong>22+ ADMET endpoints</strong>, and <strong>PBPK parameters</strong>. Download the enriched dataset in CSV or Excel format.
       </div>
-      
+
       <!-- Upload Dropzone -->
       <div style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 1.5rem; text-align: center; background: var(--bg-card); margin-bottom: 1rem; cursor: pointer;" onclick="document.getElementById('batch-file-input').click()">
         <input type="file" id="batch-file-input" accept=".csv,.tsv,.sdf,.txt" style="display: none;" onchange="handleBatchFileSelect(event)" />

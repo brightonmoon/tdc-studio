@@ -61,17 +61,21 @@ class MaskedMultiTaskLoss(nn.Module):
         preds: torch.Tensor,
         targets: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        return_per_task: bool = False,
+    ):
         """Compute masked multi-task loss.
 
         Args:
             preds: Tensor of shape [B, num_tasks]
             targets: Tensor of shape [B, num_tasks]
             mask: Optional boolean or binary Tensor of shape [B, num_tasks] (1: valid, 0: missing)
+            return_per_task: If True, also returns a list of scalar loss Tensors per valid task.
 
         Returns:
-            total_loss: Scalar Tensor for backpropagation
-            task_losses_dict: Dictionary of unweighted loss values per task for logging
+            If return_per_task is False:
+                (total_loss, task_losses_dict)
+            If return_per_task is True:
+                (total_loss, task_losses_dict, per_task_losses_list)
         """
         device = preds.device
         if mask is None:
@@ -81,6 +85,7 @@ class MaskedMultiTaskLoss(nn.Module):
             mask = mask.bool() & ~torch.isnan(targets)
 
         task_losses: Dict[str, float] = {}
+        per_task_tensors: List[torch.Tensor] = []
         total_loss = torch.tensor(0.0, device=device, requires_grad=True)
         valid_task_count = 0
 
@@ -117,9 +122,12 @@ class MaskedMultiTaskLoss(nn.Module):
                     weighted_loss = 0.5 * precision * t_loss + 0.5 * log_var
                 else:
                     weighted_loss = precision * t_loss + 0.5 * log_var
-                total_loss = total_loss + w * weighted_loss
+                task_scalar = w * weighted_loss
             else:
-                total_loss = total_loss + w * t_loss
+                task_scalar = w * t_loss
+
+            per_task_tensors.append(task_scalar)
+            total_loss = total_loss + task_scalar
 
         if valid_task_count > 0 and not self.use_uncertainty:
             denom = sum(
@@ -129,4 +137,18 @@ class MaskedMultiTaskLoss(nn.Module):
             ) if self.task_weights else float(valid_task_count)
             total_loss = total_loss / max(1e-6, denom)
 
+        if return_per_task:
+            return total_loss, task_losses, per_task_tensors
         return total_loss, task_losses
+
+    def compute_task_losses(
+        self,
+        preds: torch.Tensor,
+        targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[List[torch.Tensor], Dict[str, float]]:
+        """Compute individual task loss tensors for PCGrad or custom multi-task optimizers."""
+        _, task_losses, per_task_tensors = self.forward(
+            preds, targets, mask=mask, return_per_task=True
+        )
+        return per_task_tensors, task_losses

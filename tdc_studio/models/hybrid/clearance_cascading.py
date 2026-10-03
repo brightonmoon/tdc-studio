@@ -17,6 +17,13 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+try:
+    from catboost import CatBoostRegressor
+
+    HAS_CATBOOST = True
+except ImportError:
+    HAS_CATBOOST = False
+
 
 def compute_clearance_features(smiles_list: List[str]) -> np.ndarray:
     """Extract standard physicochemical and RDKit descriptors for clearance modeling."""
@@ -55,16 +62,34 @@ class CascadedClearancePredictor:
         self,
         base_gbdt_params: Optional[Dict[str, Any]] = None,
         use_caco2_prior: bool = True,
+        model_type: str = "auto",
     ):
-        params = base_gbdt_params or {
-            "max_iter": 300,
-            "learning_rate": 0.03,
-            "max_leaf_nodes": 31,
-            "min_samples_leaf": 15,
-            "l2_regularization": 1.0,
-            "random_state": 42,
-        }
-        self.gbdt = HistGradientBoostingRegressor(**params)
+        params = base_gbdt_params or {}
+        use_cb = (model_type == "catboost") or (model_type == "auto" and HAS_CATBOOST)
+        if use_cb and HAS_CATBOOST:
+            cb_params = {
+                "iterations": params.get("iterations", params.get("max_iter", 300)),
+                "learning_rate": params.get("learning_rate", 0.03),
+                "depth": params.get("depth", params.get("max_depth", 6)),
+                "l2_leaf_reg": params.get("l2_leaf_reg", params.get("l2_regularization", 2.0)),
+                "loss_function": "RMSE",
+                "verbose": 0,
+                "random_seed": params.get("random_seed", params.get("random_state", 42)),
+            }
+            self.gbdt = CatBoostRegressor(**cb_params)
+            self.model_type = "catboost"
+        else:
+            hist_params = {
+                "max_iter": params.get("max_iter", params.get("iterations", 300)),
+                "learning_rate": params.get("learning_rate", 0.03),
+                "max_leaf_nodes": params.get("max_leaf_nodes", 31),
+                "min_samples_leaf": params.get("min_samples_leaf", 15),
+                "l2_regularization": params.get("l2_regularization", params.get("l2_leaf_reg", 1.0)),
+                "random_state": params.get("random_state", params.get("random_seed", 42)),
+            }
+            self.gbdt = HistGradientBoostingRegressor(**hist_params)
+            self.model_type = "histgbdt"
+
         self.use_caco2_prior = use_caco2_prior
         self.is_fitted = False
         self._mic_mean = 0.0

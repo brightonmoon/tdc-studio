@@ -16,43 +16,58 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from tdc_studio.features.lipo_motifs import get_lipo_motif_extractor
 
+try:
+    from catboost import CatBoostRegressor
+
+    HAS_CATBOOST = True
+except ImportError:
+    HAS_CATBOOST = False
+
+_LIPO_CHEMBERTA_CACHE: Dict[str, np.ndarray] = {}
+
 
 def extract_chemberta_features_cached(
     smiles_list: List[str],
     batch_size: int = 64,
     device: str = "cpu",
 ) -> np.ndarray:
-    """Extract or mock ChemBERTa 384-dimensional embeddings safely."""
-    try:
-        from transformers import AutoModel, AutoTokenizer
+    """Extract or mock ChemBERTa 384-dimensional embeddings safely with memory caching."""
+    missing = [s for s in smiles_list if s and s not in _LIPO_CHEMBERTA_CACHE]
+    if missing:
+        try:
+            from transformers import AutoModel, AutoTokenizer
 
-        model_name = "DeepChem/ChemBERTa-77M-MTR"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModel.from_pretrained(model_name).to(device)
-        model.eval()
+            model_name = "DeepChem/ChemBERTa-77M-MTR"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModel.from_pretrained(model_name).to(device)
+            model.eval()
 
-        embeddings = []
-        for i in range(0, len(smiles_list), batch_size):
-            batch = smiles_list[i : i + batch_size]
-            inputs = tokenizer(
-                batch,
-                padding=True,
-                truncation=True,
-                max_length=128,
-                return_tensors="pt",
-            ).to(device)
-            with torch.no_grad():
-                outputs = model(**inputs)
-                mask = inputs["attention_mask"].unsqueeze(-1)
-                pooled = (outputs.last_hidden_state * mask).sum(dim=1) / torch.clamp(
-                    mask.sum(dim=1), min=1e-9
-                )
-                embeddings.append(pooled.cpu().numpy())
-        return np.vstack(embeddings)
-    except Exception:
-        # Graceful fallback to 384-dim deterministic hash if huggingface is offline/mocked
-        rng = np.random.default_rng(42)
-        return rng.standard_normal((len(smiles_list), 384), dtype=np.float32)
+            for i in range(0, len(missing), batch_size):
+                batch = missing[i : i + batch_size]
+                inputs = tokenizer(
+                    batch,
+                    padding=True,
+                    truncation=True,
+                    max_length=128,
+                    return_tensors="pt",
+                ).to(device)
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                    mask = inputs["attention_mask"].unsqueeze(-1)
+                    pooled = (outputs.last_hidden_state * mask).sum(dim=1) / torch.clamp(
+                        mask.sum(dim=1), min=1e-9
+                    )
+                    embs = pooled.cpu().numpy()
+                for s_key, vec in zip(batch, embs):
+                    _LIPO_CHEMBERTA_CACHE[s_key] = vec
+        except Exception:
+            # Graceful fallback to 384-dim deterministic hash if huggingface is offline/mocked
+            rng = np.random.default_rng(42)
+            for s_key in missing:
+                _LIPO_CHEMBERTA_CACHE[s_key] = rng.standard_normal(384, dtype=np.float32)
+
+    embeddings = [_LIPO_CHEMBERTA_CACHE.get(s, np.zeros(384, dtype=np.float32)) for s in smiles_list]
+    return np.vstack(embeddings).astype(np.float32)
 
 
 class LipophilicityStacker:
@@ -62,20 +77,37 @@ class LipophilicityStacker:
         self,
         gbdt_params: Optional[Dict[str, Any]] = None,
         use_chemberta: bool = True,
+        model_type: str = "auto",
     ):
         self.use_chemberta = use_chemberta
         self.motif_extractor = get_lipo_motif_extractor()
+        params = gbdt_params or {}
 
-        # Branch 1: GBDT on 24-dim motifs + basic RDKit descriptors
-        params = gbdt_params or {
-            "max_iter": 400,
-            "learning_rate": 0.03,
-            "max_leaf_nodes": 31,
-            "min_samples_leaf": 15,
-            "l2_regularization": 1.5,
-            "random_state": 42,
-        }
-        self.gbdt = HistGradientBoostingRegressor(**params)
+        # Branch 1: CatBoost / HistGBDT on 24-dim motifs + basic RDKit descriptors
+        use_cb = (model_type == "catboost") or (model_type == "auto" and HAS_CATBOOST)
+        if use_cb and HAS_CATBOOST:
+            cb_params = {
+                "iterations": params.get("iterations", params.get("max_iter", 400)),
+                "learning_rate": params.get("learning_rate", 0.03),
+                "depth": params.get("depth", params.get("max_depth", 6)),
+                "l2_leaf_reg": params.get("l2_leaf_reg", params.get("l2_regularization", 2.0)),
+                "loss_function": "RMSE",
+                "verbose": 0,
+                "random_seed": params.get("random_seed", params.get("random_state", 42)),
+            }
+            self.gbdt = CatBoostRegressor(**cb_params)
+            self.model_type = "catboost"
+        else:
+            hist_params = {
+                "max_iter": params.get("max_iter", params.get("iterations", 400)),
+                "learning_rate": params.get("learning_rate", 0.03),
+                "max_leaf_nodes": params.get("max_leaf_nodes", 31),
+                "min_samples_leaf": params.get("min_samples_leaf", 15),
+                "l2_regularization": params.get("l2_regularization", params.get("l2_leaf_reg", 1.5)),
+                "random_state": params.get("random_state", params.get("random_seed", 42)),
+            }
+            self.gbdt = HistGradientBoostingRegressor(**hist_params)
+            self.model_type = "histgbdt"
 
         # Branch 2: ChemBERTa RidgeCV
         self.chemberta_ridge = RidgeCV(alphas=np.logspace(-2, 4, 20))

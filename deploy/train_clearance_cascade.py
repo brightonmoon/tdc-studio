@@ -22,6 +22,13 @@ def main():
     parser = argparse.ArgumentParser(description="Hepatocyte Clearance Cascaded Transfer Training")
     parser.add_argument("--dry-run", action="store_true", help="Execute on subset")
     parser.add_argument("--export-dir", type=str, default="models/export/clearance_cascade")
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        default="auto",
+        choices=["auto", "catboost", "histgbdt"],
+        help="Tree model backend ('catboost', 'histgbdt', or 'auto')",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.export_dir, exist_ok=True)
@@ -55,14 +62,17 @@ def main():
 
     predictor = CascadedClearancePredictor(
         base_gbdt_params={
-            "max_iter": 300,
+            "iterations": 400,
             "learning_rate": 0.03,
-            "max_leaf_nodes": 31,
-            "min_samples_leaf": 15,
+            "depth": 6,
+            "l2_leaf_reg": 2.0,
+            "max_iter": 300,
             "l2_regularization": 1.5,
             "random_state": 42,
+            "random_seed": 42,
         },
         use_caco2_prior=False,
+        model_type=args.model_type,
     )
 
     logger.info("Fitting Cascaded Clearance Predictor on %d training samples...", len(train_df))

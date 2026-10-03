@@ -202,9 +202,12 @@ class DMPNNModel(BaseTherapeuticsModel):
         preds: torch.Tensor,
         targets: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        return_per_task: bool = False,
+    ):
         """Compute training loss (masked multi-task loss or single-task loss)."""
         if hasattr(self, "loss_fn") and self.loss_fn is not None:
+            if return_per_task:
+                return self.loss_fn(preds, targets, mask=mask, return_per_task=True)
             loss, _ = self.loss_fn(preds, targets, mask=mask)
             return loss
         return super().compute_loss(preds, targets)

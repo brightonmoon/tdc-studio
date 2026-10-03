@@ -1,13 +1,10 @@
 """Tests for Conformal Prediction Uncertainty Quantification module."""
 
 import numpy as np
-import pytest
 
 from tdc_studio.uncertainty.conformal import (
     ConformalADMETShield,
-    ConformalClassificationResult,
     ConformalClassifier,
-    ConformalRegressionResult,
     ConformalRegressor,
 )
 
@@ -118,6 +115,7 @@ def test_conformal_admet_shield():
 def test_conformal_api_endpoints():
     """Verify conformal endpoints on FastAPI application."""
     from fastapi.testclient import TestClient
+
     from tdc_studio.serving.app import app
 
     client = TestClient(app)

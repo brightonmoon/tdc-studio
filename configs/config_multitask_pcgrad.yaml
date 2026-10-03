@@ -1,0 +1,73 @@
+# Multi-Task Learning with PCGrad (Projecting Conflicting Gradients)
+# Prevents gradient interference between divergent ADMET endpoints (e.g., hERG, AMES, DILI, LD50)
+
+data:
+  type: admet_cluster_loader
+  dataset_name: toxicity_mtl
+  split_type: scaffold
+  batch_size: 64
+  seed: 42
+  modality: graph
+  primary_task: herg
+  metric_name: roc_auc
+  use_descriptors: true
+  standardize_target: false
+  tasks:
+    - name: herg
+      category: tox
+      type: binary_classification
+    - name: herg_karim
+      category: tox
+      type: binary_classification
+    - name: dili
+      category: tox
+      type: binary_classification
+    - name: ames
+      category: tox
+      type: binary_classification
+    - name: ld50_zhu
+      category: tox
+      type: regression
+
+model:
+  type: dmpnn_mtl
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  num_layers: 4
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  tasks:
+    - name: herg
+      type: binary_classification
+    - name: herg_karim
+      type: binary_classification
+    - name: dili
+      type: binary_classification
+    - name: ames
+      type: binary_classification
+    - name: ld50_zhu
+      type: regression
+  task_weights:
+    herg: 1.5
+    herg_karim: 1.0
+    dili: 1.5
+    ames: 1.5
+    ld50_zhu: 0.8
+  use_uncertainty: true
+
+# Enable PCGrad (Gradient Surgery) optimizer wrapper
+use_pcgrad: true
+
+lr: 0.0005
+min_lr: 1.0e-6
+weight_decay: 1.0e-5
+max_epochs: 40
+early_stopping: 15
+eval_metric: roc_auc
+
+tracking:
+  enabled: false
+  project: tdc-learning
+  entity: tdc-studio

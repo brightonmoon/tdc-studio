@@ -21,6 +21,13 @@ def main():
     parser = argparse.ArgumentParser(description="Lipophilicity Stacking Training")
     parser.add_argument("--dry-run", action="store_true", help="Execute on subset")
     parser.add_argument("--export-dir", type=str, default="models/export/lipophilicity_stacker")
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        default="auto",
+        choices=["auto", "catboost", "histgbdt"],
+        help="Tree model backend ('catboost', 'histgbdt', or 'auto')",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.export_dir, exist_ok=True)
@@ -47,17 +54,20 @@ def main():
     smiles_test = test_df["Drug"].tolist()
     y_test = np.asarray(test_df["Y"], dtype=np.float32)
 
-    logger.info("Initializing LipophilicityStacker with 24-dim Biophysical Motifs...")
+    logger.info("Initializing LipophilicityStacker with 24-dim Biophysical Motifs and %s backend...", args.model_type)
     stacker = LipophilicityStacker(
         gbdt_params={
-            "max_iter": 400,
+            "iterations": 500,
             "learning_rate": 0.03,
-            "max_leaf_nodes": 31,
-            "min_samples_leaf": 15,
+            "depth": 6,
+            "l2_leaf_reg": 2.5,
+            "max_iter": 400,
             "l2_regularization": 1.5,
             "random_state": 42,
+            "random_seed": 42,
         },
         use_chemberta=not args.dry_run,
+        model_type=args.model_type,
     )
 
     logger.info("Fitting stacker on %d training samples with validation calibration...", len(smiles_train))

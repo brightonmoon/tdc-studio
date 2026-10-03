@@ -1,5 +1,6 @@
 """FastAPI serving application with lifespan management and non-blocking inference."""
 
+import io
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-import io
+import pandas as pd
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -571,7 +572,6 @@ async def predict_batch_preview(
     preview_rows: int = Query(20, ge=1, le=100, description="Max preview rows to return"),
 ):
     """Screen molecular file and return summary statistics with top preview rows (for UI)."""
-    import pandas as pd
     from tdc_studio.serving.batch_engine import BatchScreeningEngine
 
     unified_pipe = get_unified_pipeline()

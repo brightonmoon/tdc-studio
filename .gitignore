@@ -34,8 +34,9 @@ scratch/
 *.log
 tdc_colab*.ipynb
 .DS_Store
-Thumbs.db
+thumbs.db
 data/cache/
+catboost_info/
 # Worktrees
 ADMET/
 greenling/

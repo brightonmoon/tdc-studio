@@ -35,8 +35,8 @@ def test_cross_attention_fusion_forward_3d():
         "out_dim": 1,
     }
     fusion = CrossAttentionFusion(cfg)
-    h_drug = torch.randn(2, 12, 32)      # 12 drug tokens
-    h_target = torch.randn(2, 40, 48)    # 40 amino acid residues
+    h_drug = torch.randn(2, 12, 32)  # 12 drug tokens
+    h_target = torch.randn(2, 40, 48)  # 40 amino acid residues
 
     out = fusion(h_drug, h_target)
     assert out.shape == (2, 1)
@@ -54,8 +54,8 @@ def test_cross_attention_fusion_attention_weights():
     }
     fusion = CrossAttentionFusion(cfg)
     fusion.eval()
-    h_drug = torch.randn(2, 5, 32)       # 5 drug tokens
-    h_target = torch.randn(2, 15, 32)    # 15 protein residues
+    h_drug = torch.randn(2, 5, 32)  # 5 drug tokens
+    h_target = torch.randn(2, 15, 32)  # 15 protein residues
 
     out, attn_dict = fusion(h_drug, h_target, return_attention=True)
     assert out.shape == (2, 1)
@@ -97,8 +97,16 @@ def test_graph_dta_model_with_cross_attention():
     model = GraphDTAModel(model_cfg)
 
     # Construct minimal mock batch
-    g1 = Data(x=torch.randn(3, 14), edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long), edge_attr=torch.randn(2, 6))
-    g2 = Data(x=torch.randn(2, 14), edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long), edge_attr=torch.randn(2, 6))
+    g1 = Data(
+        x=torch.randn(3, 14),
+        edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long),
+        edge_attr=torch.randn(2, 6),
+    )
+    g2 = Data(
+        x=torch.randn(2, 14),
+        edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long),
+        edge_attr=torch.randn(2, 6),
+    )
     batch_graph = Batch.from_data_list([g1, g2])
 
     batch = {

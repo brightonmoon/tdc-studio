@@ -75,9 +75,7 @@ def compute_lipinski_rule_of_5(mol: Optional[Chem.Mol]) -> Dict[str, Any]:
         }
 
 
-def parse_molecular_file(
-    content: bytes | str, filename: str
-) -> List[Dict[str, Any]]:
+def parse_molecular_file(content: bytes | str, filename: str) -> List[Dict[str, Any]]:
     """Parse CSV, TSV, or SDF input into a standardized record list."""
     records: List[Dict[str, Any]] = []
     ext = os.path.splitext(filename.lower())[1]
@@ -106,8 +104,16 @@ def parse_molecular_file(
 
         # Identify SMILES column
         candidate_cols = [
-            "smiles", "SMILES", "Smiles", "canonical_smiles", "Drug", "drug",
-            "structure", "Structure", "mol", "MOL"
+            "smiles",
+            "SMILES",
+            "Smiles",
+            "canonical_smiles",
+            "Drug",
+            "drug",
+            "structure",
+            "Structure",
+            "mol",
+            "MOL",
         ]
         smiles_col = None
         for col in candidate_cols:
@@ -118,12 +124,17 @@ def parse_molecular_file(
         if smiles_col is None:
             # Fallback: check columns for string values containing chemical characters
             for col in df.columns:
-                if df[col].dtype == object and df[col].dropna().astype(str).str.contains("[CNOcno]").any():
+                if (
+                    df[col].dtype == object
+                    and df[col].dropna().astype(str).str.contains("[CNOcno]").any()
+                ):
                     smiles_col = col
                     break
 
         if smiles_col is None:
-            raise ValueError(f"Could not identify SMILES column in {filename}. Available columns: {list(df.columns)}")
+            raise ValueError(
+                f"Could not identify SMILES column in {filename}. Available columns: {list(df.columns)}"
+            )
 
         # Identify ID column if exists
         id_cols = ["id", "ID", "compound_id", "Compound_ID", "Name", "name", "Drug_ID"]
@@ -263,16 +274,8 @@ class BatchScreeningEngine:
         # Summary statistics
         total_molecules = len(df)
         ro5_passed = int(df["ro5_pass"].sum()) if "ro5_pass" in df.columns else 0
-        herg_safe = (
-            int((df["c5_herg_prob"] < 0.5).sum())
-            if "c5_herg_prob" in df.columns
-            else 0
-        )
-        ames_safe = (
-            int((df["c5_ames_prob"] < 0.5).sum())
-            if "c5_ames_prob" in df.columns
-            else 0
-        )
+        herg_safe = int((df["c5_herg_prob"] < 0.5).sum()) if "c5_herg_prob" in df.columns else 0
+        ames_safe = int((df["c5_ames_prob"] < 0.5).sum()) if "c5_ames_prob" in df.columns else 0
 
         summary = {
             "total_molecules": total_molecules,

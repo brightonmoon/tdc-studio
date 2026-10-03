@@ -33,7 +33,9 @@ class YieldPredictor(nn.Module):
             nn.Sigmoid(),  # Yield output in [0.0, 1.0]
         )
 
-    def _extract_reaction_fp(self, reactants_smiles: str, product_smiles: Optional[str] = None) -> torch.Tensor:
+    def _extract_reaction_fp(
+        self, reactants_smiles: str, product_smiles: Optional[str] = None
+    ) -> torch.Tensor:
         """Compute average/combined fingerprint vector for reaction components."""
         all_smiles = [s.strip() for s in reactants_smiles.split(".") if s.strip()]
         if product_smiles:

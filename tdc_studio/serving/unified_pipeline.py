@@ -231,6 +231,7 @@ class UnifiedADMETPipeline:
         """Extract 1,129-dim biophysical features for AMES champion predictor."""
         try:
             from rdkit.Chem import AllChem
+
             alerts = self.alert_extractor.extract(mol, return_counts=True)
             fp = np.array(
                 AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=1024),
@@ -347,21 +348,27 @@ class UnifiedADMETPipeline:
                 category="absorption",
                 value=caco2_val,
                 unit="log Papp (cm/s)",
-                decision="High Permeability" if caco2_val > -5.15 else ("Moderate Permeability" if caco2_val >= -6.0 else "Low Permeability"),
+                decision="High Permeability"
+                if caco2_val > -5.15
+                else ("Moderate Permeability" if caco2_val >= -6.0 else "Low Permeability"),
             ),
             "lipophilicity_astrazeneca": ADMETIndicatorResult(
                 name="lipophilicity_astrazeneca",
                 category="absorption",
                 value=lipo_val,
                 unit="logD7.4",
-                decision="Optimal Lipophilicity (1-3)" if 1.0 <= lipo_val <= 3.0 else ("Hydrophilic" if lipo_val < 1.0 else "High Lipophilicity"),
+                decision="Optimal Lipophilicity (1-3)"
+                if 1.0 <= lipo_val <= 3.0
+                else ("Hydrophilic" if lipo_val < 1.0 else "High Lipophilicity"),
             ),
             "solubility_aqsoldb": ADMETIndicatorResult(
                 name="solubility_aqsoldb",
                 category="absorption",
                 value=logs_val,
                 unit="log mol/L",
-                decision="High Solubility" if logs_val >= -2.0 else ("Moderate Solubility" if logs_val >= -4.0 else "Low Solubility"),
+                decision="High Solubility"
+                if logs_val >= -2.0
+                else ("Moderate Solubility" if logs_val >= -4.0 else "Low Solubility"),
             ),
             "hia_hou": ADMETIndicatorResult(
                 name="hia_hou",
@@ -375,7 +382,9 @@ class UnifiedADMETPipeline:
                 category="absorption",
                 probability=bioav_prob,
                 unit="probability",
-                decision="Bioavailable (F >= 20-30%)" if bioav_prob >= 0.5 else "Poor Bioavailability",
+                decision="Bioavailable (F >= 20-30%)"
+                if bioav_prob >= 0.5
+                else "Poor Bioavailability",
             ),
             "pgp_broccatelli": ADMETIndicatorResult(
                 name="pgp_broccatelli",
@@ -410,14 +419,26 @@ class UnifiedADMETPipeline:
                 category="distribution",
                 value=ppbr_pred,
                 unit="%",
-                decision="Low Binding (<= 80%)" if ppbr_pred <= 80 else ("Moderate Binding (80-95%)" if ppbr_pred <= 95 else "High Binding (> 95%)"),
+                decision="Low Binding (<= 80%)"
+                if ppbr_pred <= 80
+                else ("Moderate Binding (80-95%)" if ppbr_pred <= 95 else "High Binding (> 95%)"),
             ),
             "vdss_lombardo": ADMETIndicatorResult(
                 name="vdss_lombardo",
                 category="distribution",
                 value=vdss_log10,
                 unit="log10(L/kg)",
-                decision=f"VDss ~ {vdss_real} L/kg (" + ("Low Distribution" if vdss_log10 < -0.155 else ("Moderate Distribution" if vdss_log10 <= 0.301 else "High Tissue Distribution")) + ")",
+                decision=f"VDss ~ {vdss_real} L/kg ("
+                + (
+                    "Low Distribution"
+                    if vdss_log10 < -0.155
+                    else (
+                        "Moderate Distribution"
+                        if vdss_log10 <= 0.301
+                        else "High Tissue Distribution"
+                    )
+                )
+                + ")",
             ),
             "bbb_martins": ADMETIndicatorResult(
                 name="bbb_martins",
@@ -433,8 +454,14 @@ class UnifiedADMETPipeline:
         # ----------------------------------------------------------------------
         c3_preds = self._predict_model_heads(self.c3_model, graph, graph.descriptors)
         cyp_names = [
-            "cyp1a2_veith", "cyp2c9_veith", "cyp2c19_veith", "cyp2d6_veith", "cyp3a4_veith",
-            "cyp2c9_substrate", "cyp2d6_substrate", "cyp3a4_substrate",
+            "cyp1a2_veith",
+            "cyp2c9_veith",
+            "cyp2c19_veith",
+            "cyp2d6_veith",
+            "cyp3a4_veith",
+            "cyp2c9_substrate",
+            "cyp2d6_substrate",
+            "cyp3a4_substrate",
         ]
         metabolism_dict: Dict[str, ADMETIndicatorResult] = {}
 
@@ -489,7 +516,9 @@ class UnifiedADMETPipeline:
                 if "clearance_hepatocyte_az" in c4_preds:
                     cl_hep_val = round(float(c4_preds["clearance_hepatocyte_az"]), 2)
                 else:
-                    cl_hep_val = round(float(max(1.0, 0.6 * cl_mic_val + 4.0 * (caco2_val + 5.0))), 2)
+                    cl_hep_val = round(
+                        float(max(1.0, 0.6 * cl_mic_val + 4.0 * (caco2_val + 5.0))), 2
+                    )
         elif "clearance_hepatocyte_az" in c4_preds:
             cl_hep_val = round(float(c4_preds["clearance_hepatocyte_az"]), 2)
         else:
@@ -498,7 +527,9 @@ class UnifiedADMETPipeline:
         if "half_life_obach" in c4_preds:
             half_life_val = round(float(max(0.1, c4_preds["half_life_obach"])), 2)
         else:
-            half_life_val = round(float(max(0.5, (vdss_real * 0.693) / max(0.05, 0.001 * cl_hep_val * 60.0))), 2)
+            half_life_val = round(
+                float(max(0.5, (vdss_real * 0.693) / max(0.05, 0.001 * cl_hep_val * 60.0))), 2
+            )
 
         excretion_dict = {
             "clearance_microsome_az": ADMETIndicatorResult(
@@ -506,21 +537,29 @@ class UnifiedADMETPipeline:
                 category="excretion",
                 value=cl_mic_val,
                 unit="uL/min/mg",
-                decision="High Clearance (> 50)" if cl_mic_val > 50 else ("Moderate Clearance (15-50)" if cl_mic_val >= 15 else "Low Clearance (< 15)"),
+                decision="High Clearance (> 50)"
+                if cl_mic_val > 50
+                else ("Moderate Clearance (15-50)" if cl_mic_val >= 15 else "Low Clearance (< 15)"),
             ),
             "clearance_hepatocyte_az": ADMETIndicatorResult(
                 name="clearance_hepatocyte_az",
                 category="excretion",
                 value=cl_hep_val,
                 unit="uL/min/10^6 cells",
-                decision="High Clearance (> 30)" if cl_hep_val > 30 else ("Moderate Clearance (10-30)" if cl_hep_val >= 10 else "Low Clearance (< 10)"),
+                decision="High Clearance (> 30)"
+                if cl_hep_val > 30
+                else ("Moderate Clearance (10-30)" if cl_hep_val >= 10 else "Low Clearance (< 10)"),
             ),
             "half_life_obach": ADMETIndicatorResult(
                 name="half_life_obach",
                 category="excretion",
                 value=half_life_val,
                 unit="hours",
-                decision="Short Half-life (< 2h)" if half_life_val < 2.0 else ("Moderate Half-life (2-8h)" if half_life_val <= 8.0 else "Long Half-life (> 8h)"),
+                decision="Short Half-life (< 2h)"
+                if half_life_val < 2.0
+                else (
+                    "Moderate Half-life (2-8h)" if half_life_val <= 8.0 else "Long Half-life (> 8h)"
+                ),
             ),
         }
 
@@ -541,19 +580,37 @@ class UnifiedADMETPipeline:
             except Exception as e:
                 logger.warning("hERG champion prediction fallback: %s", e)
                 if "herg" in c5_preds:
-                    herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg"])).item()), 4)
+                    herg_prob = round(
+                        float(torch.sigmoid(torch.tensor(c5_preds["herg"])).item()), 4
+                    )
                 elif "herg_karim" in c5_preds:
-                    herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg_karim"])).item()), 4)
+                    herg_prob = round(
+                        float(torch.sigmoid(torch.tensor(c5_preds["herg_karim"])).item()), 4
+                    )
                 else:
                     has_basic_amine = float(lipo_24d[19]) > 0
-                    herg_prob = round(float(1.0 / (1.0 + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5)))), 4)
+                    herg_prob = round(
+                        float(
+                            1.0
+                            / (
+                                1.0
+                                + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5))
+                            )
+                        ),
+                        4,
+                    )
         elif "herg" in c5_preds:
             herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg"])).item()), 4)
         elif "herg_karim" in c5_preds:
             herg_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["herg_karim"])).item()), 4)
         else:
             has_basic_amine = float(lipo_24d[19]) > 0
-            herg_prob = round(float(1.0 / (1.0 + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5)))), 4)
+            herg_prob = round(
+                float(
+                    1.0 / (1.0 + math.exp(-(0.6 * logp + (1.2 if has_basic_amine else -1.0) - 1.5)))
+                ),
+                4,
+            )
 
         # AMES Mutagenicity (Champion GBDT Pipeline -> Multi-task Cluster 5 -> Alert Fallback)
         n_alerts = float(alerts_100d.sum())
@@ -564,7 +621,9 @@ class UnifiedADMETPipeline:
             except Exception as e:
                 logger.warning("AMES champion prediction fallback: %s", e)
                 if "ames" in c5_preds:
-                    ames_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["ames"])).item()), 4)
+                    ames_prob = round(
+                        float(torch.sigmoid(torch.tensor(c5_preds["ames"])).item()), 4
+                    )
                 else:
                     ames_prob = round(float(1.0 / (1.0 + math.exp(-(1.5 * n_alerts - 1.2)))), 4)
         elif "ames" in c5_preds:
@@ -580,7 +639,13 @@ class UnifiedADMETPipeline:
         if "clintox" in c5_preds:
             clintox_prob = round(float(torch.sigmoid(torch.tensor(c5_preds["clintox"])).item()), 4)
         else:
-            clintox_prob = round(float(1.0 / (1.0 + math.exp(-(0.3 * herg_prob + 0.4 * ames_prob + 0.3 * dili_prob - 0.5)))), 4)
+            clintox_prob = round(
+                float(
+                    1.0
+                    / (1.0 + math.exp(-(0.3 * herg_prob + 0.4 * ames_prob + 0.3 * dili_prob - 0.5)))
+                ),
+                4,
+            )
 
         if "ld50_zhu" in c5_preds:
             ld50_val = round(float(c5_preds["ld50_zhu"]), 3)
@@ -593,35 +658,45 @@ class UnifiedADMETPipeline:
                 category="toxicity",
                 probability=herg_prob,
                 unit="probability",
-                decision="Low Cardiotoxicity Risk" if herg_prob < 0.3 else ("Moderate Risk" if herg_prob < 0.7 else "High Risk (hERG Blocker)"),
+                decision="Low Cardiotoxicity Risk"
+                if herg_prob < 0.3
+                else ("Moderate Risk" if herg_prob < 0.7 else "High Risk (hERG Blocker)"),
             ),
             "ames": ADMETIndicatorResult(
                 name="ames",
                 category="toxicity",
                 probability=ames_prob,
                 unit="probability",
-                decision=f"Mutagenic (AMES+, {int(n_alerts)} alerts)" if ames_prob >= 0.5 else "Non-Mutagenic (Safe)",
+                decision=f"Mutagenic (AMES+, {int(n_alerts)} alerts)"
+                if ames_prob >= 0.5
+                else "Non-Mutagenic (Safe)",
             ),
             "dili": ADMETIndicatorResult(
                 name="dili",
                 category="toxicity",
                 probability=dili_prob,
                 unit="probability",
-                decision="Hepatotoxicity Risk (DILI+)" if dili_prob >= 0.5 else "Low Hepatotoxicity Risk",
+                decision="Hepatotoxicity Risk (DILI+)"
+                if dili_prob >= 0.5
+                else "Low Hepatotoxicity Risk",
             ),
             "clintox": ADMETIndicatorResult(
                 name="clintox",
                 category="toxicity",
                 probability=clintox_prob,
                 unit="probability",
-                decision="Clinical Trial Failure Risk" if clintox_prob >= 0.5 else "Low Clinical Risk",
+                decision="Clinical Trial Failure Risk"
+                if clintox_prob >= 0.5
+                else "Low Clinical Risk",
             ),
             "ld50_zhu": ADMETIndicatorResult(
                 name="ld50_zhu",
                 category="toxicity",
                 value=ld50_val,
                 unit="log10(mg/kg)",
-                decision="Moderate/Low Acute Toxicity" if ld50_val >= 2.5 else "High Acute Toxicity",
+                decision="Moderate/Low Acute Toxicity"
+                if ld50_val >= 2.5
+                else "High Acute Toxicity",
             ),
         }
 
@@ -643,7 +718,9 @@ class UnifiedADMETPipeline:
                 half_life_hours=profile.half_life_hr,
                 fraction_unbound=profile.unbound_fraction_fu,
                 cl_total_l_h_kg=profile.cl_total_l_hr_kg,
-                hepatic_clearance_l_h_kg=(profile.cl_hepatic_ml_min_kg * 0.06) if profile.cl_hepatic_ml_min_kg else 0.0,
+                hepatic_clearance_l_h_kg=(profile.cl_hepatic_ml_min_kg * 0.06)
+                if profile.cl_hepatic_ml_min_kg
+                else 0.0,
                 hepatic_extraction_ratio=profile.extraction_ratio_eh or 0.0,
                 max_oral_bioavailability=profile.f_max_oral or 1.0,
                 t_half_tier=excretion_dict["half_life_obach"].decision,

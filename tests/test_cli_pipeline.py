@@ -143,3 +143,58 @@ def test_cli_ensemble_dry_run_with_synthetic_data(tmp_path, dummy_smiles_df):
     assert "Ensemble Benchmark Results" in result.output
     assert os.path.exists(os.path.join(chk_dir, "ensemble_summary.json"))
 
+
+def test_cli_dti_train_dry_run(tmp_path):
+    """Test tdc-studio train CLI with DTI task config and dry-run execution."""
+    config_content = {
+        "task": "dti",
+        "data": {
+            "type": "dta_loader",
+            "dataset_name": "BindingDB_Kd",
+            "split_type": "cold_drug",
+            "batch_size": 4,
+            "max_samples": 20,
+        },
+        "model": {
+            "type": "graph_dta",
+            "drug_encoder": {
+                "type": "gine",
+                "in_dim": 14,
+                "hidden_dim": 16,
+                "num_layers": 1,
+            },
+            "target_encoder": {
+                "type": "protein_cnn",
+                "out_dim": 16,
+                "embed_dim": 16,
+                "num_filters": 16,
+            },
+            "fusion": {
+                "type": "bilinear_fusion",
+                "drug_dim": 32,
+                "target_dim": 16,
+                "hidden_dim": 32,
+                "out_dim": 1,
+            },
+        },
+        "training": {
+            "batch_size": 4,
+            "max_epochs": 1,
+            "learning_rate": 0.001,
+        },
+        "tracking": {"enabled": False},
+    }
+
+    config_file = str(tmp_path / "dti_config.yaml")
+    with open(config_file, "w") as f:
+        yaml.dump(config_content, f)
+
+    chk_dir = str(tmp_path / "dti_checkpoints")
+    result = runner.invoke(
+        app,
+        ["train", "--local", "--config", config_file, "--checkpoint-dir", chk_dir, "--dry-run"],
+    )
+    assert result.exit_code == 0
+    assert "Starting Training Pipeline" in result.output
+    assert "Task: dta" in result.output
+    assert "Training Pipeline Finished" in result.output

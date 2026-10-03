@@ -37,11 +37,28 @@ def compute_clearance_features(smiles_list: List[str]) -> np.ndarray:
                 arom_rings = float(rdMolDescriptors.CalcNumAromaticRings(mol))
                 heavy = float(mol.GetNumHeavyAtoms())
                 # Halogens
-                halogens = float(sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in (9, 17, 35, 53)))
+                halogens = float(
+                    sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in (9, 17, 35, 53))
+                )
                 # Basic amine flag
-                basic = float(len(mol.GetSubstructMatches(Chem.MolFromSmarts("[NX3;!$(NC=O)][CX4]"))))
+                basic = float(
+                    len(mol.GetSubstructMatches(Chem.MolFromSmarts("[NX3;!$(NC=O)][CX4]")))
+                )
 
-                row = [logp, mw, tpsa, hbd, hba, rotb, f_csp3, rings, arom_rings, heavy, halogens, basic]
+                row = [
+                    logp,
+                    mw,
+                    tpsa,
+                    hbd,
+                    hba,
+                    rotb,
+                    f_csp3,
+                    rings,
+                    arom_rings,
+                    heavy,
+                    halogens,
+                    basic,
+                ]
         except Exception:
             pass
         features.append(row)

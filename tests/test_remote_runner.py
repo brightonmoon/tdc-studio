@@ -126,4 +126,3 @@ def test_colab_runner_injected_run_script(tmp_path):
         assert "print('Dummy runner')" in content
 
     assert not Path(injected_file).exists()
-

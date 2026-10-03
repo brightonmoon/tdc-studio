@@ -16,7 +16,9 @@ def test_conformal_classifier_calibration_and_prediction():
     # 1. Calibration on synthetic validation set (n=200)
     true_labels = rng.integers(0, 2, size=200)
     # well-calibrated probabilities with some noise
-    probs_pos = np.where(true_labels == 1, rng.uniform(0.6, 0.99, size=200), rng.uniform(0.01, 0.4, size=200))
+    probs_pos = np.where(
+        true_labels == 1, rng.uniform(0.6, 0.99, size=200), rng.uniform(0.01, 0.4, size=200)
+    )
 
     clf = ConformalClassifier(default_alpha=0.10)
     q = clf.calibrate(probs_pos, true_labels, alpha=0.10)
@@ -143,4 +145,3 @@ def test_conformal_api_endpoints():
     assert prof["conformal_uncertainty"] is not None
     assert "caco2_wang" in prof["conformal_uncertainty"]
     assert "lower_bound" in prof["conformal_uncertainty"]["caco2_wang"]
-

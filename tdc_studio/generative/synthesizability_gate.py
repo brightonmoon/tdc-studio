@@ -142,7 +142,9 @@ class SynthesizabilityGate:
                 routes=[route_tier2] if route_tier2 else None,
                 alternative_routes_count=1 if route_tier2 else 0,
                 synthetic_tractability_score=round(tractability, 2),
-                rejection_reason=None if tier2_passed else "No single-step stock precursor set found",
+                rejection_reason=None
+                if tier2_passed
+                else "No single-step stock precursor set found",
             )
 
         # --- Tier 3: Deep Multi-Step Retro* Route Search (1~2s) ---
@@ -170,6 +172,7 @@ class SynthesizabilityGate:
             routes=solved_routes if solved else None,
             alternative_routes_count=alt_count,
             synthetic_tractability_score=round(deep_tractability, 2),
-            rejection_reason=None if solved else "Multi-step Retro* search could not close route to stock",
+            rejection_reason=None
+            if solved
+            else "Multi-step Retro* search could not close route to stock",
         )
-

@@ -71,3 +71,32 @@ def test_dta_datamodule_with_synthetic_data(dummy_dta_df):
     assert "drug_graph" in batch
     assert "target_seq" in batch
     assert "labels" in batch
+
+
+def test_dta_dual_cold_split(dummy_dta_df):
+    """Verify that dual_cold split enforces disjoint drugs AND disjoint targets between train and test."""
+    dm = DTADataModule(
+        dataset_name="toy_dual_cold",
+        split_type="dual_cold",
+        synthetic_df=dummy_dta_df,
+        frac=[0.5, 0.25, 0.25],
+        seed=42,
+    )
+    dm.prepare_data()
+    assert dm.is_prepared
+
+    train_drugs = set(dm.splits["train"]["Drug"].unique())
+    test_drugs = set(dm.splits["test"]["Drug"].unique())
+    train_targets = set(dm.splits["train"]["Target"].unique())
+    test_targets = set(dm.splits["test"]["Target"].unique())
+
+    # Strictly zero overlap in both modalities
+    assert len(train_drugs.intersection(test_drugs)) == 0
+    assert len(train_targets.intersection(test_targets)) == 0
+
+
+def test_dta_kiba_auto_scaling(dummy_dta_df):
+    """Verify KIBA dataset disables log_transform by default."""
+    dm = DTADataModule(dataset_name="KIBA", synthetic_df=dummy_dta_df)
+    dm.prepare_data()
+    assert dm.log_transform is False

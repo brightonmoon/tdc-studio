@@ -53,7 +53,7 @@ class RetrosynthesisRoute:
         produced = set()
 
         for s in self.steps:
-            cum_y *= (s.yield_pct / 100.0)
+            cum_y *= s.yield_pct / 100.0
             tot_c += s.cost
             produced.add(s.product)
             for r in s.reactants:
@@ -228,4 +228,3 @@ class RouteRanker:
             r.rank = idx
 
         return sorted_routes
-

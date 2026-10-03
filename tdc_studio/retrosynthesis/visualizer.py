@@ -156,7 +156,13 @@ class RouteVisualizer:
             "| :---: | :---: | :---: | :---: | :---: | :---: | :--- | :--- |",
         ]
 
-        rank_badges = {1: "🥇 1위 (최적)", 2: "🥈 2위 (대안 A)", 3: "🥉 3위 (대안 B)", 4: "4위 (대안 C)", 5: "5위 (대안 D)"}
+        rank_badges = {
+            1: "🥇 1위 (최적)",
+            2: "🥈 2위 (대안 A)",
+            3: "🥉 3위 (대안 B)",
+            4: "4위 (대안 C)",
+            5: "5위 (대안 D)",
+        }
 
         rows = []
         for r in routes:
@@ -168,7 +174,7 @@ class RouteVisualizer:
             scs = f"{r.synthetic_complexity_score:.1f}/10"
             bb_str = ", ".join(r.starting_materials[:3])
             if len(r.starting_materials) > 3:
-                bb_str += f" 외 {len(r.starting_materials)-3}종"
+                bb_str += f" 외 {len(r.starting_materials) - 3}종"
             rules = ", ".join(dict.fromkeys(s.rule_name for s in r.steps)) or "N/A"
 
             rows.append(
@@ -199,4 +205,3 @@ class RouteVisualizer:
             sections.append(f"{title}\n{summary_info}\n\n{mermaid}")
 
         return "\n\n---\n\n".join(sections)
-

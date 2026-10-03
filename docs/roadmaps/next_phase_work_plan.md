@@ -146,9 +146,10 @@ flowchart TD
 
 ### 📌 [Task 4] DTI 결합력 연계 치료지수 (Therapeutic Index) 통합 & 임상 성공성 정량화
 
-- **상태:** **완료 (COMPLETE on `main`) ✅**
+- **상태:** **완료 (COMPLETE) ✅**
 - **산출물:**
   - `tdc_studio/evaluation/therapeutic_index.py`: `TherapeuticIndexEngine`, `TherapeuticIndexProfile`, `ComponentScores`
+  - $TI = \log_{10}(IC_{50,\text{hERG}} / K_d) = pK_d - pIC_{50}$ (Safe $\ge 2.0$, Moderate $1.0 \sim 2.0$, Hazard $< 1.0$)
   - 4대 축 기반 Clinical Developability Index (CDI, 0~100 pts) 종합 산출
   - hERG 안전역($IC_{50} / K_d$) 및 $\log_{10}$ Therapeutic Window
   - PBPK 연계 In Vivo Free Drug Safety Margin ($C_{\max,\text{free}}$ vs hERG)
@@ -369,15 +370,13 @@ tdc_studio/
 
 ## 5. 종합 마일스톤 및 상태 요약표 (Overall Milestone Summary)
 
-| 단계 | 추진 과제 | 핵심 목표 및 산출물 | 상태 |
 | :---: | :--- | :--- | :--- |
 | **Phase 0** | **ADMET 25종 SOTA 벤치마크** | 5대 클러스터 D-MPNN, Tri-Hybrid, Two-Stage 전이학습 | **완료 (COMPLETE) ✅** |
 | **Phase 0** | **DTI Foundation Phase B & C** | ChemBERTa + ESM-2 Cross-Attention DTA | **완료 (COMPLETE) ✅** |
 | **Phase 0** | **Retrosynthesis & Reaction Engine** | USPTO-50K 데이터, Seq2Seq Retro, Forward Verifier, Retro* | **완료 (COMPLETE) ✅** |
 | **Phase 0** | **XAI 설명가능 AI 엔진** | Integrated Gradients 원자 기여도 및 2D 히트맵, Bioisostere | **완료 (COMPLETE) ✅** |
-| **Phase 1** | **[Track 1] 치료 지수(TI) 엔진 구축** | - TherapeuticIndexEngine (`tdc_studio/evaluation/therapeutic_index.py`)<br>- Clinical Developability Index (CDI, 0~100 pts) 종합 산출<br>- hERG Safety Margin, In Vivo PK 여유도, API & CLI | **완료 (COMPLETE on `main`) ✅** |
-| **Phase 1** | **[Track 2] LeadOptimizer ➔ Retro\* 결합** | - 자가교정 변이체 생성 시 3-Tier 합성성 자동 평가 및 Stock 경로 첨부<br>- `POST /optimize` 및 `OptimizedCandidateItem` 완결 연동 | **완료 (COMPLETE on `main`) ✅** |
+| **Phase 1** | **[Track 1] 치료 지수(TI) 엔진 구축** | - TherapeuticIndexEngine (`tdc_studio/evaluation/therapeutic_index.py`)<br>- Clinical Developability Index (CDI, 0~100 pts) 종합 산출<br>- hERG Safety Margin, In Vivo PK 여유도, API & CLI | **완료 (COMPLETE) ✅** |
+| **Phase 1** | **[Track 2] LeadOptimizer ➔ Retro\* 결합** | - 자가교정 변이체 생성 시 3-Tier 합성성 자동 평가 및 Stock 경로 첨부<br>- `POST /optimize` 및 `OptimizedCandidateItem` 완결 연동 | **완료 (COMPLETE) ✅** |
 | **Phase 2** | **대규모 가상 스크리닝 & ONNX 서빙** | - 4단계 계층형 가상 스크리닝 깔때기 (Ro5 $\to$ GBDT $\to$ D-MPNN $\to$ PBPK/Retro*)<br>- ONNX Runtime FP16/INT8 동적 양자화 가속 및 대규모 라이브러리 배치 스트리밍<br>- RDKit `rdMolStandardize` 염 제거 및 PAINS/Brenk 필터<br>- NSGA-II 다목적 파레토 비지배 정렬 & Tanimoto 다양성 선별<br>- Enamine 30만 상용 시약 스트리밍 로더 | **📋 TODOLIST (차기 브랜치)** |
-| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 결합 포켓 잔기 슬라이싱 Cross-Attention DTA<br>- **Multi-Provider Pluggable 3D Docking Bridge** (`VinaLocalProvider`, `DiffDockCloudProvider`)<br>- 단백질 잔기 Cross-Attention 기여도 XAI 히트맵<br>- Conformal 능동 학습 기반 차기 합성 후보 추천 및 Few-Shot LoRA 어댑터 | **📋 TODOLIST (차기 브랜치)** |
+| **Phase 3** | **Pocket-Aware DTI & Active Learning** | - AlphaFold PDB 결합 포켓 잔기 슬라이싱 Cross-Attention DTA<br>- **Multi-Provider Pluggable 3D Docking Bridge** (`AutoDockVinaEngine`, `BioNeMoDiffDockEngine`, `NeurosnapEngine`, `TamarindEngine`)<br>- 단백질 잔기 Cross-Attention 기여도 XAI 히트맵 (`target_attention.py`)<br>- Conformal 능동 학습 기반 차기 합성 후보 추천 및 Few-Shot LoRA 어댑터 | **완료 (COMPLETE) ✅** |
 | **Phase 4** | **3-in-1 Studio UI & IND Dossier 보고서** | - **3-in-1 Unified Web Studio UI**: Ketcher 2D + Mol* 3D + ADMET/PBPK + Retro* DAG 트리 단일 워크스페이스 (`tdc_studio/ui/`)<br>- **Automated IND-Enabling Dossier Generator**: ICH M4 CTD Module 2/3/4 비임상 보고서 원클릭 생성 (`tdc_studio/dossier/`, PDF/HTML/JSON)<br>- **다회 투여 PBPK & DDI 시뮬레이터**: QD/BID 정상상태 축적비 및 CYP 저해 DDI 예측 | **📋 TODOLIST (차기 브랜치)** |
-

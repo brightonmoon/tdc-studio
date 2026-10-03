@@ -1,0 +1,11 @@
+type: "dta_loader"
+dataset_name: "KIBA"
+split_type: "cold_drug"
+batch_size: 32
+max_epochs: 20
+params:
+  dataset_name: "KIBA"
+  split_type: "cold_drug"
+  task_type: "dta"
+  metric_name: "ci"
+  log_transform: false

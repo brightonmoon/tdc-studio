@@ -345,11 +345,31 @@ class AminoAcidTokenizer:
     """
 
     AA_TOKENS = [
-        "<PAD>", "<UNK>",
-        "A", "C", "D", "E", "F", "G", "H", "I",
-        "K", "L", "M", "N", "P", "Q", "R", "S",
-        "T", "V", "W", "Y",
-        "B", "Z", "X",
+        "<PAD>",
+        "<UNK>",
+        "A",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "K",
+        "L",
+        "M",
+        "N",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
+        "V",
+        "W",
+        "Y",
+        "B",
+        "Z",
+        "X",
     ]
     VOCAB_SIZE = len(AA_TOKENS)  # 25
 
@@ -378,9 +398,7 @@ class AminoAcidTokenizer:
         """Reverse mapping from token ids back to AA string (strips padding)."""
         inv_vocab = {v: k for k, v in self.vocab.items()}
         return "".join(
-            inv_vocab.get(int(i), "<UNK>")
-            for i in tensor.tolist()
-            if int(i) != self.pad_id
+            inv_vocab.get(int(i), "<UNK>") for i in tensor.tolist() if int(i) != self.pad_id
         )
 
 
@@ -448,5 +466,3 @@ class RDKit2DDescriptorsTransform:
             return torch.nan_to_num(t, nan=self.fill_na, posinf=100.0, neginf=-100.0)
         except Exception:
             return None
-
-

@@ -1,6 +1,5 @@
 """Unit tests for Phase 5: SynthesizabilityGate and Lead Optimizer integration."""
 
-
 from tdc_studio.generative.synthesizability_gate import SynthesizabilityGate
 
 

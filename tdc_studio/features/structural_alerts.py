@@ -27,7 +27,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("beta_lactone", "[C]1[C](=O)[O][C]1"),
     ("beta_sultone", "[C]1[S](=O)(=O)[O][C]1"),
     ("beta_lactam", "[C]1[C](=O)[N][C]1"),
-
     # 2. Nitro & Nitroso Groups (13)
     ("aromatic_nitro", "c[N+](=O)[O-]"),
     ("aliphatic_nitro", "[CX4][N+](=O)[O-]"),
@@ -42,7 +41,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("n_nitroso_aryl", "c[N]([#6])[N]=O"),
     ("n_nitrosourea", "[#6][N]([N]=O)C(=O)[N]"),
     ("nitrosocarbamate", "[N]([N]=O)C(=O)O[#6]"),
-
     # 3. Alkyl Halides & Halogenated Aliphatics (13)
     ("aliphatic_halide_primary", "[CH2][Cl,Br,I]"),
     ("aliphatic_halide_secondary", "[CH1]([#6])[Cl,Br,I]"),
@@ -57,7 +55,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("haloethyl_sulfide_sulfur_mustard", "[S](CC[Cl,Br])"),
     ("haloalkyl_ether", "[CX4]([Cl,Br,I])O[#6]"),
     ("alpha_halocarbonyl", "C(=O)[CX4][Cl,Br,I]"),
-
     # 4. Aromatic Amines & Derivatives (12)
     ("primary_aromatic_amine", "c[NH2]"),
     ("secondary_aromatic_amine", "c[NH1][CX4]"),
@@ -71,7 +68,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("heterocyclic_amine_imidazo", "c1nc2ccccc2n1[NH2]"),
     ("aminoazo_dye", "c[NH2].[#6]N=N[#6]"),
     ("aromatic_amine_ortho_methyl", "c1c(C)c([NH2])ccc1"),
-
     # 5. Hydrazines, Azo, Diazo & Azoxy (11)
     ("hydrazine_unsubstituted", "[#6][NH][NH2]"),
     ("hydrazine_1_1_dialkyl", "[#6][N]([#6])[NH2]"),
@@ -84,7 +80,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("diazonium", "c[N+]#[N]"),
     ("triazene", "[#6][N]=[N][NH][#6]"),
     ("azide", "[#6][N]=[N+]=[N-]"),
-
     # 6. Alkylating Sulfonates, Sulfates, Phosphates (8)
     ("alkyl_sulfonate", "[CX4]OS(=O)(=O)[#6]"),
     ("alkyl_sulfate", "[CX4]OS(=O)(=O)O[#6]"),
@@ -94,7 +89,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("mustard_sulfonium", "[S+]([#6])(CC[Cl,Br])"),
     ("dialkyl_phosphonate", "P(=O)(O[CX4])(O[CX4])"),
     ("phosphoric_acid_ester_halo", "P(=O)(O[CX4])([Cl,Br,I])"),
-
     # 7. Alpha, Beta-Unsaturated Carbonyls & Michael Acceptors (12)
     ("alpha_beta_unsaturated_aldehyde", "[CH1](=O)[C]=[C]"),
     ("alpha_beta_unsaturated_ketone", "[#6]C(=O)[C]=[C]"),
@@ -108,7 +102,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("benzoquinone", "O=C1C=CC(=O)C=C1"),
     ("naphthoquinone", "O=C1C=CC(=O)c2ccccc12"),
     ("anthraquinone", "O=C1c2ccccc2C(=O)c3ccccc13"),
-
     # 8. Polycyclic Aromatic Hydrocarbons (PAHs) & Intercalators (9)
     ("phenanthrene_skeleton", "c1ccc2c(c1)ccc3ccccc23"),
     ("anthracene_skeleton", "c1ccc2cc3ccccc3cc2c1"),
@@ -119,7 +112,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("acridine_skeleton", "c1ccc2nc3ccccc3cc2c1"),
     ("quinolines_isoquinolines", "c1ccc2ncccc2c1"),
     ("carboline_skeleton", "c1ccc2c(c1)[nH]c3ccncc23"),
-
     # 9. Reactive Carbonyls, Anhydrides & Acylating Agents (7)
     ("acyl_halide", "C(=O)[Cl,Br,I]"),
     ("carboxylic_anhydride", "C(=O)OC(=O)"),
@@ -128,7 +120,6 @@ ASHBY_TENNANT_ALERTS: List[Tuple[str, str]] = [
     ("carbamoyl_halide", "NC(=O)[Cl,Br]"),
     ("chloroformate", "OC(=O)[Cl]"),
     ("aliphatic_aldehyde", "[CX4][CH]=O"),
-
     # 10. Peroxides, Thioureas & Sulfur Reactive (5)
     ("organic_peroxide", "[#6]OO[#6]"),
     ("organic_hydroperoxide", "[#6]OO[#1]"),

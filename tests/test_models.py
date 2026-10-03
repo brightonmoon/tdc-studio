@@ -192,5 +192,3 @@ def test_base_model_save_load_and_loss_mask(tmp_path):
     loss = model.compute_loss(preds, targets, mask=mask)
     assert torch.isfinite(loss)
     assert loss.item() == 0.0
-
-

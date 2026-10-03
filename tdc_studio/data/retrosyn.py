@@ -52,9 +52,7 @@ def remove_atom_mapping(smiles: str) -> str:
     return Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
 
 
-def canonicalize_reaction_smiles(
-    product_smiles: str, reactants_smiles: str
-) -> Tuple[str, str]:
+def canonicalize_reaction_smiles(product_smiles: str, reactants_smiles: str) -> Tuple[str, str]:
     """Canonicalize both product and reactants, sorting reactant fragments for invariance."""
     clean_prod = remove_atom_mapping(product_smiles)
 
@@ -91,15 +89,69 @@ class ReactionTokenizer:
             reaction_class_tokens = [f"<RX_{i}>" for i in range(1, 11)]
 
             chem_tokens = [
-                "C", "N", "O", "S", "P", "F", "Cl", "Br", "I", "B",
-                "c", "n", "o", "s", "p",
-                "(", ")", "[", "]", "=", "#", "-", "+", ":", ".",
-                "@", "@@", "/", "\\", "%",
-                "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-                "[nH]", "[O-]", "[N+]", "[NH+]", "[NH2+]", "[NH3+]",
-                "[S-]", "[P+]", "[B-]", "[F-]", "[Cl-]", "[Br-]", "[I-]",
-                "[Na+]", "[K+]", "[Li+]", "[Mg+2]", "[Zn+2]",
-                "[Si]", "[se]", "[te]", "[H]", "[2H]",
+                "C",
+                "N",
+                "O",
+                "S",
+                "P",
+                "F",
+                "Cl",
+                "Br",
+                "I",
+                "B",
+                "c",
+                "n",
+                "o",
+                "s",
+                "p",
+                "(",
+                ")",
+                "[",
+                "]",
+                "=",
+                "#",
+                "-",
+                "+",
+                ":",
+                ".",
+                "@",
+                "@@",
+                "/",
+                "\\",
+                "%",
+                "0",
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9",
+                "[nH]",
+                "[O-]",
+                "[N+]",
+                "[NH+]",
+                "[NH2+]",
+                "[NH3+]",
+                "[S-]",
+                "[P+]",
+                "[B-]",
+                "[F-]",
+                "[Cl-]",
+                "[Br-]",
+                "[I-]",
+                "[Na+]",
+                "[K+]",
+                "[Li+]",
+                "[Mg+2]",
+                "[Zn+2]",
+                "[Si]",
+                "[se]",
+                "[te]",
+                "[H]",
+                "[2H]",
             ]
             all_tokens = special_tokens + reaction_class_tokens + chem_tokens
             unique_tokens = list(dict.fromkeys(all_tokens))
@@ -142,7 +194,7 @@ class ReactionTokenizer:
             rx_token = f"<RX_{reaction_type}>"
             token_list.append(self.vocab.get(rx_token, self.unk_token_id))
 
-        for tok in tokens[:max_len - 2]:
+        for tok in tokens[: max_len - 2]:
             if len(token_list) >= max_len - 1:
                 break
             token_list.append(self.vocab.get(tok, self.unk_token_id))
@@ -378,9 +430,7 @@ class RetroSynDataModule(BaseTDCDataModule):
                     seed=self.seed,
                     include_reaction_type=self.include_reaction_type,
                 )
-                self.splits = {
-                    k: v.reset_index(drop=True) for k, v in raw_splits.items()
-                }
+                self.splits = {k: v.reset_index(drop=True) for k, v in raw_splits.items()}
                 self.is_prepared = True
                 return
             except (ImportError, Exception) as exc:

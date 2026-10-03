@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import pandas as pd
 import torch
@@ -49,12 +49,19 @@ from tdc_studio.serving.schema import (
     RetroPlanResponse,
     RetroSingleStepRequest,
     RetroSingleStepResponse,
+    TherapeuticIndexBatchRequest,
+    TherapeuticIndexBatchResponse,
     TherapeuticIndexRequest,
     TherapeuticIndexResponse,
     UnifiedADMETRequest,
     UnifiedADMETResponse,
     VirtualPopulationRequest,
     VirtualPopulationResponse,
+)
+from tdc_studio.serving.therapeutic_index_pipeline import (
+    TherapeuticIndexPipeline,
+    get_therapeutic_index_pipeline,
+    set_therapeutic_index_pipeline,
 )
 from tdc_studio.serving.unified_pipeline import (
     UnifiedADMETPipeline,
@@ -126,7 +133,9 @@ def get_dti_pipeline() -> Optional[DTIInferencePipeline]:
     return _dti_pipeline
 
 
-def set_dti_multi_pipeline(pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None) -> None:
+def set_dti_multi_pipeline(
+    pipeline: Optional[DTIMultiAffinityPipeline], meta: Optional[dict] = None
+) -> None:
     """Setter for global DTI Multi-Affinity inference pipeline."""
     global _dti_multi_pipeline, _dti_model_meta
     _dti_multi_pipeline = pipeline
@@ -150,6 +159,26 @@ def get_dti_multi_pipeline() -> Optional[DTIMultiAffinityPipeline]:
 def get_dti_model_meta() -> dict:
     """Getter for loaded DTI model metadata."""
     return _dti_model_meta
+
+
+def get_ti_pipeline() -> Optional[TherapeuticIndexPipeline]:
+    """Getter for global TherapeuticIndexPipeline with on-demand fallback."""
+    pipe = get_therapeutic_index_pipeline()
+    if pipe is not None:
+        return pipe
+    # Auto-initialize from loaded DTI and UnifiedADMET pipelines if available
+    admet_p = get_unified_pipeline()
+    dti_p = get_dti_multi_pipeline() or get_dti_pipeline()
+    if admet_p is not None or dti_p is not None:
+        ti_pipe = TherapeuticIndexPipeline(dti_pipeline=dti_p, admet_pipeline=admet_p, device="cpu")
+        set_therapeutic_index_pipeline(ti_pipe)
+        return ti_pipe
+    return None
+
+
+def set_ti_pipeline(pipeline: Optional[TherapeuticIndexPipeline]) -> None:
+    """Setter for global TherapeuticIndexPipeline."""
+    set_therapeutic_index_pipeline(pipeline)
 
 
 def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
@@ -227,9 +256,7 @@ def init_pipeline_from_directory(model_dir: str) -> Optional[Any]:
                 set_dti_multi_pipeline(pipeline, meta=config)
                 set_dti_pipeline(pipeline, meta=config)
             else:
-                pipeline = DTIInferencePipeline(
-                    model=model, device=device, scaler_meta=scaler_meta
-                )
+                pipeline = DTIInferencePipeline(model=model, device=device, scaler_meta=scaler_meta)
                 set_dti_pipeline(pipeline, meta=config)
                 set_dti_multi_pipeline(
                     DTIMultiAffinityPipeline(model=model, device=device, scaler_meta=scaler_meta),
@@ -278,7 +305,12 @@ def load_all_serving_models() -> None:
 
     # Autodiscover DTI pipeline if not yet initialized
     if get_dti_pipeline() is None:
-        for candidate in ["models/dti/phase_c_adv", "models/dti/phase_c", "models/dti/phase_b", "models/export/dti"]:
+        for candidate in [
+            "models/dti/phase_c_adv",
+            "models/dti/phase_c",
+            "models/dti/phase_b",
+            "models/export/dti",
+        ]:
             cfg_p = os.path.join(candidate, "config.json")
             if os.path.isdir(candidate) and os.path.exists(cfg_p):
                 init_pipeline_from_directory(candidate)
@@ -298,6 +330,7 @@ async def lifespan(app: FastAPI):
     set_dti_pipeline(None)
     set_dti_multi_pipeline(None)
     set_unified_pipeline(None)
+    set_ti_pipeline(None)
 
 
 app = FastAPI(
@@ -322,6 +355,7 @@ def health_check():
     has_pbpk = _pbpk_pipeline is not None
     has_dti = _dti_pipeline is not None or isinstance(_pipeline, DTIInferencePipeline)
     unified_ready = get_unified_pipeline() is not None
+    ti_ready = get_therapeutic_index_pipeline() is not None or unified_ready
     model_loaded = has_admet or has_dti or has_pbpk or unified_ready
     return HealthResponse(
         status="healthy",
@@ -331,6 +365,7 @@ def health_check():
         vdss_model_loaded=has_vdss,
         pbpk_pipeline_loaded=has_pbpk,
         dti_model_loaded=has_dti,
+        therapeutic_index_ready=ti_ready,
     )
 
 
@@ -416,7 +451,10 @@ async def simulate_virtual_population(request: VirtualPopulationRequest):
 
     profiles = await run_in_threadpool(unified_pipe.predict_batch, [request.smiles])
     if not profiles or profiles[0].pbpk is None:
-        raise HTTPException(status_code=400, detail="Failed to derive baseline PBPK profile for the provided SMILES.")
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to derive baseline PBPK profile for the provided SMILES.",
+        )
 
     prof = profiles[0]
     p = prof.pbpk
@@ -425,7 +463,9 @@ async def simulate_virtual_population(request: VirtualPopulationRequest):
         smiles=request.smiles,
         vdss_l_kg=p.vdss_l_kg,
         half_life_hr=p.half_life_hours,
-        ppbr_percent=prof.distribution["ppbr"].value if prof.distribution.get("ppbr") and prof.distribution["ppbr"].value is not None else (1.0 - p.fraction_unbound) * 100.0,
+        ppbr_percent=prof.distribution["ppbr"].value
+        if prof.distribution.get("ppbr") and prof.distribution["ppbr"].value is not None
+        else (1.0 - p.fraction_unbound) * 100.0,
         unbound_fraction_fu=p.fraction_unbound,
         cl_total_l_hr_kg=p.cl_total_l_h_kg,
         cl_total_ml_min_kg=p.cl_total_l_h_kg * (1000.0 / 60.0),
@@ -474,7 +514,9 @@ async def predict_admet_full(request: UnifiedADMETRequest):
             shield = ConformalADMETShield(alpha=request.conformal_alpha)
             for prof in profiles:
                 prof_dict = prof.model_dump()
-                prof.conformal_uncertainty = shield.evaluate_profile(prof_dict, alpha=request.conformal_alpha)
+                prof.conformal_uncertainty = shield.evaluate_profile(
+                    prof_dict, alpha=request.conformal_alpha
+                )
 
         return UnifiedADMETResponse(
             results=profiles,
@@ -502,13 +544,15 @@ async def predict_conformal_uncertainty(request: UnifiedADMETRequest):
         for prof in profiles:
             prof_dict = prof.model_dump()
             conf_data = shield.evaluate_profile(prof_dict, alpha=request.conformal_alpha)
-            results.append({
-                "smiles": prof.smiles,
-                "canonical_smiles": prof.canonical_smiles,
-                "conformal_alpha": request.conformal_alpha,
-                "confidence_level": round(1.0 - request.conformal_alpha, 3),
-                "uncertainty_by_task": conf_data,
-            })
+            results.append(
+                {
+                    "smiles": prof.smiles,
+                    "canonical_smiles": prof.canonical_smiles,
+                    "conformal_alpha": request.conformal_alpha,
+                    "confidence_level": round(1.0 - request.conformal_alpha, 3),
+                    "uncertainty_by_task": conf_data,
+                }
+            )
         return {"results": results, "count": len(results)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Conformal evaluation error: {str(e)}")
@@ -517,7 +561,9 @@ async def predict_conformal_uncertainty(request: UnifiedADMETRequest):
 @app.post("/predict/batch_file")
 async def predict_batch_file(
     file: UploadFile = File(..., description="Molecular library file (.csv, .tsv, .sdf)"),
-    export_format: str = Query("csv", pattern="^(csv|xlsx)$", description="Export format: 'csv' or 'xlsx'"),
+    export_format: str = Query(
+        "csv", pattern="^(csv|xlsx)$", description="Export format: 'csv' or 'xlsx'"
+    ),
 ):
     """Screen molecular file (CSV/TSV/SDF) across 22+ ADMET, Lipinski Rule of 5, and PBPK parameters."""
     unified_pipe = get_unified_pipeline()
@@ -725,11 +771,17 @@ def get_optimizer() -> Any:
 async def optimize_molecule(request: OptimizeRequest):
     """Automatically diagnose, localize, and repair liabilities using closed-loop self-correction."""
     optimizer = get_optimizer()
+    if optimizer.dti_pipeline is None:
+        optimizer.dti_pipeline = get_dti_pipeline()
+
     try:
         report = await run_in_threadpool(
             optimizer.optimize,
             request.smiles,
             target_liability=request.target_liability,
+            target_seq=request.target_sequence,
+            weight_admet=request.weight_admet,
+            weight_dta=request.weight_dta,
             max_candidates=request.max_candidates,
             verify_retrosynthesis=request.verify_retrosynthesis,
             require_deep_route=request.require_deep_route,
@@ -759,6 +811,9 @@ async def optimize_molecule(request: OptimizeRequest):
                 sa_score=c.sa_score,
                 scaffold_preserved=c.scaffold_preserved,
                 fitness_score=c.fitness_score,
+                parent_dta_pkd=c.parent_dta_pkd,
+                candidate_dta_pkd=c.candidate_dta_pkd,
+                dta_delta=c.dta_delta,
                 retrosynthesis_solved=c.retrosynthesis_solved,
                 retrosynthesis_steps=c.retrosynthesis_steps,
                 cumulative_yield=c.cumulative_yield,
@@ -778,6 +833,8 @@ async def optimize_molecule(request: OptimizeRequest):
             candidates_generated=report.candidates_generated,
             candidates_passing_sa_filter=report.candidates_passing_sa_filter,
             top_candidates=cand_items,
+            target_protein_sequence=report.target_protein_sequence,
+            parent_dta_pkd=report.parent_dta_pkd,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lead optimization error: {str(e)}")
@@ -813,10 +870,50 @@ def set_ti_engine(engine: Optional[TherapeuticIndexEngine]) -> None:
     _ti_engine = engine
 
 
-@app.post("/predict/therapeutic-index", response_model=TherapeuticIndexResponse)
+@app.post(
+    "/predict/therapeutic-index",
+    response_model=Union[TherapeuticIndexResponse, TherapeuticIndexBatchResponse],
+)
 @app.post("/predict/ti", response_model=TherapeuticIndexResponse)
-async def predict_therapeutic_index(request: TherapeuticIndexRequest):
-    """Predict comprehensive Therapeutic Index, hERG Safety Margin, and Clinical Developability."""
+async def predict_therapeutic_index(
+    request: Union[TherapeuticIndexBatchRequest, TherapeuticIndexRequest],
+):
+    """Predict comprehensive Therapeutic Index, hERG Safety Margin, and Clinical Developability.
+
+    Supports both:
+    1. Single-compound comprehensive Clinical Developability & Safety Margin evaluation.
+    2. Batch Drug-Target Interaction (DTI) linked Therapeutic Index screening.
+    """
+    if isinstance(request, TherapeuticIndexBatchRequest):
+        ti_pipe = get_ti_pipeline()
+        if ti_pipe is None:
+            dti_p = get_dti_multi_pipeline() or get_dti_pipeline()
+            admet_p = get_unified_pipeline()
+            ti_pipe = TherapeuticIndexPipeline(dti_pipeline=dti_p, admet_pipeline=admet_p)
+            set_therapeutic_index_pipeline(ti_pipe)
+
+        t0 = time.perf_counter()
+        try:
+            items = await run_in_threadpool(
+                ti_pipe.evaluate_batch,
+                request.smiles,
+                request.target_sequences,
+                request.herg_source,
+                request.herg_cutoff_nm,
+                request.include_admet_details,
+            )
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return TherapeuticIndexBatchResponse(
+                results=items,
+                count=len(items),
+                elapsed_ms=elapsed_ms,
+                pipeline_version="TDC-Studio-TI-v1",
+            )
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Therapeutic Index evaluation error: {str(e)}")
+
     engine = get_ti_engine()
     if engine.dti_pipeline is None:
         engine.dti_pipeline = get_dti_pipeline()
@@ -871,6 +968,7 @@ async def predict_therapeutic_index(request: TherapeuticIndexRequest):
 # Drug-Target Interaction (DTI) Endpoints
 # ------------------------------------------------------------------------------
 
+
 @app.post("/predict/dti", response_model=DTIInferenceResponse)
 async def predict_dti(request: DTIInferenceRequest):
     """Predict Drug-Target Interaction (DTI) binding affinities in pKd and Kd (nM)."""
@@ -899,7 +997,9 @@ async def predict_dti(request: DTIInferenceRequest):
             request.return_full_matrix,
         )
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-        model_name = _dti_model_meta.get("type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention"))
+        model_name = _dti_model_meta.get(
+            "type", _model_meta.get("type", "GraphDTA-PhaseC-CrossAttention")
+        )
 
         return DTIInferenceResponse(
             predictions_pkd=result["predictions_pkd"],
@@ -909,11 +1009,16 @@ async def predict_dti(request: DTIInferenceRequest):
             top_contact_residues=result.get("top_contact_residues"),
             top_contact_atoms=result.get("top_contact_atoms"),
             pymol_commands=result.get("pymol_commands"),
+            conformal_lower_95=result.get("conformal_lower_95"),
+            conformal_upper_95=result.get("conformal_upper_95"),
+            confidence_interval_width=result.get("confidence_interval_width"),
+            is_in_domain=result.get("is_in_domain"),
             unit="pK_d (-log10 Kd)",
             model_name=model_name,
             count=len(request.smiles),
             elapsed_ms=elapsed_ms,
         )
+
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
@@ -966,6 +1071,7 @@ async def predict_dti_multi_affinity(request: DTIMultiAffinityInferenceRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DTI multi-affinity inference error: {str(e)}")
+
 
 
 # ------------------------------------------------------------------------------
@@ -1028,6 +1134,3 @@ async def retrosynthesis_plan_route(request: RetroPlanRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrosynthesis planning error: {str(e)}")
-
-
-

@@ -105,6 +105,19 @@
   - 테스트: 77개 테스트 100% 통과 (VDss 추론 및 API 서빙 테스트 6종 신규 추가).
   - 브랜치 머지: `brightonmoon/ADMET` $\to$ `main` 검수 및 머지 완료.
 
+### [Track A-Plus] Cluster 2 (PPBR / VDss) 10대 모델링 및 학습 방법론 탐색 (COMPLETE & NEXT ROADMAP)
+- [x] **Task A-Plus-1: 10대 모델링/학습 방법론 전수 벤치마크 및 오차 병리 실증** (`scripts/benchmark_cluster2_methodologies.py`)
+  - 323개 테스트셋 대상 10개 방법론(베이스라인 2D, 18 생체물리학, 3D 배좌, Step 비대칭 손실, Continuous Focal BMSE, Quantile, 2-Stage Hurdle Gating, ChemBERTa 매니폴드, Tri-Hybrid, Quad-Hybrid) 비교 완료.
+  - 핵심 실증: 생체물리학+3D 피처가 $R^2$를 +0.0570 도약시켰으며, 2-Stage Hurdle 모델의 고결합 판별기(AUC 0.8723)가 고결합 MAE를 2.00%로 역대 최저 경신.
+  - 상세 리포트: `docs/benchmarks/cluster2_methodology_exploration_report.md`
+- [ ] **Task C2-NEXT-1: ChEMBL 저결합 어세이 데이터 추가 확보 및 증강 (Data Augmentation)**
+  - ChEMBL/PubChem에서 알부민/혈장 저결합($< 70\%$) 어세이 화합물 1,000~2,000건 추출 및 병합하여 저결합 헤드 소표본 과적합 해소.
+- [ ] **Task C2-NEXT-2: Boltzmann 10-Conformer 앙상블 배좌 풀 생성 및 GBDT 피처 주입**
+  - RDKit/CREST 기반 10개 배좌 풀 생성 후 MMFF 에너지 기반 가중 평균 3D 피처(PBF, Spherocity) 추출 파이프라인 구축.
+- [ ] **Task C2-NEXT-3: D-MPNN 백본 내재화 2-Stage Hurdle Multi-Task 아키텍처**
+  - D-MPNN 그래프 백본에 High-binding Gating 분류 헤드를 직접 붙여 공유 표현형 학습 및 추론 파이프라인 연동.
+- [ ] **Task C2-NEXT-4: Colab VM Python 3.10/3.11 환경 및 PyTorch/PyTDC 휠 의존성 컨테이너 핀 고정**
+
 ### [Track B] DTI / DTA Phase B (사전학습 파운데이션 모델 결합 - COMPLETE)
 - [x] **Task B-1: Pretrained Protein & Compound Encoders 구현 (`tdc_studio/models/dti/pretrained_encoders.py`)**
   - Drug: ChemBERTa-77M-MTR (384차원)

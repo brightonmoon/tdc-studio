@@ -73,10 +73,23 @@ if os.path.exists('/content/workspace.zip'):
 if workspace not in sys.path:
     sys.path.insert(0, workspace)
 os.chdir(workspace)
+
+# Idempotent dependency check for Colab VM
+try:
+    from scripts.install_deps import verify_active_environment
+    _env_info = verify_active_environment()
+    if not _env_info.get("all_healthy", False):
+        import subprocess
+        print("[Colab Auto-Setup] Unconfigured dependencies detected. Running scripts/install_deps.py...")
+        subprocess.run([sys.executable, "scripts/install_deps.py"], check=False)
+except Exception as _e:
+    pass
+
 sys.argv = ['$($FilePath -replace '\\', '/')'] + $($argsStr)
 os.environ["FORCE_CLI_ARGS"] = "1"
 os.environ["TDC_REMOTE_EXECUTION"] = "1"
 "@
+
 
 $tempFileName = "temp_exec_" + [System.IO.Path]::GetFileName($FilePath)
 $tempFile = Join-Path $tempDir $tempFileName

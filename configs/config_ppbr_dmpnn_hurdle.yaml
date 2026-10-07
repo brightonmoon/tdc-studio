@@ -1,0 +1,47 @@
+# Configuration for PPBR AstraZeneca (Two-Stage Internalized Hurdle D-MPNN Architecture)
+# Directed Message Passing on Bonds + 2D/3D Biophysical Descriptors + High-Binding Gating & Dual Specialist Regressors
+
+data:
+  type: "admet_loader"
+  dataset_name: "ppbr_az"
+  split_type: "random"
+  batch_size: 32
+  seed: 42
+  metric_name: "mae"
+  params:
+    dataset_name: "ppbr_az"
+    split_type: "random"
+    seed: 42
+    task_type: "regression"
+    use_descriptors: true
+    standardize_target: false
+
+model:
+  type: "dmpnn_hurdle"
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  depth: 3
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  high_threshold: 90.0
+  high_subthreshold: 85.0
+  low_threshold: 70.0
+  weight_gate: 1.0
+  weight_high: 0.5
+  weight_low: 0.8
+  weight_mixture: 1.0
+  low_sample_weight: 3.5
+
+lr: 0.0004
+min_lr: 1.0e-6
+weight_decay: 1.0e-5
+max_epochs: 60
+early_stopping: 20
+eval_metric: "mae"
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

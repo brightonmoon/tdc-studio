@@ -110,13 +110,24 @@
   - 323개 테스트셋 대상 10개 방법론(베이스라인 2D, 18 생체물리학, 3D 배좌, Step 비대칭 손실, Continuous Focal BMSE, Quantile, 2-Stage Hurdle Gating, ChemBERTa 매니폴드, Tri-Hybrid, Quad-Hybrid) 비교 완료.
   - 핵심 실증: 생체물리학+3D 피처가 $R^2$를 +0.0570 도약시켰으며, 2-Stage Hurdle 모델의 고결합 판별기(AUC 0.8723)가 고결합 MAE를 2.00%로 역대 최저 경신.
   - 상세 리포트: `docs/benchmarks/cluster2_methodology_exploration_report.md`
-- [ ] **Task C2-NEXT-1: ChEMBL 저결합 어세이 데이터 추가 확보 및 증강 (Data Augmentation)**
-  - ChEMBL/PubChem에서 알부민/혈장 저결합($< 70\%$) 어세이 화합물 1,000~2,000건 추출 및 병합하여 저결합 헤드 소표본 과적합 해소.
-- [ ] **Task C2-NEXT-2: Boltzmann 10-Conformer 앙상블 배좌 풀 생성 및 GBDT 피처 주입**
-  - RDKit/CREST 기반 10개 배좌 풀 생성 후 MMFF 에너지 기반 가중 평균 3D 피처(PBF, Spherocity) 추출 파이프라인 구축.
-- [ ] **Task C2-NEXT-3: D-MPNN 백본 내재화 2-Stage Hurdle Multi-Task 아키텍처**
-  - D-MPNN 그래프 백본에 High-binding Gating 분류 헤드를 직접 붙여 공유 표현형 학습 및 추론 파이프라인 연동.
-- [ ] **Task C2-NEXT-4: Colab VM Python 3.10/3.11 환경 및 PyTorch/PyTDC 휠 의존성 컨테이너 핀 고정**
+- [x] **Task C2-NEXT-1: ChEMBL 저결합 어세이 데이터 추가 확보 및 증강 (Data Augmentation) (COMPLETE)**
+  - ChEMBL API 15개 배치(14,720건) 수집 및 TDC Test/Val 0% 누수 방지 필터링 완료 (`scripts/augment_chembl_low_binding.py`).
+  - 저결합(<70%) 1,370건(극단 저결합 <50% 776건) 확충 (`data/external/chembl_low_binding_augmented.csv`).
+  - 증강 훈련 데이터셋 `ppbr_augmented_train_combined.csv` 생성 완료 (기존 156개 -> 1,370개, +1,214건 대폭 확충으로 소표본 과적합 해소).
+- [x] **Task C2-NEXT-2: Boltzmann 10-Conformer 앙상블 배좌 풀 생성 및 피처 주입 (COMPLETE)**
+  - 모듈 구현 완료: `tdc_studio/features/boltzmann_conformers.py` (`compute_boltzmann_conformer_features`, `extract_boltzmann_conformer_vector`, `batch_extract_boltzmann_features`).
+  - ETKDGv3 10개 배좌 풀 생성 + MMFF94 force field 에너지 최적화 + $298.15\text{ K}$ 볼츠만 가중 평균 3D 피처(PBF, Spherocity, Asphericity, Eccentricity, Inertial Shape, ROG) 및 conformational entropy/energy span 8차원 추출.
+  - 단위 테스트 통과: `tests/test_boltzmann_conformers.py` (4개 테스트 100% Pass).
+- [x] **Task C2-NEXT-3: D-MPNN 백본 내재화 2-Stage Hurdle Multi-Task 아키텍처 (COMPLETE)**
+  - 아키텍처 구현 완료: `tdc_studio/models/graph/dmpnn_hurdle.py` (`DMPNNHurdleModel`) 및 `tdc_studio/models/loss/hurdle_loss.py` (`HurdleMultiTaskLoss`).
+  - 공유 D-MPNN 표현형 백본에 High-binding Gating 분류 헤드($z_{\text{gate}}$, $y \ge 90\%$) + High-binding/Low-binding 특화 회귀 듀얼 헤드 + 엔드투엔드 Mixture 추론 결합.
+  - 설정 파일 생성: `configs/config_ppbr_dmpnn_hurdle.yaml`.
+  - 단위 테스트 통과: `tests/test_dmpnn_hurdle.py` (4개 테스트 100% Pass).
+- [x] **Task C2-NEXT-4: Colab VM Python 3.10/3.11 환경 및 PyTorch/PyTDC 휠 의존성 핀 고정 (COMPLETE)**
+  - `scripts/install_deps.py` 전면 리팩토링: Python 3.10/3.11 런타임 동적 감지, PyTorch 버전별 CUDA/PyG 휠 인덱스 매트릭스 탐색, `PyTDC==0.4.1` 등 안정 패키지 핀 고정, 멱등적 Fast-path 자가진단 탑재.
+  - `scripts/colab_exec.ps1` 인젝션 헤더에 사전 의존성 자동 헬스체크 및 안정화 연동.
+  - 단위 테스트 통과: `tests/test_colab_env_specs.py` (4개 테스트 100% Pass).
+
 
 ### [Track B] DTI / DTA Phase B (사전학습 파운데이션 모델 결합 - COMPLETE)
 - [x] **Task B-1: Pretrained Protein & Compound Encoders 구현 (`tdc_studio/models/dti/pretrained_encoders.py`)**

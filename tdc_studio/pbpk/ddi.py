@@ -75,7 +75,9 @@ class SingleCYPDDIRisk:
     estimated_ki_um: float
     inhibitor_conc_um: float  # [I]_u or [I]_inlet,u
     auc_fold_change: float  # AUC_i / AUC_control
-    ddi_classification: str  # "Strong" (>=5x), "Moderate" (2x~5x), "Weak" (1.25x~2x), "No Clinical Risk" (<1.25x)
+    ddi_classification: (
+        str  # "Strong" (>=5x), "Moderate" (2x~5x), "Weak" (1.25x~2x), "No Clinical Risk" (<1.25x)
+    )
     affected_victim_drug: str
     clinical_recommendation: str
 

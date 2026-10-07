@@ -33,7 +33,6 @@ FEATURE_NAMES = [
 BOLTZMANN_FEATURE_NAMES = FEATURE_NAMES
 
 
-
 def compute_boltzmann_conformer_features(
     mol_or_smiles: Union[Chem.Mol, str],
     num_confs: int = 10,
@@ -234,7 +233,9 @@ def batch_extract_boltzmann_features(
             return data
 
     if verbose:
-        print(f"Extracting Boltzmann {num_confs}-conformer 3D features for {len(smiles_list)} molecules...")
+        print(
+            f"Extracting Boltzmann {num_confs}-conformer 3D features for {len(smiles_list)} molecules..."
+        )
 
     results = []
     for i, s in enumerate(smiles_list):

@@ -178,8 +178,6 @@ class MolecularStandardizer:
                 warning_messages=[f"Standardization error: {str(e)}"],
             )
 
-    def standardize_batch(
-        self, items: List[Union[str, Chem.Mol]]
-    ) -> List[StandardizationResult]:
+    def standardize_batch(self, items: List[Union[str, Chem.Mol]]) -> List[StandardizationResult]:
         """Standardize a batch of molecules/SMILES strings."""
         return [self.standardize(item) for item in items]

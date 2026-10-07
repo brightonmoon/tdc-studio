@@ -26,6 +26,7 @@ from tdc_studio.serving.retrosynthesis_pipeline import (
 # 1. Building Block Storage Adapters
 # ------------------------------------------------------------------------------
 
+
 def test_building_block_record():
     rec = BuildingBlockRecord(
         smiles="CC(=O)O",
@@ -147,6 +148,7 @@ def test_unified_stock_manager_priorities_and_banning():
 # 2. Reaction Condition Recommendation
 # ------------------------------------------------------------------------------
 
+
 def test_reaction_condition_recommender():
     recommender = ReactionConditionRecommender()
 
@@ -183,6 +185,7 @@ def test_reaction_condition_recommender():
 # 3. Total Cost of Synthesis (TCS) & Synthetic Difficulty
 # ------------------------------------------------------------------------------
 
+
 def test_tcs_step_cost_calculation():
     calculator = TCSCalculator()
     cond = ReactionCondition(
@@ -208,7 +211,11 @@ def test_tcs_step_cost_calculation():
     assert res["purification_cost"] == 35.0  # Column chromatography
     assert res["risk_penalty"] == 15.0  # Toxic hazard
     assert res["total_step_cost"] == round(
-        res["materials_cost"] + res["operational_cost"] + res["purification_cost"] + res["risk_penalty"], 2
+        res["materials_cost"]
+        + res["operational_cost"]
+        + res["purification_cost"]
+        + res["risk_penalty"],
+        2,
     )
 
 
@@ -233,6 +240,7 @@ def test_tcs_route_evaluation_and_scs():
 # ------------------------------------------------------------------------------
 # 4. Multi-Step Route & Visualizer Integration
 # ------------------------------------------------------------------------------
+
 
 def test_retrosynthesis_route_metrics_with_tcs():
     step1 = ReactionStep(
@@ -273,6 +281,7 @@ def test_retrosynthesis_route_metrics_with_tcs():
 # ------------------------------------------------------------------------------
 # 5. End-to-End RetroPlanner and Serving Pipeline Integration
 # ------------------------------------------------------------------------------
+
 
 def test_retro_planner_with_cost_and_conditions():
     planner = RetroPlanner(policy_type="rule", max_depth=3, timeout_sec=3.0)

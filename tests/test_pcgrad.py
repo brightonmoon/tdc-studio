@@ -33,7 +33,9 @@ def test_pcgrad_orthogonal_projection_math():
 
     assert w.grad is not None
     expected_grad = torch.tensor([0.5, 1.5])
-    assert torch.allclose(w.grad, expected_grad, atol=1e-5), f"Expected {expected_grad}, got {w.grad}"
+    assert torch.allclose(w.grad, expected_grad, atol=1e-5), (
+        f"Expected {expected_grad}, got {w.grad}"
+    )
 
 
 def test_pcgrad_non_conflicting_gradients():
@@ -125,16 +127,18 @@ def test_pcgrad_integration_with_masked_multitask_loss():
 
     features = torch.randn(8, 10)
     preds = linear(features)
-    targets = torch.tensor([
-        [1.0, 2.5, float("nan")],
-        [0.0, 1.2, 1.0],
-        [float("nan"), 3.1, 0.0],
-        [1.0, float("nan"), 1.0],
-        [0.0, 0.5, 0.0],
-        [1.0, 4.2, float("nan")],
-        [0.0, float("nan"), 0.0],
-        [1.0, 1.8, 1.0],
-    ])
+    targets = torch.tensor(
+        [
+            [1.0, 2.5, float("nan")],
+            [0.0, 1.2, 1.0],
+            [float("nan"), 3.1, 0.0],
+            [1.0, float("nan"), 1.0],
+            [0.0, 0.5, 0.0],
+            [1.0, 4.2, float("nan")],
+            [0.0, float("nan"), 0.0],
+            [1.0, 1.8, 1.0],
+        ]
+    )
 
     opt.zero_grad()
     total_loss, loss_dict, task_loss_list = criterion(preds, targets, return_per_task=True)

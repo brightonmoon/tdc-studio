@@ -16,7 +16,10 @@ from tdc_studio.pbpk.repeat_dose import RepeatDoseParams, RepeatDoseSimulator
 def register_pbpk_tools(server: MCPServer) -> None:
     """Register PBPK repeat-dose and DDI evaluation tools."""
 
-    @server.tool(name="simulate_pbpk_regimen", description="Simulate repeat-dose PBPK (QD/BID), steady-state metrics, and hERG safety margin")
+    @server.tool(
+        name="simulate_pbpk_regimen",
+        description="Simulate repeat-dose PBPK (QD/BID), steady-state metrics, and hERG safety margin",
+    )
     def simulate_pbpk_regimen(
         smiles: str,
         dose_mg: float = 100.0,
@@ -85,35 +88,47 @@ def register_pbpk_tools(server: MCPServer) -> None:
         d = profile.to_dict()
         ss = d.get("steady_state", {})
 
-        return json.dumps({
-            "smiles": smiles,
-            "regimen_tested": {
-                "dose_mg": dose_mg,
-                "interval_hr": interval_hr,
-                "regimen_frequency": "QD (Once Daily)" if interval_hr == 24 else ("BID (Twice Daily)" if interval_hr == 12 else f"Q{int(interval_hr)}H"),
-                "route": route,
+        return json.dumps(
+            {
+                "smiles": smiles,
+                "regimen_tested": {
+                    "dose_mg": dose_mg,
+                    "interval_hr": interval_hr,
+                    "regimen_frequency": "QD (Once Daily)"
+                    if interval_hr == 24
+                    else ("BID (Twice Daily)" if interval_hr == 12 else f"Q{int(interval_hr)}H"),
+                    "route": route,
+                },
+                "underlying_pk_parameters": {
+                    "vdss_l_kg": round(vdss, 3),
+                    "half_life_hr": round(t_half, 2),
+                    "molecular_weight": round(mw, 2),
+                },
+                "steady_state_outcome": {
+                    "accumulation_ratio_rac": ss.get("accumulation_ratio_rac"),
+                    "c_ss_max_mg_l": ss.get("c_ss_max_mg_l"),
+                    "c_ss_min_mg_l": ss.get("c_ss_min_mg_l"),
+                    "c_ss_avg_mg_l": ss.get("c_ss_avg_mg_l"),
+                    "peak_to_trough_fluctuation_pct": ss.get("peak_trough_fluctuation_pct"),
+                    "days_to_reach_steady_state": round(
+                        ss.get("time_to_90pct_ss_hr", 24.0) / 24.0, 1
+                    ),
+                },
+                "safety_assessment": {
+                    "herg_margin_at_css_max": ss.get("herg_margin_ss_max"),
+                    "herg_safe_margin_exceeded": ss.get("is_safe_against_herg"),
+                    "clinical_comment": "Adequate safety margin (>30x)"
+                    if ss.get("is_safe_against_herg")
+                    else "Warning: Peak steady-state concentration nears hERG liability threshold",
+                },
             },
-            "underlying_pk_parameters": {
-                "vdss_l_kg": round(vdss, 3),
-                "half_life_hr": round(t_half, 2),
-                "molecular_weight": round(mw, 2),
-            },
-            "steady_state_outcome": {
-                "accumulation_ratio_rac": ss.get("accumulation_ratio_rac"),
-                "c_ss_max_mg_l": ss.get("c_ss_max_mg_l"),
-                "c_ss_min_mg_l": ss.get("c_ss_min_mg_l"),
-                "c_ss_avg_mg_l": ss.get("c_ss_avg_mg_l"),
-                "peak_to_trough_fluctuation_pct": ss.get("peak_trough_fluctuation_pct"),
-                "days_to_reach_steady_state": round(ss.get("time_to_90pct_ss_hr", 24.0) / 24.0, 1),
-            },
-            "safety_assessment": {
-                "herg_margin_at_css_max": ss.get("herg_margin_ss_max"),
-                "herg_safe_margin_exceeded": ss.get("is_safe_against_herg"),
-                "clinical_comment": "Adequate safety margin (>30x)" if ss.get("is_safe_against_herg") else "Warning: Peak steady-state concentration nears hERG liability threshold",
-            }
-        }, indent=2)
+            indent=2,
+        )
 
-    @server.tool(name="evaluate_drug_interactions", description="Evaluate CYP drug-drug interaction (DDI) risk and victim drug AUC fold changes")
+    @server.tool(
+        name="evaluate_drug_interactions",
+        description="Evaluate CYP drug-drug interaction (DDI) risk and victim drug AUC fold changes",
+    )
     def evaluate_drug_interactions(
         smiles: str,
         dose_mg: float = 100.0,
@@ -156,7 +171,9 @@ def register_pbpk_tools(server: MCPServer) -> None:
             ind = admet_res.get("indicators", {})
             for cyp_k in ["cyp3a4", "cyp2c9", "cyp2c19", "cyp2d6", "cyp1a2"]:
                 if f"{cyp_k}_inhibition" in ind:
-                    cyp_probs[cyp_k.upper()] = float(ind[f"{cyp_k}_inhibition"].get("raw_value", 0.2))
+                    cyp_probs[cyp_k.upper()] = float(
+                        ind[f"{cyp_k}_inhibition"].get("raw_value", 0.2)
+                    )
             if "plasma_protein_binding" in ind and unbound_fraction_fu is None:
                 ppbr_pct = float(ind["plasma_protein_binding"].get("raw_value", 90.0))
                 fu = max(0.01, (100.0 - ppbr_pct) / 100.0)

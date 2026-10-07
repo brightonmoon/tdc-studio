@@ -8,7 +8,9 @@ from mcp.server.mcpserver import MCPServer
 def register_prompts(server: MCPServer) -> None:
     """Register domain workflow prompts with the MCP server."""
 
-    @server.prompt("lead_optimization_workflow", description="Closed-loop Lead Optimization Protocol")
+    @server.prompt(
+        "lead_optimization_workflow", description="Closed-loop Lead Optimization Protocol"
+    )
     def lead_optimization_workflow(smiles: str, target_profile: str = "balanced") -> str:
         """Prompt instructing the agent to run closed-loop lead optimization."""
         return f"""You are acting as an expert Lead Optimization Medicinal Chemist.
@@ -24,8 +26,12 @@ Please execute the following 5-step closed-loop workflow:
 Synthesize your findings with clear medicinal chemistry rationales for why the recommended candidate is superior.
 """
 
-    @server.prompt("ind_safety_review", description="ICH CTD Module 2.4/2.6 Nonclinical Safety & PK Review")
-    def ind_safety_review(smiles: str, target_name: str = "Oncology Target", dose_mg: str = "100.0") -> str:
+    @server.prompt(
+        "ind_safety_review", description="ICH CTD Module 2.4/2.6 Nonclinical Safety & PK Review"
+    )
+    def ind_safety_review(
+        smiles: str, target_name: str = "Oncology Target", dose_mg: str = "100.0"
+    ) -> str:
         """Prompt instructing the agent to review candidate safety and draft CTD narrative."""
         return f"""You are acting as a Senior Regulatory Affairs and Nonclinical Safety Scientist.
 Candidate SMILES: {smiles}

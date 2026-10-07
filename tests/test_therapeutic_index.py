@@ -327,7 +327,6 @@ def test_dti_model_pipeline_full_integration():
 # ==============================================================================
 
 
-
 def test_herg_calibration():
     # p=0.5 corresponds to TDC benchmark threshold 10 uM (10,000 nM)
     ic50_mid = TherapeuticIndexEngine.calibrate_herg_ic50(0.50)

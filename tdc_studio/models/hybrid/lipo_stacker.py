@@ -66,7 +66,9 @@ def extract_chemberta_features_cached(
             for s_key in missing:
                 _LIPO_CHEMBERTA_CACHE[s_key] = rng.standard_normal(384, dtype=np.float32)
 
-    embeddings = [_LIPO_CHEMBERTA_CACHE.get(s, np.zeros(384, dtype=np.float32)) for s in smiles_list]
+    embeddings = [
+        _LIPO_CHEMBERTA_CACHE.get(s, np.zeros(384, dtype=np.float32)) for s in smiles_list
+    ]
     return np.vstack(embeddings).astype(np.float32)
 
 
@@ -103,7 +105,9 @@ class LipophilicityStacker:
                 "learning_rate": params.get("learning_rate", 0.03),
                 "max_leaf_nodes": params.get("max_leaf_nodes", 31),
                 "min_samples_leaf": params.get("min_samples_leaf", 15),
-                "l2_regularization": params.get("l2_regularization", params.get("l2_leaf_reg", 1.5)),
+                "l2_regularization": params.get(
+                    "l2_regularization", params.get("l2_leaf_reg", 1.5)
+                ),
                 "random_state": params.get("random_state", params.get("random_seed", 42)),
             }
             self.gbdt = HistGradientBoostingRegressor(**hist_params)

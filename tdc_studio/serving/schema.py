@@ -119,7 +119,6 @@ class UnifiedADMETProfile(BaseModel):
     )
 
 
-
 class UnifiedADMETRequest(BaseModel):
     """Request payload for the Unified 22 ADMET + PBPK endpoint."""
 
@@ -229,7 +228,6 @@ class OptimizeRequest(BaseModel):
         default=False,
         description="Whether to mandate multi-step Retro* search for all candidates.",
     )
-
 
 
 class LiabilityDiagnosticItem(BaseModel):

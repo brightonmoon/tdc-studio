@@ -180,7 +180,7 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
         p_gate = torch.sigmoid(gate_logits)
 
         pred_high = self.high_head(h)  # Shape: (B, 1)
-        pred_low = self.low_head(h)    # Shape: (B, 1)
+        pred_low = self.low_head(h)  # Shape: (B, 1)
 
         # Smooth mixture prediction
         pred_mixture = p_gate * pred_high + (1.0 - p_gate) * pred_low

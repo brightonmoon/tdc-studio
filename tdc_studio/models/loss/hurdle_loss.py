@@ -81,7 +81,8 @@ class HurdleMultiTaskLoss(nn.Module):
             pred_low = preds["pred_low"].squeeze(-1)
             pred_mixture = preds.get(
                 "pred_mixture",
-                torch.sigmoid(gate_logits) * pred_high + (1.0 - torch.sigmoid(gate_logits)) * pred_low,
+                torch.sigmoid(gate_logits) * pred_high
+                + (1.0 - torch.sigmoid(gate_logits)) * pred_low,
             ).squeeze(-1)
 
         y = targets.squeeze(-1).float()

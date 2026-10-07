@@ -1,6 +1,5 @@
 """Unit tests for NSGA-II ParetoRanker and DiversitySelector."""
 
-
 from tdc_studio.generative.pareto_ranker import (
     DiversitySelector,
     NonDominatedSorter,

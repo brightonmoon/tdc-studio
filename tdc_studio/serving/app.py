@@ -12,7 +12,6 @@ import pandas as pd
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
-
 from starlette.concurrency import run_in_threadpool
 
 from tdc_studio.evaluation.therapeutic_index import (
@@ -351,7 +350,6 @@ def index_dashboard():
     return DASHBOARD_HTML
 
 
-
 @app.get("/healthz", response_model=HealthResponse)
 def health_check():
     """Liveness / Readiness probe."""
@@ -632,8 +630,6 @@ async def predict_batch_preview(
 ):
     """Screen molecular file and return summary statistics with top preview rows (for UI)."""
     unified_pipe = get_unified_pipeline()
-
-
 
     if unified_pipe is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -920,7 +916,9 @@ async def predict_therapeutic_index(
         except ValueError as ve:
             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Therapeutic Index evaluation error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Therapeutic Index evaluation error: {str(e)}"
+            )
 
     engine = get_ti_engine()
     if engine.dti_pipeline is None:
@@ -1142,4 +1140,3 @@ async def retrosynthesis_plan_route(request: RetroPlanRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrosynthesis planning error: {str(e)}")
-

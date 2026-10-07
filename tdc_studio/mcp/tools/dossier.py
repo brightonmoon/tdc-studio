@@ -12,7 +12,10 @@ from rdkit import Chem
 def register_dossier_tools(server: MCPServer) -> None:
     """Register IND Dossier reporting tool."""
 
-    @server.tool(name="compile_candidate_dossier", description="Compile formal ICH CTD Module 2.4/2.6 IND Candidate Dossier into standalone HTML and JSON")
+    @server.tool(
+        name="compile_candidate_dossier",
+        description="Compile formal ICH CTD Module 2.4/2.6 IND Candidate Dossier into standalone HTML and JSON",
+    )
     def compile_candidate_dossier(
         smiles: str,
         target_name: str = "Oncology Target",
@@ -59,8 +62,12 @@ def register_dossier_tools(server: MCPServer) -> None:
             pbpk_sim = RepeatDoseSimulator()
             repeat_res = pbpk_sim.simulate(
                 smiles=smiles,
-                vdss_l_kg=payload.pbpk_simulation.get("vdss_l_kg", 1.2) if payload.pbpk_simulation else 1.2,
-                half_life_hr=payload.pbpk_simulation.get("half_life_hr", 8.0) if payload.pbpk_simulation else 8.0,
+                vdss_l_kg=payload.pbpk_simulation.get("vdss_l_kg", 1.2)
+                if payload.pbpk_simulation
+                else 1.2,
+                half_life_hr=payload.pbpk_simulation.get("half_life_hr", 8.0)
+                if payload.pbpk_simulation
+                else 8.0,
                 regimen=RepeatDoseParams(dose_mg=dose_mg, interval_hr=24.0, duration_days=7.0),
             )
 
@@ -68,7 +75,11 @@ def register_dossier_tools(server: MCPServer) -> None:
             ddi_res = ddi_sim.evaluate_ddi(
                 smiles=smiles,
                 cyp_inhibition_probs={
-                    "CYP3A4": 0.35, "CYP2C9": 0.20, "CYP2C19": 0.15, "CYP2D6": 0.25, "CYP1A2": 0.10
+                    "CYP3A4": 0.35,
+                    "CYP2C9": 0.20,
+                    "CYP2C19": 0.15,
+                    "CYP2D6": 0.25,
+                    "CYP1A2": 0.10,
                 },
                 c_max_mg_l=repeat_res.steady_state.c_ss_max_mg_l,
                 unbound_fraction_fu=0.10,
@@ -104,41 +115,55 @@ def register_dossier_tools(server: MCPServer) -> None:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(full_dict, f, indent=2)
 
-            cdi_score = payload.therapeutic_index.get("clinical_developability_index", 75.0) if payload.therapeutic_index else 75.0
+            cdi_score = (
+                payload.therapeutic_index.get("clinical_developability_index", 75.0)
+                if payload.therapeutic_index
+                else 75.0
+            )
             verdict = "GO (Developable)" if cdi_score >= 60.0 else "NO-GO (High Liability)"
 
-            return json.dumps({
-                "smiles": smiles,
-                "target_name": target_name,
-                "clinical_developability_index_cdi": cdi_score,
-                "regulatory_verdict": verdict,
-                "artifacts_generated": {
-                    "interactive_html_report": os.path.abspath(html_path),
-                    "machine_readable_json": os.path.abspath(json_path),
+            return json.dumps(
+                {
+                    "smiles": smiles,
+                    "target_name": target_name,
+                    "clinical_developability_index_cdi": cdi_score,
+                    "regulatory_verdict": verdict,
+                    "artifacts_generated": {
+                        "interactive_html_report": os.path.abspath(html_path),
+                        "machine_readable_json": os.path.abspath(json_path),
+                    },
+                    "summary": {
+                        "molecular_weight": payload.candidate.molecular_weight,
+                        "logp": payload.candidate.logp,
+                        "sa_score": payload.candidate.sa_score,
+                        "retrosynthesis_feasible": payload.retrosynthesis.get("route_solved", False)
+                        if payload.retrosynthesis
+                        else False,
+                        "steady_state_peak_mg_l": round(repeat_res.steady_state.c_ss_max_mg_l, 3),
+                        "cyp_severe_ddi_risk": ddi_res.has_severe_ddi_risk,
+                    },
                 },
-                "summary": {
-                    "molecular_weight": payload.candidate.molecular_weight,
-                    "logp": payload.candidate.logp,
-                    "sa_score": payload.candidate.sa_score,
-                    "retrosynthesis_feasible": payload.retrosynthesis.get("route_solved", False) if payload.retrosynthesis else False,
-                    "steady_state_peak_mg_l": round(repeat_res.steady_state.c_ss_max_mg_l, 3),
-                    "cyp_severe_ddi_risk": ddi_res.has_severe_ddi_risk,
-                },
-            }, indent=2)
+                indent=2,
+            )
 
         except Exception as e:
             # Fallback simple summary report generator
             dummy_html = os.path.join(output_dir, "candidate_dossier_summary.html")
             with open(dummy_html, "w", encoding="utf-8") as f:
-                f.write(f"<html><body><h1>Candidate Dossier for {smiles}</h1><p>Target: {target_name}</p><p>{clinical_rationale}</p></body></html>")
+                f.write(
+                    f"<html><body><h1>Candidate Dossier for {smiles}</h1><p>Target: {target_name}</p><p>{clinical_rationale}</p></body></html>"
+                )
 
-            return json.dumps({
-                "smiles": smiles,
-                "target_name": target_name,
-                "clinical_developability_index_cdi": 78.5,
-                "regulatory_verdict": "GO (Developable)",
-                "artifacts_generated": {
-                    "interactive_html_report": os.path.abspath(dummy_html),
+            return json.dumps(
+                {
+                    "smiles": smiles,
+                    "target_name": target_name,
+                    "clinical_developability_index_cdi": 78.5,
+                    "regulatory_verdict": "GO (Developable)",
+                    "artifacts_generated": {
+                        "interactive_html_report": os.path.abspath(dummy_html),
+                    },
+                    "note": f"Fallback report: {str(e)}",
                 },
-                "note": f"Fallback report: {str(e)}",
-            }, indent=2)
+                indent=2,
+            )

@@ -205,7 +205,9 @@ class CompoundFilter:
                 reasons.append(f"Rotatable bonds {rot_bonds} > 10")
             if tpsa > 140.0:
                 reasons.append(f"TPSA {tpsa:.1f} > 140")
-            rejection_reasons.append(f"Failed Veber oral bioavailability rule ({', '.join(reasons)})")
+            rejection_reasons.append(
+                f"Failed Veber oral bioavailability rule ({', '.join(reasons)})"
+            )
 
         passed_all = pains_passed and brenk_passed and ro5_passed and veber_passed
 
@@ -224,8 +226,6 @@ class CompoundFilter:
             rejection_reasons=rejection_reasons,
         )
 
-    def evaluate_batch(
-        self, items: List[Union[str, Chem.Mol]]
-    ) -> List[FilterResult]:
+    def evaluate_batch(self, items: List[Union[str, Chem.Mol]]) -> List[FilterResult]:
         """Evaluate a batch of molecules."""
         return [self.evaluate(item) for item in items]

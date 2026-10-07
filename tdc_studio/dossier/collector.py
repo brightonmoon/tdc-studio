@@ -134,18 +134,22 @@ class DossierCollector:
             synth_rep = self.synthesizability_gate.evaluate_candidate(canon_smi)
             retro_dict = {
                 "passed": synth_rep.passed,
-                "synthetic_tractability_score": round(synth_rep.synthetic_tractability_score or 0.0, 2),
+                "synthetic_tractability_score": round(
+                    synth_rep.synthetic_tractability_score or 0.0, 2
+                ),
                 "sa_score": round(synth_rep.sa_score, 2),
                 "tier2_1step_passed": synth_rep.tier2_1step_passed,
                 "route_solved": synth_rep.route is not None,
                 "rejection_reason": synth_rep.rejection_reason,
             }
             if synth_rep.route:
-                retro_dict.update({
-                    "total_depth": synth_rep.route.total_depth,
-                    "cumulative_yield": round(synth_rep.route.cumulative_yield, 1),
-                    "starting_materials": synth_rep.route.starting_materials,
-                })
+                retro_dict.update(
+                    {
+                        "total_depth": synth_rep.route.total_depth,
+                        "cumulative_yield": round(synth_rep.route.cumulative_yield, 1),
+                        "starting_materials": synth_rep.route.starting_materials,
+                    }
+                )
         except Exception as e:
             logger.warning("Synthesizability evaluation failed: %s", str(e))
 

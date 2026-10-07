@@ -126,7 +126,9 @@ class PCGrad(Optimizer):
             rng: Optional random generator for reproducible order shuffling.
         """
         # Filter valid scalar objectives that require grad
-        valid_objs = [obj for obj in objectives if obj is not None and getattr(obj, "requires_grad", False)]
+        valid_objs = [
+            obj for obj in objectives if obj is not None and getattr(obj, "requires_grad", False)
+        ]
         if not valid_objs:
             return
 
@@ -138,7 +140,7 @@ class PCGrad(Optimizer):
         task_grads: List[torch.Tensor] = []
         for idx, obj in enumerate(valid_objs):
             # Retain computation graph for all except possibly the last objective
-            retain = (idx < len(valid_objs) - 1)
+            retain = idx < len(valid_objs) - 1
             grads = torch.autograd.grad(
                 obj,
                 params,

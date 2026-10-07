@@ -207,7 +207,6 @@ def calculate_clinical_progression_score(
 # ==============================================================================
 
 
-
 @dataclass
 class ComponentScores:
     """Breakdown of the 4 clinical developability score pillars (0~25 pts each)."""

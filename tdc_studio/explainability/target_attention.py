@@ -273,15 +273,15 @@ class TargetAttentionExplainer:
             bars_svg.append(
                 f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_h:.1f}" '
                 f'rx="4" fill="{color}" opacity="0.9">'
-                f'<title>{label}: score {score_txt}, z-score {res.z_score:.2f}</title></rect>'
+                f"<title>{label}: score {score_txt}, z-score {res.z_score:.2f}</title></rect>"
             )
             bars_svg.append(
-                f'<text x="{x + bar_width/2:.1f}" y="{height - padding + 15}" '
+                f'<text x="{x + bar_width / 2:.1f}" y="{height - padding + 15}" '
                 f'font-family="system-ui, sans-serif" font-size="11" font-weight="600" '
                 f'text-anchor="middle" fill="#374151">{label}</text>'
             )
             bars_svg.append(
-                f'<text x="{x + bar_width/2:.1f}" y="{y - 6:.1f}" '
+                f'<text x="{x + bar_width / 2:.1f}" y="{y - 6:.1f}" '
                 f'font-family="system-ui, sans-serif" font-size="10" '
                 f'text-anchor="middle" fill="#6b7280">{score_txt}</text>'
             )
@@ -294,6 +294,6 @@ class TargetAttentionExplainer:
   <text x="{padding - 8}" y="{padding + 10}" font-family="system-ui, sans-serif" font-size="10" text-anchor="end" fill="#6b7280">1.0</text>
   <text x="{padding - 8}" y="{height - padding}" font-family="system-ui, sans-serif" font-size="10" text-anchor="end" fill="#6b7280">0.0</text>
   <!-- Bars -->
-  {''.join(bars_svg)}
+  {"".join(bars_svg)}
 </svg>"""
         return svg

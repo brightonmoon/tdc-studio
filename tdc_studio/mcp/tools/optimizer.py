@@ -12,7 +12,10 @@ from rdkit import Chem
 def register_optimizer_tools(server: MCPServer) -> None:
     """Register closed-loop lead optimization tools."""
 
-    @server.tool(name="optimize_lead_molecule", description="Generate bioisosterically-optimized analogues with repaired ADMET liabilities and verified retrosynthesis")
+    @server.tool(
+        name="optimize_lead_molecule",
+        description="Generate bioisosterically-optimized analogues with repaired ADMET liabilities and verified retrosynthesis",
+    )
     def optimize_lead_molecule(
         smiles: str,
         target_liability: Optional[str] = None,
@@ -44,48 +47,56 @@ def register_optimizer_tools(server: MCPServer) -> None:
 
             results = []
             for c in candidates:
-                results.append({
-                    "optimized_smiles": c.smiles,
-                    "transformation": c.transformation_name,
-                    "liability_repaired": c.liability_addressed,
-                    "rationale": c.rationale,
-                    "parent_value": round(c.parent_liability_value, 3),
-                    "optimized_value": round(c.candidate_liability_value, 3),
-                    "improvement_delta": round(c.liability_delta, 3),
-                    "sa_score": round(c.sa_score, 2),
-                    "scaffold_preserved": c.scaffold_preserved,
-                    "retrosynthesis_verified": c.retrosynthesis_solved,
-                    "synthesis_steps": c.retrosynthesis_steps,
-                    "starting_materials": c.starting_materials,
-                })
+                results.append(
+                    {
+                        "optimized_smiles": c.smiles,
+                        "transformation": c.transformation_name,
+                        "liability_repaired": c.liability_addressed,
+                        "rationale": c.rationale,
+                        "parent_value": round(c.parent_liability_value, 3),
+                        "optimized_value": round(c.candidate_liability_value, 3),
+                        "improvement_delta": round(c.liability_delta, 3),
+                        "sa_score": round(c.sa_score, 2),
+                        "scaffold_preserved": c.scaffold_preserved,
+                        "retrosynthesis_verified": c.retrosynthesis_solved,
+                        "synthesis_steps": c.retrosynthesis_steps,
+                        "starting_materials": c.starting_materials,
+                    }
+                )
 
-            return json.dumps({
-                "parent_smiles": smiles,
-                "target_liability_focused": target_liability or "All Detected",
-                "total_candidates_generated": len(results),
-                "top_candidates": results,
-            }, indent=2)
+            return json.dumps(
+                {
+                    "parent_smiles": smiles,
+                    "target_liability_focused": target_liability or "All Detected",
+                    "total_candidates_generated": len(results),
+                    "top_candidates": results,
+                },
+                indent=2,
+            )
 
         except Exception as e:
             # Fallback mock candidate generator for lightweight testing
-            return json.dumps({
-                "parent_smiles": smiles,
-                "target_liability_focused": target_liability or "herg",
-                "top_candidates": [
-                    {
-                        "optimized_smiles": smiles.replace("N", "N(C)"),
-                        "transformation": "Bioisosteric Amine Attenuation",
-                        "liability_repaired": "hERG Cardiotoxicity",
-                        "rationale": "Steric shielding of basic amine reduces hERG binding affinity",
-                        "parent_value": 0.82,
-                        "optimized_value": 0.24,
-                        "improvement_delta": -0.58,
-                        "sa_score": 2.85,
-                        "scaffold_preserved": True,
-                        "retrosynthesis_verified": True,
-                        "synthesis_steps": 2,
-                        "starting_materials": ["Enamine BB-102", "Sigma Aldrich SM-44"],
-                    }
-                ],
-                "note": f"Fallback rule optimizer: {str(e)}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "parent_smiles": smiles,
+                    "target_liability_focused": target_liability or "herg",
+                    "top_candidates": [
+                        {
+                            "optimized_smiles": smiles.replace("N", "N(C)"),
+                            "transformation": "Bioisosteric Amine Attenuation",
+                            "liability_repaired": "hERG Cardiotoxicity",
+                            "rationale": "Steric shielding of basic amine reduces hERG binding affinity",
+                            "parent_value": 0.82,
+                            "optimized_value": 0.24,
+                            "improvement_delta": -0.58,
+                            "sa_score": 2.85,
+                            "scaffold_preserved": True,
+                            "retrosynthesis_verified": True,
+                            "synthesis_steps": 2,
+                            "starting_materials": ["Enamine BB-102", "Sigma Aldrich SM-44"],
+                        }
+                    ],
+                    "note": f"Fallback rule optimizer: {str(e)}",
+                },
+                indent=2,
+            )

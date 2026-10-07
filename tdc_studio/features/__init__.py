@@ -1,5 +1,7 @@
 from tdc_studio.features.boltzmann_conformers import (
     FEATURE_NAMES as BOLTZMANN_FEATURE_NAMES,
+)
+from tdc_studio.features.boltzmann_conformers import (
     batch_extract_boltzmann_features,
     compute_boltzmann_conformer_features,
     extract_boltzmann_conformer_vector,
@@ -43,4 +45,3 @@ __all__ = [
     "ResidueContribution",
     "analyze_target_attention",
 ]
-

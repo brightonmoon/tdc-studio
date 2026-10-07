@@ -35,7 +35,11 @@ class DossierRenderer:
         # CDI Scorecard
         cdi_score = ti.get("clinical_developability_score", 0.0)
         cdi_tier = ti.get("developability_tier", "Unassessed")
-        tier_color = "#10b981" if "Tier 1" in cdi_tier else ("#f59e0b" if "Tier 2" in cdi_tier else "#ef4444")
+        tier_color = (
+            "#10b981"
+            if "Tier 1" in cdi_tier
+            else ("#f59e0b" if "Tier 2" in cdi_tier else "#ef4444")
+        )
 
         # Pillar scores
         pillars = ti.get("component_scores", {})
@@ -53,20 +57,27 @@ class DossierRenderer:
         # Retrosynthesis summary
         retro_passed = retro.get("passed", False)
         retro_steps = retro.get("total_depth", 1 if retro.get("tier2_1step_passed") else "-")
-        retro_yield = retro.get("cumulative_yield", "85.0" if retro.get("tier2_1step_passed") else "-")
-        starting_mats = retro.get("starting_materials", ["Catalog Stock Precursor(s)"] if retro.get("tier2_1step_passed") else [])
+        retro_yield = retro.get(
+            "cumulative_yield", "85.0" if retro.get("tier2_1step_passed") else "-"
+        )
+        starting_mats = retro.get(
+            "starting_materials",
+            ["Catalog Stock Precursor(s)"] if retro.get("tier2_1step_passed") else [],
+        )
 
         # Target attention SVG
         attn_svg = ""
         if attn and "top_hotspot_residues" in attn:
             hotspots_list = attn["top_hotspot_residues"]
-            hotspots_txt = ", ".join([f"{h['label']} (score {h['score']})" for h in hotspots_list[:6]])
+            hotspots_txt = ", ".join(
+                [f"{h['label']} (score {h['score']})" for h in hotspots_list[:6]]
+            )
             attn_svg = f"""
             <div class="card">
                 <h3>🎯 Target Protein Binding Hotspots (Cross-Attention XAI)</h3>
                 <p class="subtext">Identified key amino acid residues dominating non-covalent ligand interaction:</p>
                 <div class="badges-row">
-                    {''.join([f'<span class="badge badge-indigo">{h["label"]}</span>' for h in hotspots_list[:8]])}
+                    {"".join([f'<span class="badge badge-indigo">{h["label"]}</span>' for h in hotspots_list[:8]])}
                 </div>
                 <p style="font-size:0.85rem; color:#4b5563; margin-top:8px;">{html.escape(hotspots_txt)}</p>
             </div>
@@ -271,10 +282,10 @@ class DossierRenderer:
                     <tr><th>SAScore (Synthesizability)</th><td><strong>{cand.sa_score:.2f}</strong> (1=easy, 10=hard)</td></tr>
                 </table>
                 <div class="badges-row">
-                    <span class="badge {'badge-green' if ro5_ok else 'badge-red'}">Ro5: {'PASS' if ro5_ok else 'FAIL'}</span>
-                    <span class="badge {'badge-green' if veber_ok else 'badge-red'}">Veber: {'PASS' if veber_ok else 'FAIL'}</span>
-                    <span class="badge {'badge-green' if pains_ok else 'badge-red'}">PAINS: {'CLEAN' if pains_ok else 'ALERT'}</span>
-                    <span class="badge {'badge-green' if brenk_ok else 'badge-red'}">Brenk: {'CLEAN' if brenk_ok else 'ALERT'}</span>
+                    <span class="badge {"badge-green" if ro5_ok else "badge-red"}">Ro5: {"PASS" if ro5_ok else "FAIL"}</span>
+                    <span class="badge {"badge-green" if veber_ok else "badge-red"}">Veber: {"PASS" if veber_ok else "FAIL"}</span>
+                    <span class="badge {"badge-green" if pains_ok else "badge-red"}">PAINS: {"CLEAN" if pains_ok else "ALERT"}</span>
+                    <span class="badge {"badge-green" if brenk_ok else "badge-red"}">Brenk: {"CLEAN" if brenk_ok else "ALERT"}</span>
                 </div>
             </div>
         </div>
@@ -327,13 +338,13 @@ class DossierRenderer:
             <div class="card">
                 <h3>🌳 Retro* Synthesizability & Route</h3>
                 <table class="table-data">
-                    <tr><th>Synthetic Status</th><td><span class="badge {'badge-green' if retro_passed else 'badge-red'}">{'TRACTABLE' if retro_passed else 'RESTRICTED'}</span></td></tr>
+                    <tr><th>Synthetic Status</th><td><span class="badge {"badge-green" if retro_passed else "badge-red"}">{"TRACTABLE" if retro_passed else "RESTRICTED"}</span></td></tr>
                     <tr><th>Route Depth</th><td><strong>{retro_steps}</strong> step(s)</td></tr>
                     <tr><th>Estimated Yield</th><td><strong>{retro_yield}%</strong></td></tr>
                     <tr><th>Starting Materials</th><td>{len(starting_mats)} stock compound(s)</td></tr>
                 </table>
                 <div class="badges-row">
-                    {''.join([f'<span class="badge badge-indigo">{html.escape(s[:30])}</span>' for s in starting_mats[:3]])}
+                    {"".join([f'<span class="badge badge-indigo">{html.escape(s[:30])}</span>' for s in starting_mats[:3]])}
                 </div>
             </div>
         </div>

@@ -30,4 +30,3 @@ def test_dashboard_named_endpoint():
     assert "Retrosynthesis Search Config" in html
     assert "Physiologically Based Pharmacokinetics" in html
     assert "Aspirin" in html
-

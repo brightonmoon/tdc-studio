@@ -311,7 +311,9 @@ def train(
                 mask = dev_batch.get("mask")
 
                 if use_pcgrad and hasattr(model, "loss_fn") and model.loss_fn is not None:
-                    loss_res = model.compute_loss(preds, dev_batch["labels"], mask=mask, return_per_task=True)
+                    loss_res = model.compute_loss(
+                        preds, dev_batch["labels"], mask=mask, return_per_task=True
+                    )
                     if isinstance(loss_res, tuple) and len(loss_res) == 3:
                         loss, _, task_loss_list = loss_res
                     else:
@@ -2322,7 +2324,9 @@ def retro_plan_cli(
 
 @app.command()
 def mcp(
-    transport: str = typer.Option("stdio", "--transport", "-t", help="Transport protocol: 'stdio' or 'sse'"),
+    transport: str = typer.Option(
+        "stdio", "--transport", "-t", help="Transport protocol: 'stdio' or 'sse'"
+    ),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host IP for SSE transport"),
     port: int = typer.Option(8000, "--port", "-p", help="Port number for SSE transport"),
 ):
@@ -2336,13 +2340,23 @@ def mcp(
 @app.command("dossier")
 def dossier_cli(
     smiles: str = typer.Argument(..., help="Candidate molecule SMILES"),
-    target_name: Optional[str] = typer.Option("Target", "--target", "-t", help="Target gene symbol or name"),
-    target_seq: Optional[str] = typer.Option(None, "--sequence", "-s", help="Target protein amino acid sequence"),
+    target_name: Optional[str] = typer.Option(
+        "Target", "--target", "-t", help="Target gene symbol or name"
+    ),
+    target_seq: Optional[str] = typer.Option(
+        None, "--sequence", "-s", help="Target protein amino acid sequence"
+    ),
     kd: Optional[float] = typer.Option(None, "--kd", help="Target binding affinity Kd in nM"),
     dose_mg: float = typer.Option(100.0, "--dose", "-d", help="Clinical oral dose in mg"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path (.html or .json)"),
-    output_dir: str = typer.Option("reports", "--output-dir", help="Output directory for reports if --output not specified"),
-    output_format: str = typer.Option("html", "--format", "-f", help="Output format: 'html' or 'json'"),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Output file path (.html or .json)"
+    ),
+    output_dir: str = typer.Option(
+        "reports", "--output-dir", help="Output directory for reports if --output not specified"
+    ),
+    output_format: str = typer.Option(
+        "html", "--format", "-f", help="Output format: 'html' or 'json'"
+    ),
 ):
     """Generate an ICH CTD Nonclinical Candidate Dossier (interactive HTML and JSON)."""
     import json
@@ -2363,8 +2377,12 @@ def dossier_cli(
     )
 
     if output is not None:
-        out_path = DossierRenderer.export_file(payload, output_path=output, output_format=output_format)
-        console.print(f"[bold green]✓ Dossier successfully generated:[/bold green] [bold]{out_path}[/bold]\n")
+        out_path = DossierRenderer.export_file(
+            payload, output_path=output, output_format=output_format
+        )
+        console.print(
+            f"[bold green]✓ Dossier successfully generated:[/bold green] [bold]{out_path}[/bold]\n"
+        )
     else:
         os.makedirs(output_dir, exist_ok=True)
         safe_name = "".join(c if c.isalnum() else "_" for c in (target_name or "Target"))[:20]
@@ -2381,7 +2399,5 @@ def dossier_cli(
         console.print(f"[bold green]✅ Machine-readable JSON:[/bold green] {json_path}")
 
 
-
 if __name__ == "__main__":
     app()
-

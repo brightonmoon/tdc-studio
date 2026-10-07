@@ -12,7 +12,10 @@ from rdkit import Chem
 def register_admet_tools(server: MCPServer) -> None:
     """Register ADMET prediction and interpretability tools."""
 
-    @server.tool(name="predict_admet_profile", description="Predict 22-Task ADMET endpoints, liabilities, and safety radar score")
+    @server.tool(
+        name="predict_admet_profile",
+        description="Predict 22-Task ADMET endpoints, liabilities, and safety radar score",
+    )
     def predict_admet_profile(smiles: str) -> str:
         """Execute the comprehensive 22-Task ADMET prediction pipeline on a molecule.
 
@@ -42,7 +45,10 @@ def register_admet_tools(server: MCPServer) -> None:
                 liabilities.append("hERG Cardiotoxicity High Risk (>0.70)")
             if indicators.get("ames_mutagenicity", {}).get("risk_tier") == "Mutagenic (AMES+)":
                 liabilities.append("AMES Mutagenicity Positive")
-            if indicators.get("drug_induced_liver_injury", {}).get("risk_tier") == "Hepatotoxicity Risk":
+            if (
+                indicators.get("drug_induced_liver_injury", {}).get("risk_tier")
+                == "Hepatotoxicity Risk"
+            ):
                 liabilities.append("Drug-Induced Liver Injury (DILI) Risk")
             if indicators.get("microsomal_clearance", {}).get("risk_tier") == "High Turnover":
                 liabilities.append("High Microsomal Clearance (>50 uL/min/mg)")
@@ -62,6 +68,7 @@ def register_admet_tools(server: MCPServer) -> None:
         except Exception as e:
             # Fallback heuristic calculation if model weights not fully exported
             from rdkit.Chem import Descriptors
+
             logp = float(Descriptors.MolLogP(mol))
             mw = float(Descriptors.MolWt(mol))
             tpsa = float(Descriptors.TPSA(mol))
@@ -71,12 +78,19 @@ def register_admet_tools(server: MCPServer) -> None:
                 "drug_likeness_radar_score": 72.0,
                 "liabilities_detected": ["Calculated via physicochemical fallback"],
                 "has_safety_red_flag": logp > 4.5,
-                "physicochemicals": {"mw": round(mw, 2), "logp": round(logp, 2), "tpsa": round(tpsa, 2)},
+                "physicochemicals": {
+                    "mw": round(mw, 2),
+                    "logp": round(logp, 2),
+                    "tpsa": round(tpsa, 2),
+                },
                 "note": f"Pipeline fallback triggered: {str(e)}",
             }
             return json.dumps(fallback, indent=2)
 
-    @server.tool(name="explain_toxicity_hotspots", description="Identify atom-level toxicophore hotspots and suggest bioisosteres")
+    @server.tool(
+        name="explain_toxicity_hotspots",
+        description="Identify atom-level toxicophore hotspots and suggest bioisosteres",
+    )
     def explain_toxicity_hotspots(smiles: str, liability_task: str = "herg") -> str:
         """Pinpoint specific atom/functional group toxicophores and suggest bioisosteres.
 
@@ -100,35 +114,46 @@ def register_admet_tools(server: MCPServer) -> None:
             # Format suggestions
             rec_list = []
             for s in suggestions[:5]:
-                rec_list.append({
-                    "original_fragment": s.get("original_substructure", ""),
-                    "replacement_fragment": s.get("suggested_replacement", ""),
-                    "rationale": s.get("rationale", "Reduces lipophilic/basic liability while preserving binding geometry"),
-                    "mutated_smiles": s.get("mutated_smiles", ""),
-                })
+                rec_list.append(
+                    {
+                        "original_fragment": s.get("original_substructure", ""),
+                        "replacement_fragment": s.get("suggested_replacement", ""),
+                        "rationale": s.get(
+                            "rationale",
+                            "Reduces lipophilic/basic liability while preserving binding geometry",
+                        ),
+                        "mutated_smiles": s.get("mutated_smiles", ""),
+                    }
+                )
 
-            return json.dumps({
-                "smiles": smiles,
-                "liability_investigated": liability_task,
-                "total_recommendations": len(rec_list),
-                "recommended_bioisosteres": rec_list,
-            }, indent=2)
+            return json.dumps(
+                {
+                    "smiles": smiles,
+                    "liability_investigated": liability_task,
+                    "total_recommendations": len(rec_list),
+                    "recommended_bioisosteres": rec_list,
+                },
+                indent=2,
+            )
 
         except Exception as e:
-            return json.dumps({
-                "smiles": smiles,
-                "liability_investigated": liability_task,
-                "recommended_bioisosteres": [
-                    {
-                        "original_fragment": "Basic Aliphatic Amine",
-                        "replacement_fragment": "Morpholine / Fluoroethylamine",
-                        "rationale": "Reduces pKa and hERG potassium channel binding",
-                    },
-                    {
-                        "original_fragment": "Carboxylic Acid",
-                        "replacement_fragment": "Tetrazole / Sulfonamide",
-                        "rationale": "Improves cellular permeability and eliminates acyl glucuronide DILI risk",
-                    }
-                ],
-                "note": f"Rule-based fallback: {str(e)}",
-            }, indent=2)
+            return json.dumps(
+                {
+                    "smiles": smiles,
+                    "liability_investigated": liability_task,
+                    "recommended_bioisosteres": [
+                        {
+                            "original_fragment": "Basic Aliphatic Amine",
+                            "replacement_fragment": "Morpholine / Fluoroethylamine",
+                            "rationale": "Reduces pKa and hERG potassium channel binding",
+                        },
+                        {
+                            "original_fragment": "Carboxylic Acid",
+                            "replacement_fragment": "Tetrazole / Sulfonamide",
+                            "rationale": "Improves cellular permeability and eliminates acyl glucuronide DILI risk",
+                        },
+                    ],
+                    "note": f"Rule-based fallback: {str(e)}",
+                },
+                indent=2,
+            )

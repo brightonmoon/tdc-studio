@@ -12,6 +12,7 @@ import pandas as pd
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
+
 from starlette.concurrency import run_in_threadpool
 
 from tdc_studio.evaluation.therapeutic_index import (
@@ -340,11 +341,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
 def index_dashboard():
-    """Interactive Biomedical Web Dashboard for ADMET & DTI prediction."""
+    """Interactive Biomedical Web Dashboard for ADMET, DTI & Retrosynthesis platform."""
     return DASHBOARD_HTML
+
 
 
 @app.get("/healthz", response_model=HealthResponse)
@@ -1076,8 +1081,8 @@ async def predict_dti_multi_affinity(request: DTIMultiAffinityInferenceRequest):
         raise HTTPException(status_code=500, detail=f"DTI multi-affinity inference error: {str(e)}")
 
 
-
 # ------------------------------------------------------------------------------
+
 # Retrosynthesis Endpoints
 # ------------------------------------------------------------------------------
 _retro_pipeline: Optional[Any] = None
@@ -1137,3 +1142,4 @@ async def retrosynthesis_plan_route(request: RetroPlanRequest):
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retrosynthesis planning error: {str(e)}")
+

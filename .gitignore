@@ -38,7 +38,8 @@ thumbs.db
 data/cache/
 catboost_info/
 # Worktrees
-/ADMET/
-/greenling/
-/retrosynthesis/
+ADMET/
+greenling/
+retrosynthesis/
+VS/
 

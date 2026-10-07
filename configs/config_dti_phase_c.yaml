@@ -14,7 +14,16 @@
 
 task: dti
 
-# ── Dataset ──────────────────────────────────────────────
+# ── Data & Dataset ────────────────────────────────────────
+data:
+  type: dta_loader
+  dataset_name: BindingDB_Kd
+  split_type: cold_drug
+  seed: 42
+  frac: [0.7, 0.1, 0.2]
+  log_transform: true
+  aa_max_length: 1024
+
 dataset:
   name: BindingDB_Kd        # 52K pairs, 10K+ unique drugs
   split: cold_drug          # Evaluate on unseen drugs

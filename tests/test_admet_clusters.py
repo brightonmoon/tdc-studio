@@ -182,7 +182,11 @@ def test_admet_cluster_herg_central_synthetic(mock_herg_central_df):
     ]
     # Synthetic df already has the columns mapped
     mock_renamed = mock_herg_central_df.rename(
-        columns={"hERG_at_1uM": "herg_central_at_1um", "hERG_at_10uM": "herg_central_at_10um", "hERG_inhib": "herg_central_inhib"}
+        columns={
+            "hERG_at_1uM": "herg_central_at_1um",
+            "hERG_at_10uM": "herg_central_at_10um",
+            "hERG_inhib": "herg_central_inhib",
+        }
     )
     dm = ADMETClusterDataModule(
         tasks=tasks,
@@ -217,10 +221,15 @@ def test_admet_cluster_herg_central_synthetic(mock_herg_central_df):
 
 def test_cli_train_staged_herg_standalone_dry_run(tmp_path, mock_herg_central_df):
     """Verify CLI handles staged hierarchical configs (phase1_pretraining)."""
+
     class MockHergCentralDataModule(ADMETClusterDataModule):
         def __init__(self, **kwargs):
             mock_renamed = mock_herg_central_df.rename(
-                columns={"hERG_at_1uM": "herg_central_at_1um", "hERG_at_10uM": "herg_central_at_10um", "hERG_inhib": "herg_central_inhib"}
+                columns={
+                    "hERG_at_1uM": "herg_central_at_1um",
+                    "hERG_at_10uM": "herg_central_at_10um",
+                    "hERG_inhib": "herg_central_inhib",
+                }
             )
             kwargs["synthetic_df"] = mock_renamed
             super().__init__(**kwargs)
@@ -282,7 +291,12 @@ def test_admet_cluster_log10_transform(mock_distribution_df):
     """Verify log10 target transformation for heavy-tailed endpoints like VDss."""
     tasks = [
         {"name": "ppbr_az", "category": "distribution", "type": "regression", "transform": "logit"},
-        {"name": "vdss_lombardo", "category": "distribution", "type": "regression", "transform": "log10"},
+        {
+            "name": "vdss_lombardo",
+            "category": "distribution",
+            "type": "regression",
+            "transform": "log10",
+        },
     ]
     dm = ADMETClusterDataModule(
         tasks=tasks,
@@ -327,9 +341,24 @@ def test_admet_cluster_clearance_synthetic():
         }
     )
     tasks = [
-        {"name": "half_life_obach", "category": "excretion", "type": "regression", "transform": "log10"},
-        {"name": "clearance_hepatocyte_az", "category": "excretion", "type": "regression", "transform": "log10"},
-        {"name": "clearance_microsome_az", "category": "excretion", "type": "regression", "transform": "log10"},
+        {
+            "name": "half_life_obach",
+            "category": "excretion",
+            "type": "regression",
+            "transform": "log10",
+        },
+        {
+            "name": "clearance_hepatocyte_az",
+            "category": "excretion",
+            "type": "regression",
+            "transform": "log10",
+        },
+        {
+            "name": "clearance_microsome_az",
+            "category": "excretion",
+            "type": "regression",
+            "transform": "log10",
+        },
         {"name": "cyp3a4_veith", "category": "metabolism", "type": "binary_classification"},
         {"name": "ppbr_az", "category": "distribution", "type": "regression", "transform": "logit"},
     ]
@@ -370,6 +399,7 @@ def test_admet_cluster_clearance_synthetic():
 
 def test_cli_train_cyp450_stage2_pretrained_dry_run(tmp_path, mock_cyp450_df):
     """Verify CLI train supports pretrained_checkpoint loading and backbone freezing."""
+
     class MockCypSubstrateDataModule(ADMETClusterDataModule):
         def __init__(self, **kwargs):
             kwargs["synthetic_df"] = mock_cyp450_df
@@ -427,4 +457,3 @@ def test_cli_train_cyp450_stage2_pretrained_dry_run(tmp_path, mock_cyp450_df):
     assert "Successfully transferred" in result.output
     assert "Backbone weights frozen" in result.output
     assert "Training Pipeline Finished" in result.output
-

@@ -228,5 +228,3 @@ def test_export_and_load_vdss_tri_hybrid(tmp_path, mock_tri_hybrid_components):
     preds = loaded_pipe.predict(["CCO"])
     assert len(preds) == 1
     assert isinstance(preds[0], float)
-
-

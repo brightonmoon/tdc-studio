@@ -1,7 +1,6 @@
-"""Base model architecture with dynamic loss calculation."""
-
+import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -40,10 +39,32 @@ class BaseTherapeuticsModel(nn.Module, ABC):
         """Forward pass taking a collated batch dictionary."""
         pass
 
-    def compute_loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """Compute task-appropriate loss between predictions and targets."""
+    def compute_loss(
+        self,
+        preds: torch.Tensor,
+        targets: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute task-appropriate loss between predictions and targets with optional masking."""
         preds_flat = preds.squeeze(-1) if preds.ndim > 1 else preds
         targets_flat = targets.squeeze(-1) if targets.ndim > 1 else targets
+
+        if mask is not None:
+            mask_flat = mask.squeeze(-1) if mask.ndim > 1 else mask
+            valid = mask_flat.bool() & ~torch.isnan(targets_flat)
+            if not valid.any():
+                return torch.tensor(0.0, device=preds.device, requires_grad=True)
+            preds_flat = preds_flat[valid]
+            targets_flat = targets_flat[valid]
+        else:
+            valid = ~torch.isnan(targets_flat)
+            if not valid.all():
+                preds_flat = preds_flat[valid]
+                targets_flat = targets_flat[valid]
+
+        if preds_flat.numel() == 0:
+            return torch.tensor(0.0, device=preds.device, requires_grad=True)
+
         base_loss = self.criterion(preds_flat, targets_flat)
 
         if self.task_type == "regression" and preds_flat.numel() >= 8 and self.pearson_weight > 0:
@@ -61,3 +82,18 @@ class BaseTherapeuticsModel(nn.Module, ABC):
                     base_loss = base_loss + self.pearson_weight * p_loss
 
         return base_loss
+
+    def save(self, path: str) -> None:
+        """Save model state dict ensuring parent directory exists."""
+        parent_dir = os.path.dirname(os.path.abspath(path))
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        torch.save(self.state_dict(), path)
+
+    def load(self, path: str, map_location: str = "cpu") -> None:
+        """Load model state dict with safe weights_only=True."""
+        try:
+            state_dict = torch.load(path, map_location=map_location, weights_only=True)
+        except TypeError:
+            state_dict = torch.load(path, map_location=map_location)
+        self.load_state_dict(state_dict)

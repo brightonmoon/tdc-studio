@@ -48,4 +48,3 @@ class MLPBaselineModel(BaseTherapeuticsModel):
     def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
         h = self.extract_features(batch)
         return self.head(h)
-

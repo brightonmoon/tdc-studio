@@ -12,7 +12,9 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
     mean_squared_error,
+    precision_score,
     r2_score,
+    recall_score,
     roc_auc_score,
 )
 
@@ -28,6 +30,11 @@ HIGHER_IS_BETTER_METRICS = {
     "average_precision",
     "accuracy",
     "acc",
+    "precision",
+    "prec",
+    "recall",
+    "sens",
+    "sensitivity",
     "f1",
     "f1_score",
     "f1_macro",
@@ -46,14 +53,83 @@ HIGHER_IS_BETTER_METRICS = {
 }
 
 
+def _fast_fenwick_concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Compute exact Concordance Index in O(N log N) using a Binary Indexed Tree.
+
+    Handles ties in y_true (pairs with y_true[i] == y_true[j] are excluded)
+    and ties in y_pred (given weight 0.5 per standard Harrell's C-index).
+    """
+    n = len(y_true)
+    if n < 2:
+        return 0.5
+
+    # Unique sorted values of y_pred to build 1-based ranks
+    unique_preds, pred_ranks = np.unique(y_pred, return_inverse=True)
+    m = len(unique_preds)
+
+    # Sort indices by y_true ascending
+    sort_idx = np.argsort(y_true)
+    y_true_sorted = y_true[sort_idx]
+    ranks_sorted = pred_ranks[sort_idx] + 1  # 1-indexed for BIT
+
+    # Binary Indexed Tree (Fenwick tree)
+    tree = np.zeros(m + 1, dtype=np.int64)
+
+    def _update(idx: int, val: int = 1) -> None:
+        while idx <= m:
+            tree[idx] += val
+            idx += idx & (-idx)
+
+    def _query(idx: int) -> int:
+        s = 0
+        while idx > 0:
+            s += int(tree[idx])
+            idx -= idx & (-idx)
+        return s
+
+    concordant = 0.0
+    discordant = 0.0
+    tied_pred = 0.0
+
+    # Process samples in groups of identical y_true to exclude ties in ground-truth
+    i = 0
+    total_processed = 0
+    while i < n:
+        j = i
+        while j < n and y_true_sorted[j] == y_true_sorted[i]:
+            j += 1
+
+        # Query BIT for each element in the group against all strictly smaller y_true
+        for k in range(i, j):
+            r = int(ranks_sorted[k])
+            strictly_smaller = _query(r - 1)
+            up_to_r = _query(r)
+            equal_r = up_to_r - strictly_smaller
+            strictly_greater = total_processed - up_to_r
+
+            concordant += strictly_smaller
+            discordant += strictly_greater
+            tied_pred += equal_r
+
+        # Insert all elements of this group into BIT
+        for k in range(i, j):
+            _update(int(ranks_sorted[k]), 1)
+        total_processed += j - i
+        i = j
+
+    valid_pairs = concordant + discordant + tied_pred
+    if valid_pairs == 0:
+        return 0.5
+    return float((concordant + 0.5 * tied_pred) / valid_pairs)
+
 
 def _concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Compute Concordance Index (CI) for Drug-Target Affinity prediction.
+    """Compute Concordance Index (CI) for Drug-Target Affinity prediction in O(N log N).
 
-    CI measures the probability that two randomly chosen drug-target pairs
-    are ranked correctly relative to each other by the model.
-
-    Formula: CI = #{(i,j): y_true[i] > y_true[j] and y_pred[i] > y_pred[j]} / #{(i,j): y_true[i] != y_true[j]}
+    Priority:
+    1. lifelines.utils.concordance_index (if installed)
+    2. tdc.Evaluator('c-index') (if installed)
+    3. _fast_fenwick_concordance_index (native high-speed NumPy implementation)
 
     Args:
         y_true: Ground-truth affinity values (e.g. pKd, Kd).
@@ -62,39 +138,25 @@ def _concordance_index(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Returns:
         CI score in [0, 1]. 0.5 = random baseline, 1.0 = perfect ranking.
     """
-    n = len(y_true)
-    concordant = 0
-    discordant = 0
-    tied = 0
+    try:
+        from lifelines.utils import concordance_index
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            if y_true[i] == y_true[j]:
-                tied += 1
-                continue
-            if y_true[i] > y_true[j]:
-                if y_pred[i] > y_pred[j]:
-                    concordant += 1
-                elif y_pred[i] < y_pred[j]:
-                    discordant += 1
-                else:
-                    tied += 1
-            else:
-                if y_pred[i] < y_pred[j]:
-                    concordant += 1
-                elif y_pred[i] > y_pred[j]:
-                    discordant += 1
-                else:
-                    tied += 1
+        return float(concordance_index(y_true, y_pred))
+    except (ImportError, Exception):
+        pass
 
-    total_pairs = concordant + discordant + tied
-    if total_pairs == 0:
-        return 0.5
-    return float(concordant / (concordant + discordant)) if (concordant + discordant) > 0 else 0.5
+    try:
+        from tdc import Evaluator
+
+        eval_fn = Evaluator(name="c-index")
+        return float(eval_fn(y_true.tolist(), y_pred.tolist()))
+    except (ImportError, Exception):
+        pass
+
+    return _fast_fenwick_concordance_index(y_true, y_pred)
 
 
 def _to_numpy(data: Union[torch.Tensor, np.ndarray, Sequence[float]]) -> np.ndarray:
-
     """Convert input to a 1D float numpy array."""
     if isinstance(data, torch.Tensor):
         arr = data.detach().cpu().numpy()
@@ -170,13 +232,7 @@ class TherapeuticsEvaluator:
             return float(r2_score(y_true, y_pred))
 
         if metric in ("ci", "concordance_index", "c_index"):
-            # For large datasets, subsample to keep O(n^2) tractable (max 2000 pairs).
-            if len(y_true) > 2000:
-                rng = np.random.default_rng(seed=0)
-                idx = rng.choice(len(y_true), size=2000, replace=False)
-                return _concordance_index(y_true[idx], y_pred[idx])
             return _concordance_index(y_true, y_pred)
-
 
         if metric in ("composite", "composite_score", "balanced", "balanced_regression"):
             mae_val = float(mean_absolute_error(y_true, y_pred))
@@ -238,6 +294,22 @@ class TherapeuticsEvaluator:
             )
             return float(balanced_accuracy_score(y_true.astype(int), binary_preds))
 
+        if metric in ("precision", "prec"):
+            binary_preds = (
+                (y_pred >= 0.5).astype(int)
+                if np.all((y_pred >= 0.0) & (y_pred <= 1.0))
+                else (y_pred >= 0.0).astype(int)
+            )
+            return float(precision_score(y_true.astype(int), binary_preds, zero_division=0))
+
+        if metric in ("recall", "sens", "sensitivity"):
+            binary_preds = (
+                (y_pred >= 0.5).astype(int)
+                if np.all((y_pred >= 0.0) & (y_pred <= 1.0))
+                else (y_pred >= 0.0).astype(int)
+            )
+            return float(recall_score(y_true.astype(int), binary_preds, zero_division=0))
+
         if metric in ("f1", "f1_score"):
             binary_preds = (
                 (y_pred >= 0.5).astype(int)
@@ -268,9 +340,9 @@ class TherapeuticsEvaluator:
             metrics["composite"] = self.compute(preds, targets, "composite")
         elif task in ("dta", "drug_target_affinity"):
             # Primary metrics for Drug Cold Split evaluation
-            metrics["ci"] = self.compute(preds, targets, "ci")         # 1순위: Cold Drug CI
-            metrics["mse"] = self.compute(preds, targets, "mse")       # 1순위: Cold Drug MSE
-            metrics["rmse"] = self.compute(preds, targets, "rmse")     # 보조
+            metrics["ci"] = self.compute(preds, targets, "ci")  # 1순위: Cold Drug CI
+            metrics["mse"] = self.compute(preds, targets, "mse")  # 1순위: Cold Drug MSE
+            metrics["rmse"] = self.compute(preds, targets, "rmse")  # 보조
             metrics["pearson"] = self.compute(preds, targets, "pearson")
         elif task in ("binary_classification", "classification"):
             metrics["roc_auc"] = self.compute(preds, targets, "roc_auc")
@@ -281,7 +353,6 @@ class TherapeuticsEvaluator:
             metrics["accuracy"] = self.compute(preds, targets, "accuracy")
 
         return metrics
-
 
 
 def evaluate_predictions(

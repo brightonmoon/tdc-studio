@@ -73,12 +73,12 @@ class TaskType(str, Enum):
     (e.g. config["task"] == TaskType.DTI evaluates correctly with string "dti").
     """
 
-    ADMET = "admet"               # Single-pred: ADME + Toxicity (Cluster 1~5)
-    DTI = "dti"                   # Multi-pred: Drug-Target Interaction / Affinity
-    DTA = "dta"                   # Alias for DTI regression (affinity prediction)
-    RETROSYN = "retrosyn"         # Generation: Retrosynthesis
-    HTS = "hts"                   # Single-pred: High-Throughput Screening (future)
-    QM = "qm"                     # Single-pred: Quantum Mechanics (future)
+    ADMET = "admet"  # Single-pred: ADME + Toxicity (Cluster 1~5)
+    DTI = "dti"  # Multi-pred: Drug-Target Interaction / Affinity
+    DTA = "dta"  # Alias for DTI regression (affinity prediction)
+    RETROSYN = "retrosyn"  # Generation: Retrosynthesis
+    HTS = "hts"  # Single-pred: High-Throughput Screening (future)
+    QM = "qm"  # Single-pred: Quantum Mechanics (future)
 
     @classmethod
     def from_str(cls, value: str) -> "TaskType":
@@ -87,10 +87,7 @@ class TaskType(str, Enum):
         for member in cls:
             if member.value == clean:
                 return member
-        raise ValueError(
-            f"Unknown task type '{value}'. Available: {[m.value for m in cls]}"
-        )
-
+        raise ValueError(f"Unknown task type '{value}'. Available: {[m.value for m in cls]}")
 
 
 def auto_import_modules(package_name: str) -> None:

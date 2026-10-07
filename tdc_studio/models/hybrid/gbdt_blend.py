@@ -70,9 +70,14 @@ def compute_biophysical_motifs(mol: Optional[Chem.Mol]) -> List[float]:
 
     n_aromatic_rings = Descriptors.NumAromaticRings(mol)
     from rdkit.Chem import Crippen
+
     logp = Crippen.MolLogP(mol)
 
-    sudlow_site_1 = 1.0 if (n_aromatic_rings >= 2 and (n_cooh + n_sulfonamide + n_tetrazole >= 1 or logp >= 3.0)) else 0.0
+    sudlow_site_1 = (
+        1.0
+        if (n_aromatic_rings >= 2 and (n_cooh + n_sulfonamide + n_tetrazole >= 1 or logp >= 3.0))
+        else 0.0
+    )
     sudlow_site_2 = 1.0 if (n_cooh >= 1 and n_aromatic_rings >= 1 and logp >= 1.5) else 0.0
     aag_motif = 1.0 if (f_cation >= 0.5 and logp >= 2.0) else 0.0
 
@@ -84,10 +89,20 @@ def compute_biophysical_motifs(mol: Optional[Chem.Mol]) -> List[float]:
         logd_74 = logp
 
     return [
-        float(f_anion), float(f_cation), float(q_net_74), float(is_anion_74),
-        float(is_cation_74), float(is_neutral_74), float(is_zwitterion_74),
-        float(sudlow_site_1), float(sudlow_site_2), float(aag_motif), float(logd_74),
-        float(n_cooh), float(n_sulfonamide), float(n_aliphatic_amine)
+        float(f_anion),
+        float(f_cation),
+        float(q_net_74),
+        float(is_anion_74),
+        float(is_cation_74),
+        float(is_neutral_74),
+        float(is_zwitterion_74),
+        float(sudlow_site_1),
+        float(sudlow_site_2),
+        float(aag_motif),
+        float(logd_74),
+        float(n_cooh),
+        float(n_sulfonamide),
+        float(n_aliphatic_amine),
     ]
 
 
@@ -111,7 +126,9 @@ def extract_chemberta_embeddings_batch(
 
         for i in range(0, len(missing), batch_size):
             chunk = [s if (s and isinstance(s, str)) else "C" for s in missing[i : i + batch_size]]
-            enc = tokenizer(chunk, padding=True, truncation=True, max_length=256, return_tensors="pt")
+            enc = tokenizer(
+                chunk, padding=True, truncation=True, max_length=256, return_tensors="pt"
+            )
             input_ids = enc["input_ids"].to(device)
             mask = enc["attention_mask"].to(device)
             with torch.no_grad():
@@ -255,7 +272,9 @@ class GBDTDMPNNBlender:
 
         # Evaluate on validation
         z_b = self.optimal_w * z_dmpnn_val + (1.0 - self.optimal_w) * z_gbdt_val
-        val_pred = 100.0 / (1.0 + np.exp(-np.clip(self.optimal_alpha * z_b + self.optimal_beta, -40.0, 40.0)))
+        val_pred = 100.0 / (
+            1.0 + np.exp(-np.clip(self.optimal_alpha * z_b + self.optimal_beta, -40.0, 40.0))
+        )
 
         val_r2 = float(r2_score(y_val_real, val_pred))
         val_mae = float(mean_absolute_error(y_val_real, val_pred))
@@ -271,12 +290,16 @@ class GBDTDMPNNBlender:
             "val_rmse": val_rmse,
         }
 
-    def fit_single_calibration(self, z_val: np.ndarray, y_val_real: np.ndarray) -> Tuple[float, float]:
+    def fit_single_calibration(
+        self, z_val: np.ndarray, y_val_real: np.ndarray
+    ) -> Tuple[float, float]:
         """Fit parametric calibration (alpha, beta) for a single model's logits."""
+
         def obj(params: np.ndarray) -> float:
             a, b = params
             p = 100.0 / (1.0 + np.exp(-np.clip(a * z_val + b, -40.0, 40.0)))
             return float(np.mean((p - y_val_real) ** 2))
+
         res = minimize(obj, [1.0, 0.0], bounds=[(0.1, 3.0), (-2.0, 2.0)], method="L-BFGS-B")
         return float(res.x[0]), float(res.x[1])
 
@@ -287,7 +310,9 @@ class GBDTDMPNNBlender:
     ) -> np.ndarray:
         """Apply optimal blending and parametric calibration to generate final percentage predictions."""
         z_blend = self.optimal_w * z_dmpnn + (1.0 - self.optimal_w) * z_gbdt
-        return 100.0 / (1.0 + np.exp(-np.clip(self.optimal_alpha * z_blend + self.optimal_beta, -40.0, 40.0)))
+        return 100.0 / (
+            1.0 + np.exp(-np.clip(self.optimal_alpha * z_blend + self.optimal_beta, -40.0, 40.0))
+        )
 
     def evaluate_test(
         self,
@@ -299,6 +324,7 @@ class GBDTDMPNNBlender:
         y_val_real: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """Compute full benchmark metrics for standalone and hybrid models."""
+
         def _metrics(p: np.ndarray, y: np.ndarray) -> Dict[str, float]:
             pr, _ = pearsonr(p, y)
             sp, _ = spearmanr(p, y)
@@ -332,13 +358,17 @@ class GBDTDMPNNBlender:
         # 4. Standalone Calibrated DMPNN & GBDT (if validation data provided)
         if z_dmpnn_val is not None and y_val_real is not None:
             a_dmpnn, b_dmpnn = self.fit_single_calibration(z_dmpnn_val, y_val_real)
-            p_dmpnn_cal = 100.0 / (1.0 + np.exp(-np.clip(a_dmpnn * z_dmpnn_test + b_dmpnn, -40.0, 40.0)))
+            p_dmpnn_cal = 100.0 / (
+                1.0 + np.exp(-np.clip(a_dmpnn * z_dmpnn_test + b_dmpnn, -40.0, 40.0))
+            )
             res["dmpnn_calibrated_metrics"] = _metrics(p_dmpnn_cal, y_test_real)
             res["dmpnn_calibrated_params"] = {"alpha": a_dmpnn, "beta": b_dmpnn}
 
         if z_gbdt_val is not None and y_val_real is not None:
             a_gbdt, b_gbdt = self.fit_single_calibration(z_gbdt_val, y_val_real)
-            p_gbdt_cal = 100.0 / (1.0 + np.exp(-np.clip(a_gbdt * z_gbdt_test + b_gbdt, -40.0, 40.0)))
+            p_gbdt_cal = 100.0 / (
+                1.0 + np.exp(-np.clip(a_gbdt * z_gbdt_test + b_gbdt, -40.0, 40.0))
+            )
             res["gbdt_calibrated_metrics"] = _metrics(p_gbdt_cal, y_test_real)
             res["gbdt_calibrated_params"] = {"alpha": a_gbdt, "beta": b_gbdt}
 

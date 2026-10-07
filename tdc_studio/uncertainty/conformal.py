@@ -66,7 +66,9 @@ class ConformalClassifier:
         self.q_threshold = default_q or (1.0 - default_alpha)
         self.cal_scores: np.ndarray = np.array([])
 
-    def calibrate(self, probs_pos: np.ndarray, true_labels: np.ndarray, alpha: Optional[float] = None) -> float:
+    def calibrate(
+        self, probs_pos: np.ndarray, true_labels: np.ndarray, alpha: Optional[float] = None
+    ) -> float:
         """Calibrate cumulative probability scores on hold-out calibration set.
 
         Score S_i = cumulative probability up to true label y_i.
@@ -162,7 +164,9 @@ class ConformalRegressor:
         self.q_margin = default_q or 0.45
         self.cal_residuals: np.ndarray = np.array([])
 
-    def calibrate(self, preds: np.ndarray, targets: np.ndarray, alpha: Optional[float] = None) -> float:
+    def calibrate(
+        self, preds: np.ndarray, targets: np.ndarray, alpha: Optional[float] = None
+    ) -> float:
         """Calibrate residual margins on hold-out calibration set.
 
         Residual R_i = |y_i - y_hat_i|.
@@ -257,9 +261,7 @@ class ConformalADMETShield:
                     default_alpha=alpha, default_q=meta["q"]
                 )
             else:
-                self.regressors[task] = ConformalRegressor(
-                    default_alpha=alpha, default_q=meta["q"]
-                )
+                self.regressors[task] = ConformalRegressor(default_alpha=alpha, default_q=meta["q"])
 
     def evaluate_indicator(
         self,

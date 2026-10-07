@@ -15,6 +15,12 @@ if (-not (Test-Path $FilePath)) {
     exit 1
 }
 
+# If isolated profile contains the session, use it; otherwise use active profile from colab_switch.ps1
+$isolatedProfile = "C:\Users\xps\.colab_munhyeongdo4"
+$isolatedSessions = Join-Path $isolatedProfile ".config\colab-cli\sessions.json"
+if ((Test-Path $isolatedSessions) -and ((Get-Content $isolatedSessions -Raw) -match [regex]::Escape($Session))) {
+    $env:USERPROFILE = $isolatedProfile
+}
 # 1. Read original python script content
 $originalCode = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
 
@@ -46,7 +52,7 @@ with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             for item in tp.rglob('*'):
                 if '__pycache__' in item.parts or item.suffix in ('.pyc', '.pt', '.pth', '.log', '.npz'):
                     continue
-                if item.is_file() and item.stat().st_size <= 5 * 1024 * 1024:
+                if item.is_file() and item.stat().st_size <= 10 * 1024 * 1024:
                     rel_path = item.relative_to(root)
                     zf.write(item, arcname=str(rel_path).replace('\\', '/'))
 "@

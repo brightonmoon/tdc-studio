@@ -369,9 +369,7 @@ class ESM2Encoder(nn.Module):
                     seq_tensors[orig_idx] = s_vec.to(device).float()
 
             valid_seqs = [
-                s.float() if s.dtype != torch.float32 else s
-                for s in seq_tensors
-                if s is not None
+                s.float() if s.dtype != torch.float32 else s for s in seq_tensors if s is not None
             ]
             padded_h = torch.nn.utils.rnn.pad_sequence(valid_seqs, batch_first=True)
             lengths = [s.shape[0] for s in valid_seqs]
@@ -380,12 +378,10 @@ class ESM2Encoder(nn.Module):
                 torch.arange(max_len, device=device)[None, :]
                 < torch.tensor(lengths, device=device)[:, None]
             ).long()
-            ext_mask = self.model.get_extended_attention_mask(
-                attn_mask, padded_h.shape[:2]
-            )
+            ext_mask = self.model.get_extended_attention_mask(attn_mask, padded_h.shape[:2])
 
             # Pass through unfrozen upper layers with active gradients
-            for layer in encoder_layers[-self.unfrozen_layers:]:
+            for layer in encoder_layers[-self.unfrozen_layers :]:
                 padded_h = layer(padded_h, attention_mask=ext_mask)[0]
 
             if getattr(self.model.encoder, "emb_layer_norm_after", None) is not None:

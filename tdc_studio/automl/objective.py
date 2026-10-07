@@ -99,8 +99,14 @@ class TDCStudioObjective:
             model = model_cls(curr_model_cfg).to(self.device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=sampled_params.get("lr", 1e-3))
 
-            max_epochs = 1 if self.dry_run else int(self.hpo_cfg.get("max_epochs", self.data_cfg.get("max_epochs", 50)))
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, max_epochs), eta_min=1e-6)
+            max_epochs = (
+                1
+                if self.dry_run
+                else int(self.hpo_cfg.get("max_epochs", self.data_cfg.get("max_epochs", 50)))
+            )
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=max(1, max_epochs), eta_min=1e-6
+            )
             best_metric = -float("inf") if self.direction == "maximize" else float("inf")
 
             for epoch in range(max_epochs):
@@ -170,7 +176,10 @@ class TDCStudioObjective:
         labels_cat = torch.cat(all_labels, dim=0)
 
         # Invert target standardization if enabled
-        if getattr(self.data_module, "standardize_target", False) and self.task_type == "regression":
+        if (
+            getattr(self.data_module, "standardize_target", False)
+            and self.task_type == "regression"
+        ):
             mean = getattr(self.data_module, "target_mean", 0.0)
             std = getattr(self.data_module, "target_std", 1.0)
             eval_preds = preds_cat * std + mean

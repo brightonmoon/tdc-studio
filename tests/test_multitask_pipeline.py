@@ -100,7 +100,9 @@ def test_masked_multitask_loss():
     task_names = ["caco2", "herg", "solubility"]
     task_types = ["regression", "binary_classification", "regression"]
 
-    loss_fn = MaskedMultiTaskLoss(task_names=task_names, task_types=task_types, use_uncertainty=True)
+    loss_fn = MaskedMultiTaskLoss(
+        task_names=task_names, task_types=task_types, use_uncertainty=True
+    )
 
     # Batch of 3 samples, 3 tasks
     preds = torch.tensor(
@@ -314,4 +316,3 @@ def test_cli_train_categorical_mtl_dry_run(tmp_path, mock_multitask_df):
     assert result.exit_code == 0
     assert "Starting Training Pipeline" in result.output
     assert "Training Pipeline Finished" in result.output
-

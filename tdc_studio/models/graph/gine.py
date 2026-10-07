@@ -82,4 +82,3 @@ class GINEModel(BaseTherapeuticsModel):
     def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
         h_pool = self.extract_features(batch)
         return self.head(h_pool)
-

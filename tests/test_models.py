@@ -164,3 +164,31 @@ def test_dmpnn_with_descriptors():
     assert not torch.isnan(preds).any()
 
 
+def test_base_model_save_load_and_loss_mask(tmp_path):
+    from tdc_studio.models.base import BaseTherapeuticsModel
+
+    class DummyModel(BaseTherapeuticsModel):
+        def __init__(self):
+            super().__init__({"task_type": "regression"})
+            self.linear = torch.nn.Linear(2, 1)
+
+        def forward(self, batch):
+            return self.linear(batch["x"])
+
+    model = DummyModel()
+    save_path = str(tmp_path / "nested" / "model.pt")
+    model.save(save_path)
+
+    loaded_model = DummyModel()
+    loaded_model.load(save_path)
+
+    for p1, p2 in zip(model.parameters(), loaded_model.parameters()):
+        assert torch.allclose(p1, p2)
+
+    # Test compute_loss with mask and NaNs
+    preds = torch.tensor([[1.0], [2.0], [3.0]])
+    targets = torch.tensor([[1.0], [float("nan")], [3.0]])
+    mask = torch.tensor([[True], [False], [True]])
+    loss = model.compute_loss(preds, targets, mask=mask)
+    assert torch.isfinite(loss)
+    assert loss.item() == 0.0

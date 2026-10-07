@@ -67,18 +67,22 @@ class ColabAccountManager:
         active_account = self.get_active_account()
         accounts: List[Dict[str, Any]] = []
 
-        backup_files = sorted(self.config_dir.glob("token_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        backup_files = sorted(
+            self.config_dir.glob("token_*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         for b in backup_files:
             if b.name.endswith(".tmp_bak"):
                 continue
             name = b.stem.removeprefix("token_")
-            is_active = (name == active_account)
-            accounts.append({
-                "name": name,
-                "is_active": is_active,
-                "path": str(b),
-                "mtime": b.stat().st_mtime,
-            })
+            is_active = name == active_account
+            accounts.append(
+                {
+                    "name": name,
+                    "is_active": is_active,
+                    "path": str(b),
+                    "mtime": b.stat().st_mtime,
+                }
+            )
 
         return accounts
 
@@ -151,7 +155,9 @@ class ColabAccountManager:
 
             if self.token_path.is_file():
                 shutil.copy2(self.token_path, target)
-                print(f"[ColabAccountManager] Successfully authenticated and saved account '{account_name}'.")
+                print(
+                    f"[ColabAccountManager] Successfully authenticated and saved account '{account_name}'."
+                )
                 return True
             else:
                 print("[ColabAccountManager] Authentication failed or was aborted.")

@@ -180,7 +180,11 @@ class MultiTaskInferencePipeline:
 
         model_cls = MODELS.get(model_name)
         model = model_cls(model_cfg)
-        model.load_state_dict(torch.load(weights_path, map_location=device))
+        try:
+            state_dict = torch.load(weights_path, map_location=device, weights_only=True)
+        except TypeError:
+            state_dict = torch.load(weights_path, map_location=device)
+        model.load_state_dict(state_dict)
 
         tasks = model_cfg.get("tasks", data_cfg.get("tasks", []))
         modality = data_cfg.get("modality", "graph")

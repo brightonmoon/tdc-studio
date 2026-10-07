@@ -125,7 +125,6 @@ class GraphTransformerModel(BaseTherapeuticsModel):
         return self.head(hg)
 
 
-
 @MODELS.register("graph_transformer_dta")
 class GraphTransformerDTAModel(BaseTherapeuticsModel):
     """Multimodal interaction model for Drug-Target Affinity (Graph + Sequence)."""

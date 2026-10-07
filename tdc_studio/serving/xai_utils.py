@@ -6,11 +6,28 @@ import numpy as np
 
 # Standard 20 canonical amino acid single-letter to 3-letter code mapping
 AA_1TO3 = {
-    "A": "Ala", "R": "Arg", "N": "Asn", "D": "Asp", "C": "Cys",
-    "E": "Glu", "Q": "Gln", "G": "Gly", "H": "His", "I": "Ile",
-    "L": "Leu", "K": "Lys", "M": "Met", "F": "Phe", "P": "Pro",
-    "S": "Ser", "T": "Thr", "W": "Trp", "Y": "Tyr", "V": "Val",
-    "U": "Sec", "O": "Pyl",
+    "A": "Ala",
+    "R": "Arg",
+    "N": "Asn",
+    "D": "Asp",
+    "C": "Cys",
+    "E": "Glu",
+    "Q": "Gln",
+    "G": "Gly",
+    "H": "His",
+    "I": "Ile",
+    "L": "Leu",
+    "K": "Lys",
+    "M": "Met",
+    "F": "Phe",
+    "P": "Pro",
+    "S": "Ser",
+    "T": "Thr",
+    "W": "Trp",
+    "Y": "Tyr",
+    "V": "Val",
+    "U": "Sec",
+    "O": "Pyl",
 }
 
 
@@ -62,13 +79,15 @@ def extract_top_contact_residues(
         res_1based = idx_int + 1
         res_code = f"{res_3}{res_1based}"
 
-        results.append({
-            "rank": rank,
-            "index": res_1based,
-            "residue_name": res_char,
-            "residue_code": res_code,
-            "score": round(float(norm_scores[idx_int]), 4),
-        })
+        results.append(
+            {
+                "rank": rank,
+                "index": res_1based,
+                "residue_name": res_char,
+                "residue_code": res_code,
+                "score": round(float(norm_scores[idx_int]), 4),
+            }
+        )
 
     return results
 
@@ -111,12 +130,14 @@ def extract_top_contact_atoms(
     for rank, idx in enumerate(top_indices, start=1):
         idx_int = int(idx)
         tok_str = tokens[idx_int] if (tokens and idx_int < len(tokens)) else f"Token_{idx_int}"
-        results.append({
-            "rank": rank,
-            "atom_index": idx_int,
-            "token": tok_str,
-            "score": round(float(norm_scores[idx_int]), 4),
-        })
+        results.append(
+            {
+                "rank": rank,
+                "atom_index": idx_int,
+                "token": tok_str,
+                "score": round(float(norm_scores[idx_int]), 4),
+            }
+        )
 
     return results
 

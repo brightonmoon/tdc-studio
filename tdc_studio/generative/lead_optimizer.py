@@ -51,6 +51,16 @@ class OptimizedCandidate:
     scaffold_preserved: bool
     admet_profile: Optional[Dict[str, Any]] = None
     fitness_score: float = 0.0
+    parent_dta_pkd: Optional[float] = None
+    candidate_dta_pkd: Optional[float] = None
+    dta_delta: Optional[float] = None
+    retrosynthesis_solved: Optional[bool] = None
+    retrosynthesis_steps: Optional[int] = None
+    cumulative_yield: Optional[float] = None
+    starting_materials: Optional[List[str]] = None
+    synthetic_tractability_score: Optional[float] = None
+    rejection_reason: Optional[str] = None
+    route_summary: Optional[str] = None
 
 
 @dataclass
@@ -66,6 +76,8 @@ class OptimizationReport:
     candidates_generated: int
     candidates_passing_sa_filter: int
     top_candidates: List[OptimizedCandidate] = field(default_factory=list)
+    target_protein_sequence: Optional[str] = None
+    parent_dta_pkd: Optional[float] = None
 
 
 class SelfCorrectingOptimizer:
@@ -89,14 +101,26 @@ class SelfCorrectingOptimizer:
         pipeline: Optional[UnifiedADMETPipeline] = None,
         explainer: Optional[MolecularExplainer] = None,
         recommender: Optional[BioisostereRecommender] = None,
+        dti_pipeline: Optional[Any] = None,
         sa_threshold: float = 4.0,
+        synthesizability_gate: Optional[Any] = None,
+        verify_retrosynthesis: bool = True,
+        require_deep_route: bool = False,
         device: str = "cpu",
     ):
         """Initialize the Self-Correcting Lead Optimizer."""
         self.device = device
         self.pipeline = pipeline or UnifiedADMETPipeline(device=device)
         self.recommender = recommender or BioisostereRecommender()
+        self.dti_pipeline = dti_pipeline
         self.sa_threshold = sa_threshold
+        self.verify_retrosynthesis = verify_retrosynthesis
+        self.require_deep_route = require_deep_route
+        self.gate = synthesizability_gate
+        if self.gate is None:
+            from tdc_studio.generative.synthesizability_gate import SynthesizabilityGate
+
+            self.gate = SynthesizabilityGate(sa_threshold=self.sa_threshold)
 
         if explainer is not None:
             self.explainer = explainer
@@ -182,16 +206,26 @@ class SelfCorrectingOptimizer:
         self,
         smiles: str,
         target_liability: Optional[str] = None,
+        target_seq: Optional[str] = None,
+        weight_admet: float = 1.0,
+        weight_dta: float = 0.5,
         max_candidates: int = 5,
         steps: int = 20,
+        verify_retrosynthesis: Optional[bool] = None,
+        require_deep_route: Optional[bool] = None,
     ) -> OptimizationReport:
         """Run complete 4-step closed-loop optimization on the target molecule.
 
         Args:
             smiles: Input molecule SMILES.
             target_liability: Optional explicit liability key (e.g. 'herg', 'ames', 'dili', 'clearance').
+            target_seq: Optional target protein amino acid sequence for joint DTA potency scoring.
+            weight_admet: Weight for ADMET liability reduction in fitness (default 1.0).
+            weight_dta: Weight for DTA binding affinity gain in fitness (default 0.5).
             max_candidates: Number of top candidates to return.
             steps: Number of Integrated Gradients steps.
+            verify_retrosynthesis: Override retrosynthesis verification flag.
+            require_deep_route: Whether to mandate full multi-step Retro* search.
 
         Returns:
             OptimizationReport with diagnosed liabilities, localized hotspots, and top candidates.
@@ -202,9 +236,18 @@ class SelfCorrectingOptimizer:
         canon_smiles = Chem.MolToSmiles(mol, canonical=True)
         scaffold_smi = self._extract_scaffold(mol)
 
+        parent_dta_pkd = None
+        if target_seq and self.dti_pipeline:
+            try:
+                dta_res = self.dti_pipeline.predict_affinity([canon_smiles], [target_seq])
+                parent_dta_pkd = float(dta_res["predictions_pkd"][0])
+            except Exception as e:
+                logger.warning("Failed DTA affinity prediction on parent: %s", e)
+
         # ----------------------------------------------------------------------
         # Step 1: Liability Diagnosis
         # ----------------------------------------------------------------------
+
         parent_profile = self.pipeline.predict_single(canon_smiles)
         diagnosed = self.diagnose_liabilities(parent_profile)
 
@@ -293,8 +336,61 @@ class SelfCorrectingOptimizer:
             # Delta calculation: higher positive means greater improvement
             delta = parent_val - cand_val  # for toxicities, lower is better
 
-            # Fitness: delta - 0.1 * SA penalty + bonus for scaffold preservation
-            fitness = delta - 0.05 * (sa - 2.0) + (0.2 if scaffold_ok else -0.5)
+            # Target DTA binding affinity evaluation
+            cand_dta_pkd = None
+            dta_delta = None
+            if target_seq and self.dti_pipeline:
+                try:
+                    c_res = self.dti_pipeline.predict_affinity([cand_smi], [target_seq])
+                    cand_dta_pkd = float(c_res["predictions_pkd"][0])
+                    if parent_dta_pkd is not None:
+                        dta_delta = cand_dta_pkd - parent_dta_pkd
+                except Exception as e:
+                    logger.debug("Failed DTA affinity on candidate %s: %s", cand_smi, e)
+
+            # Fitness: multi-objective weighted combination of ADMET recovery + DTA potency
+            dta_term = weight_dta * dta_delta if dta_delta is not None else 0.0
+            fitness = (
+                weight_admet * delta + dta_term - 0.05 * (sa - 2.0) + (0.2 if scaffold_ok else -0.5)
+            )
+
+            retro_solved = None
+            retro_steps = None
+            cum_yield = None
+            starting_materials = None
+            tractability_score = None
+            rejection_reason = None
+            route_summary = None
+
+            do_verify = (
+                self.verify_retrosynthesis
+                if verify_retrosynthesis is None
+                else verify_retrosynthesis
+            )
+            deep_route = (
+                self.require_deep_route if require_deep_route is None else require_deep_route
+            )
+
+            if do_verify and self.gate is not None:
+                rep = self.gate.evaluate_candidate(cand_smi, require_deep_route=deep_route)
+                retro_solved = rep.passed
+                tractability_score = rep.synthetic_tractability_score
+                if rep.route:
+                    retro_steps = rep.route.total_depth
+                    cum_yield = rep.route.cumulative_yield
+                    starting_materials = rep.route.starting_materials
+                    n_stock = len(starting_materials) if starting_materials else 0
+                    route_summary = f"{retro_steps} step(s), yield {cum_yield:.1f}%, {n_stock} stock precursor(s)"
+                elif rep.passed and rep.tier2_1step_passed:
+                    retro_steps = 1
+                    cum_yield = 85.0
+                    route_summary = "1 step (Catalog stock precursors available)"
+
+                if rep.passed:
+                    fitness += 0.20 * (tractability_score or 0.5)
+                else:
+                    fitness -= 0.5  # Penalize synthetic infeasibility
+                    rejection_reason = rep.rejection_reason
 
             candidate_obj = OptimizedCandidate(
                 smiles=cand_smi,
@@ -307,6 +403,16 @@ class SelfCorrectingOptimizer:
                 sa_score=sa,
                 scaffold_preserved=scaffold_ok,
                 fitness_score=fitness,
+                parent_dta_pkd=parent_dta_pkd,
+                candidate_dta_pkd=cand_dta_pkd,
+                dta_delta=dta_delta,
+                retrosynthesis_solved=retro_solved,
+                retrosynthesis_steps=retro_steps,
+                cumulative_yield=cum_yield,
+                starting_materials=starting_materials,
+                synthetic_tractability_score=tractability_score,
+                rejection_reason=rejection_reason,
+                route_summary=route_summary,
             )
             evaluated_candidates.append(candidate_obj)
 
@@ -324,4 +430,6 @@ class SelfCorrectingOptimizer:
             candidates_generated=candidates_generated,
             candidates_passing_sa_filter=passing_sa_count,
             top_candidates=top_candidates,
+            target_protein_sequence=target_seq,
+            parent_dta_pkd=parent_dta_pkd,
         )

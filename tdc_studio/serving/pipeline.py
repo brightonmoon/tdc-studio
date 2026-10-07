@@ -136,6 +136,20 @@ class DTIInferencePipeline(InferencePipeline):
             if "chembert" in enc_name or "language" in enc_name:
                 self.is_graph_drug = False
 
+        from tdc_studio.evaluation.conformal import ConformalCalibrator
+
+        self.conformal_calibrator = ConformalCalibrator(alpha=0.05)
+
+    def set_conformal_calibrator(self, calibrator: Any) -> None:
+        """Set a pre-calibrated ConformalCalibrator instance."""
+        self.conformal_calibrator = calibrator
+
+    def load_conformal_calibrator(self, filepath: str) -> None:
+        """Load calibration parameters from JSON file."""
+        from tdc_studio.evaluation.conformal import ConformalCalibrator
+
+        self.conformal_calibrator = ConformalCalibrator.load(filepath)
+
     def inverse_transform(self, y_norm: float) -> Tuple[float, float]:
         """Convert normalized model prediction to pKd and Kd (nM).
 
@@ -200,12 +214,14 @@ class DTIInferencePipeline(InferencePipeline):
             # Target sequence tensor
             target_tensor = self.aa_tokenizer(clean_seq)
 
-            batch_items.append({
-                "drug_graph":      g,
-                "drug_smiles_str": clean_smiles,   # for HuggingFace / ChemBERTa encoder
-                "target_seq":      target_tensor,  # for ProteinCNN encoder
-                "target_seq_str":  clean_seq,      # for ESM-2 encoder (avoids decode fallback)
-            })
+            batch_items.append(
+                {
+                    "drug_graph": g,
+                    "drug_smiles_str": clean_smiles,  # for HuggingFace / ChemBERTa encoder
+                    "target_seq": target_tensor,  # for ProteinCNN encoder
+                    "target_seq_str": clean_seq,  # for ESM-2 encoder (avoids decode fallback)
+                }
+            )
 
         collated = molecule_collate_fn(batch_items)
         for k, v in collated.items():
@@ -262,6 +278,7 @@ class DTIInferencePipeline(InferencePipeline):
         return_contact_map: bool = False,
         top_k_residues: int = 10,
         return_full_matrix: bool = False,
+        return_uncertainty: bool = True,
     ) -> Dict[str, Any]:
         """Run DTI prediction and return structured pKd, Kd (nM), and optional XAI contact map.
 
@@ -271,11 +288,12 @@ class DTIInferencePipeline(InferencePipeline):
             return_kd_nm      : Whether to compute Kd in nM.
             return_attention  : Whether to include attention weight maps in output.
             return_contact_map: Whether to extract Top-K residues, atoms, and PyMOL commands.
+            return_uncertainty: Whether to include Conformal Prediction 95% confidence intervals and AD checks.
             top_k_residues    : Number of top contact residues to extract for PyMOL.
             return_full_matrix: Whether to include full 2D float contact map array.
 
         Returns:
-            Dict containing predictions, Kd values, and optional XAI attributes.
+            Dict containing predictions, Kd values, and optional XAI/UQ attributes.
         """
         need_attn = return_attention or return_contact_map
         if need_attn:
@@ -310,6 +328,15 @@ class DTIInferencePipeline(InferencePipeline):
         }
         if return_kd_nm:
             res["kd_nm"] = kd_list
+
+        if return_uncertainty and hasattr(self, "conformal_calibrator"):
+            uq_preds = self.conformal_calibrator.predict_interval(pkd_list)
+            if not isinstance(uq_preds, list):
+                uq_preds = [uq_preds]
+            res["conformal_lower_95"] = [round(u.lower, 4) for u in uq_preds]
+            res["conformal_upper_95"] = [round(u.upper, 4) for u in uq_preds]
+            res["confidence_interval_width"] = [round(u.interval_width, 4) for u in uq_preds]
+            res["is_in_domain"] = [u.is_in_domain for u in uq_preds]
 
         if return_attention and attn_list is not None:
             # Convert any numpy arrays in attn_list to lists for JSON serialization
@@ -514,5 +541,3 @@ class DTIMultiAffinityPipeline(DTIInferencePipeline):
                 res["contact_maps"] = contact_maps_batch
 
         return res
-
-

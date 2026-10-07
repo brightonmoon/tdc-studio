@@ -13,6 +13,7 @@ from tdc_studio.serving.app import (
     set_dti_pipeline,
     set_pbpk_pipeline,
     set_pipeline,
+    set_ti_pipeline,
     set_unified_pipeline,
     set_vdss_pipeline,
 )
@@ -40,7 +41,9 @@ def test_healthz_endpoint_initial(test_client):
     set_vdss_pipeline(None)
     set_pbpk_pipeline(None)
     set_dti_pipeline(None)
+    set_dti_multi_pipeline(None)
     set_unified_pipeline(None)
+    set_ti_pipeline(None)
     resp = test_client.get("/healthz")
     assert resp.status_code == 200
     data = resp.json()
@@ -54,6 +57,10 @@ def test_index_dashboard_endpoint(test_client):
     assert "text/html" in resp.headers["content-type"]
     assert "TDC-Studio" in resp.text
     assert "Full ADMET" in resp.text
+    assert "Retrosynthesis" in resp.text
+    assert "mermaid" in resp.text.lower()
+    assert "retro-section" in resp.text
+    assert "retro-top-k" in resp.text
 
 
 def test_predict_endpoint_with_pipeline(test_client):
@@ -311,10 +318,12 @@ def test_dti_predict_with_attention_weights(test_client):
 
 def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
     """Verify that ChemBERTa encoder skips graph_transform parsing overhead."""
+
     class DummyChemBERTa(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.out_dim = 256
+
         def extract_features(self, batch):
             b = len(batch["drug_smiles_str"])
             return torch.zeros((b, 256))
@@ -335,6 +344,7 @@ def test_dti_pipeline_graph_skipping_optimization(monkeypatch):
     # Monkeypatch graph_transform to fail if called
     def boom(smiles):
         raise RuntimeError("graph_transform should not be called!")
+
     monkeypatch.setattr(pipeline, "graph_transform", boom)
 
     preds = pipeline.predict(["CCO"], ["MSHHWGYGKHNGPEHWHKDFPIAKGERQ"])
@@ -529,4 +539,61 @@ def test_affinity_consistency_score_logic():
     assert tier3 == "Review Required"
 
 
+def test_predict_therapeutic_index_endpoint(test_client):
+    """Verify POST /predict/therapeutic-index returns complete TI and developability score."""
+    payload = {
+        "smiles": "CC(=O)Oc1ccccc1C(=O)O",
+        "target_kd_nm": 10.0,
+        "dose_mg": 100.0,
+    }
+    resp = test_client.post("/predict/therapeutic-index", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
 
+    assert data["smiles"] == "CC(=O)Oc1ccccc1C(=O)O"
+    assert data["target_kd_nm"] == 10.0
+    assert data["target_pkd"] == 8.0
+    assert data["herg_ic50_nm"] > 0.0
+    assert data["herg_safety_margin"] > 0.0
+    assert "herg_risk_tier" in data
+    assert "clinical_developability_score" in data
+    assert 0.0 <= data["clinical_developability_score"] <= 100.0
+    assert "component_scores" in data
+    assert "potency" in data["component_scores"]
+    assert "safety_window" in data["component_scores"]
+    assert "organ_toxicology" in data["component_scores"]
+    assert "human_pk" in data["component_scores"]
+
+
+def test_predict_ti_alias_endpoint(test_client):
+    """Verify alias endpoint POST /predict/ti works correctly."""
+    payload = {
+        "smiles": "CC(=O)NC1=CC=C(O)C=C1",
+        "target_kd_nm": 2.5,
+    }
+    resp = test_client.post("/predict/ti", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["target_kd_nm"] == 2.5
+    assert data["herg_safety_margin"] > 0.0
+
+
+def test_optimize_endpoint_with_retrosynthesis(test_client):
+    """Verify POST /optimize returns candidates with integrated retrosynthesis fields."""
+    payload = {
+        "smiles": "c1ccccc1C(=O)O",
+        "target_liability": "dili",
+        "max_candidates": 2,
+        "verify_retrosynthesis": True,
+        "require_deep_route": False,
+    }
+    resp = test_client.post("/optimize", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "top_candidates" in data
+    assert len(data["top_candidates"]) > 0
+
+    cand = data["top_candidates"][0]
+    assert "retrosynthesis_solved" in cand
+    assert "synthetic_tractability_score" in cand
+    assert cand["synthetic_tractability_score"] is not None

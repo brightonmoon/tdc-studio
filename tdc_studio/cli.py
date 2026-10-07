@@ -31,13 +31,18 @@ app = typer.Typer(
 )
 remote_app = typer.Typer(help="Cloud GPU remote execution commands via Google Colab CLI")
 app.add_typer(remote_app, name="remote")
+retro_app = typer.Typer(help="AI Retrosynthesis single-step prediction and multi-step planning")
+app.add_typer(retro_app, name="retrosynthesis")
 
 console = Console()
 
 
 def load_yaml(path: str) -> dict:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Configuration file not found: {path}")
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f)
+    return data if data is not None else {}
 
 
 def _batch_to_device(batch: dict, device: Any) -> dict:
@@ -115,6 +120,15 @@ def train(
     console.print(f"[bold green]Starting Training Pipeline[/bold green] with config: {config}")
 
     data_cfg = cfg.get("data", {})
+    if not data_cfg and "dataset" in cfg:
+        data_cfg = dict(cfg["dataset"])
+        if "type" not in data_cfg:
+            data_cfg["type"] = "dta_loader"
+        if "dataset_name" not in data_cfg and "name" in data_cfg:
+            data_cfg["dataset_name"] = data_cfg["name"]
+        if "split_type" not in data_cfg and "split" in data_cfg:
+            data_cfg["split_type"] = data_cfg["split"]
+
     model_cfg = cfg.get("model", {})
     dataset_name = data_cfg.get("dataset_name", data_cfg.get("name", "dataset"))
 
@@ -130,9 +144,8 @@ def train(
     data_module = data_cls(**data_params)
 
     data_module.prepare_data()
-    train_loader, val_loader, test_loader = data_module.setup_loaders(
-        batch_size=data_cfg.get("batch_size", 32)
-    )
+    batch_size = int(data_cfg.get("batch_size") or cfg.get("training", {}).get("batch_size") or 32)
+    train_loader, val_loader, test_loader = data_module.setup_loaders(batch_size=batch_size)
 
     task_type = data_module.task_type
     primary_task = (
@@ -147,7 +160,11 @@ def train(
         or (
             "val_loss"
             if task_type == "multi_task"
-            else ("mae" if task_type == "regression" else "roc_auc")
+            else (
+                "ci"
+                if task_type in ("dta", "multi_dta")
+                else ("mae" if task_type == "regression" else "roc_auc")
+            )
         )
     )
     higher_is_better = (
@@ -166,10 +183,17 @@ def train(
     pretrained_path = cfg.get("pretrained_checkpoint")
     if pretrained_path and os.path.exists(pretrained_path):
         console.print(f"[bold cyan]Loading pre-trained weights from: {pretrained_path}[/bold cyan]")
-        chk = torch.load(pretrained_path, map_location=device)
+        try:
+            chk = torch.load(pretrained_path, map_location=device, weights_only=True)
+        except Exception:
+            chk = torch.load(pretrained_path, map_location=device)
         state_dict = chk.get("state_dict", chk) if isinstance(chk, dict) else chk
         model_dict = model.state_dict()
-        matched = {k: v for k, v in state_dict.items() if k in model_dict and v.shape == model_dict[k].shape}
+        matched = {
+            k: v
+            for k, v in state_dict.items()
+            if k in model_dict and v.shape == model_dict[k].shape
+        }
         model_dict.update(matched)
         model.load_state_dict(model_dict)
         console.print(
@@ -186,8 +210,8 @@ def train(
             f"[bold yellow]Backbone weights frozen for first {freeze_epochs} epoch(s). Training task heads only.[/bold yellow]"
         )
 
-    lr = float(cfg.get("lr", 1e-3))
-    weight_decay = float(cfg.get("weight_decay", 1e-4))
+    lr = float(cfg.get("lr", cfg.get("training", {}).get("learning_rate", 1e-3)))
+    weight_decay = float(cfg.get("weight_decay", cfg.get("training", {}).get("weight_decay", 1e-4)))
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay
     )
@@ -213,12 +237,21 @@ def train(
         group=f"{dataset_name}_train",
     )
 
-    max_epochs = 1 if dry_run else (epochs or cfg.get("max_epochs", 5))
+    if checkpoint_dir == "./models/checkpoint" and "export" in cfg and "save_dir" in cfg["export"]:
+        checkpoint_dir = cfg["export"]["save_dir"]
+
+    max_epochs = (
+        1
+        if dry_run
+        else (epochs or cfg.get("max_epochs", cfg.get("training", {}).get("max_epochs", 5)))
+    )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(1, max_epochs), eta_min=float(cfg.get("min_lr", 1e-6))
     )
     early_stopping_patience = (
-        early_stopping if early_stopping is not None else cfg.get("early_stopping", None)
+        early_stopping
+        if early_stopping is not None
+        else cfg.get("early_stopping", cfg.get("training", {}).get("early_stopping_patience", None))
     )
     best_metric = -float("inf") if higher_is_better else float("inf")
     best_epoch = 0
@@ -228,17 +261,42 @@ def train(
 
     try:
         for epoch in range(max_epochs):
-            # Unfreeze backbone if scheduled
-            if freeze_epochs > 0 and epoch == freeze_epochs:
+            # Staged Training support (e.g. for ChemBERTa top-layers in DTI Phase C)
+            staged_cfg = cfg.get("staged_training", {})
+            s1_epochs = int(staged_cfg.get("stage1_epochs", 0))
+            if (
+                s1_epochs > 0
+                and epoch == s1_epochs
+                and hasattr(model, "drug_encoder")
+                and hasattr(model.drug_encoder, "unfreeze")
+            ):
+                s2_layers = int(staged_cfg.get("stage2_unfreeze_layers", 2))
+                s2_bb_lr = float(staged_cfg.get("stage2_backbone_lr", 1e-6))
+                s2_head_lr = float(staged_cfg.get("stage2_head_lr", 5e-5))
+                s2_wd = float(staged_cfg.get("stage2_weight_decay", 0.05))
+
                 console.print(
-                    f"[bold green]Unfreezing all backbone weights at epoch {epoch} for full network fine-tuning...[/bold green]"
+                    f"[bold green]★ Stage 2 Transition: Unfreezing Drug Encoder top {s2_layers} layers at epoch {epoch + 1} (LR: {s2_bb_lr:.2e}, WD: {s2_wd})[/bold green]"
                 )
-                for param in model.parameters():
-                    param.requires_grad = True
-                base_opt = torch.optim.AdamW(model.parameters(), lr=lr * 0.5, weight_decay=weight_decay)
-                optimizer = PCGrad(base_opt) if use_pcgrad else base_opt
+                model.drug_encoder.unfreeze(last_n_layers=s2_layers)
+                target_opt = optimizer._optim if hasattr(optimizer, "_optim") else optimizer
+                existing_params = {p for pg in target_opt.param_groups for p in pg["params"]}
+                new_params = [
+                    p
+                    for p in model.drug_encoder.parameters()
+                    if p.requires_grad and p not in existing_params
+                ]
+                if new_params:
+                    target_opt.add_param_group(
+                        {"params": new_params, "lr": s2_bb_lr, "weight_decay": s2_wd}
+                    )
+                for pg in target_opt.param_groups[:-1]:
+                    pg["lr"] = s2_head_lr
+
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer, T_max=max(1, max_epochs - epoch), eta_min=float(cfg.get("min_lr", 1e-6))
+                    optimizer,
+                    T_max=max(1, max_epochs - epoch),
+                    eta_min=float(cfg.get("min_lr", 1e-7)),
                 )
 
             # --- Train Epoch ---
@@ -720,6 +778,25 @@ def train(
                     f"[bold green]Test Results ({target_metric.upper()}): {test_metric_val:.4f}[/bold green]"
                 )
                 console.print(f"Detailed Test Metrics: {all_test_metrics}")
+
+                if task_type in ("dta", "drug_target_affinity"):
+                    from rich.table import Table
+
+                    d_ci = all_test_metrics.get("ci", 0.0)
+                    d_mse = all_test_metrics.get("mse", 0.0)
+                    d_rmse = all_test_metrics.get("rmse", 0.0)
+                    d_pr = all_test_metrics.get("pearson", 0.0)
+
+                    table = Table(title="★ DTA (Drug-Target Affinity) Benchmark Results")
+                    table.add_column("Metric", style="bold")
+                    table.add_column("Our Model (Test)", style="bold cyan")
+                    table.add_column("Target Threshold", style="bold green")
+                    table.add_row("Concordance Index (CI)", f"{d_ci:.4f}", ">= 0.7700")
+                    table.add_row("Mean Squared Error (MSE)", f"{d_mse:.4f}", "<= 0.5500")
+                    table.add_row("Root MSE (RMSE)", f"{d_rmse:.4f}", "~ 0.74")
+                    table.add_row("Pearson (r)", f"{d_pr:.4f}", "~ 0.69")
+                    console.print(table)
+
                 tracker.log_metrics({f"test_{k}": v for k, v in all_test_metrics.items()})
 
     finally:
@@ -894,6 +971,9 @@ def ensemble(
             console.print(
                 f"\n[bold cyan]─── Training Ensemble Model #{idx + 1}/{len(seed_list)} (Seed: {seed}) ───[/bold cyan]"
             )
+            import random
+
+            random.seed(seed)
             torch.manual_seed(seed)
             np.random.seed(seed)
             if torch.cuda.is_available():
@@ -1646,9 +1726,15 @@ def serve(
     if model_dir:
         abs_model_dir = str(Path(model_dir).resolve())
         os.environ["MODEL_DIR"] = abs_model_dir
-        console.print(f"[bold green]Starting TDC-Studio Serving API & Biomedical Dashboard[/bold green] on http://{host}:{port}...")
-    console.print(f"  👉 [bold cyan]Interactive Web Dashboard[/bold cyan]: http://localhost:{port}/")
-    console.print(f"  👉 [bold dim]Swagger API Documentation[/bold dim]: http://localhost:{port}/docs")
+        console.print(
+            f"[bold green]Starting TDC-Studio Serving API & Biomedical Dashboard[/bold green] on http://{host}:{port}..."
+        )
+    console.print(
+        f"  👉 [bold cyan]Interactive Web Dashboard[/bold cyan]: http://localhost:{port}/"
+    )
+    console.print(
+        f"  👉 [bold dim]Swagger API Documentation[/bold dim]: http://localhost:{port}/docs"
+    )
     uvicorn.run("tdc_studio.serving.app:app", host=host, port=port, workers=workers)
 
 
@@ -1656,7 +1742,9 @@ def serve(
 def ui_serve(
     host: str = typer.Option("127.0.0.1", help="Host address"),
     port: int = typer.Option(8000, help="Port to listen on"),
-    model_dir: Optional[str] = typer.Option(None, "--model-dir", help="Path to exported model directory"),
+    model_dir: Optional[str] = typer.Option(
+        None, "--model-dir", help="Path to exported model directory"
+    ),
 ):
     """Launch the interactive biomedical web dashboard."""
     serve(host=host, port=port, workers=1, model_dir=model_dir)
@@ -1665,9 +1753,13 @@ def ui_serve(
 @app.command("batch-predict")
 def batch_predict_cli(
     input_file: str = typer.Argument(..., help="Path to input file (CSV, TSV, or SDF)"),
-    output_file: Optional[str] = typer.Option(None, "-o", "--output", help="Path to output file (default: <input>_admet_results.<format>)"),
+    output_file: Optional[str] = typer.Option(
+        None, "-o", "--output", help="Path to output file (default: <input>_admet_results.<format>)"
+    ),
     export_format: str = typer.Option("csv", "--format", help="Output format ('csv' or 'xlsx')"),
-    model_dir: Optional[str] = typer.Option("models/export", "--model-dir", help="Path to exported model directory"),
+    model_dir: Optional[str] = typer.Option(
+        "models/export", "--model-dir", help="Path to exported model directory"
+    ),
 ):
     """Run batch 22+ ADMET, Lipinski Rule of 5, and PBPK screening on molecular libraries."""
     from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
@@ -1725,10 +1817,146 @@ def batch_predict_cli(
 
     total = summary["total_molecules"]
     table.add_row("Total Compounds Screened", str(total), "100.0%")
-    table.add_row("Lipinski Rule of 5 Compliant", str(summary["ro5_passed"]), f"{summary['ro5_pass_rate']}%")
-    table.add_row("Low Cardiotoxicity (hERG < 0.5)", str(summary["herg_safe_count"]), f"{summary['herg_safe_rate']}%")
-    table.add_row("Non-Mutagenic (AMES < 0.5)", str(summary["ames_safe_count"]), f"{summary['ames_safe_rate']}%")
+    table.add_row(
+        "Lipinski Rule of 5 Compliant", str(summary["ro5_passed"]), f"{summary['ro5_pass_rate']}%"
+    )
+    table.add_row(
+        "Low Cardiotoxicity (hERG < 0.5)",
+        str(summary["herg_safe_count"]),
+        f"{summary['herg_safe_rate']}%",
+    )
+    table.add_row(
+        "Non-Mutagenic (AMES < 0.5)",
+        str(summary["ames_safe_count"]),
+        f"{summary['ames_safe_rate']}%",
+    )
     console.print(table)
+
+
+@app.command("ti")
+@app.command("therapeutic-index")
+def therapeutic_index_cli(
+    smiles: str = typer.Argument(..., help="Candidate drug molecule SMILES"),
+    kd: Optional[float] = typer.Option(None, "--kd", help="On-target binding affinity Kd in nM"),
+    target_seq: Optional[str] = typer.Option(
+        None, "--target-seq", help="Target amino acid sequence"
+    ),
+    dose: float = typer.Option(100.0, "--dose", help="Reference oral dose in mg"),
+    herg_ic50: Optional[float] = typer.Option(None, "--herg-ic50", help="Explicit hERG IC50 in nM"),
+    model_dir: Optional[str] = typer.Option(
+        "models/export", "--model-dir", help="Path to exported models"
+    ),
+):
+    """Evaluate Therapeutic Index, hERG Safety Window, and Clinical Developability."""
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from tdc_studio.evaluation.therapeutic_index import TherapeuticIndexEngine
+    from tdc_studio.serving.unified_pipeline import UnifiedADMETPipeline
+
+    console.print(
+        "\n[bold cyan]🧪 TDC-Studio Therapeutic Index & Clinical Developability Engine[/bold cyan]"
+    )
+    console.print(f"  Molecule: [bold yellow]{smiles}[/bold yellow]")
+
+    pipeline = UnifiedADMETPipeline.from_exported_directory(model_dir)
+    engine = TherapeuticIndexEngine(admet_pipeline=pipeline)
+
+    profile = engine.compute(
+        smiles=smiles,
+        target_kd_nm=kd,
+        target_sequence=target_seq,
+        herg_ic50_nm=herg_ic50,
+        dose_mg=dose,
+    )
+
+    # Format colors
+    score = profile.clinical_developability_score
+    score_color = "green" if score >= 80 else ("yellow" if score >= 60 else "red")
+    tier_color = (
+        "green"
+        if "Safe" in profile.herg_risk_tier
+        else ("yellow" if "Borderline" in profile.herg_risk_tier else "red")
+    )
+
+    table = Table(title="Pharmacological Safety Margin & Potency Profile", show_header=True)
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_column("Assessment", style="bold")
+
+    table.add_row(
+        "Target Potency (Kd)", f"{profile.target_kd_nm:.2f} nM", f"pKd = {profile.target_pkd:.2f}"
+    )
+    table.add_row(
+        "hERG IC50 (Potassium Channel)", f"{profile.herg_ic50_nm:.1f} nM", "TDC Blocker Calibration"
+    )
+    table.add_row(
+        "hERG Safety Margin (IC50 / Kd)",
+        f"{profile.herg_safety_margin:.1f}x",
+        f"[{tier_color}]{profile.herg_risk_tier}[/{tier_color}]",
+    )
+    table.add_row(
+        "Therapeutic Window (log10)",
+        f"{profile.herg_therapeutic_window_log10:.2f}",
+        "Target Window >= 2.0",
+    )
+    table.add_row(
+        "DILI Hepatotoxicity Risk",
+        f"{profile.dili_risk_probability:.2%}",
+        "[green]Low[/green]" if profile.dili_risk_probability < 0.5 else "[red]High Risk[/red]",
+    )
+    table.add_row(
+        "ClinTox Clinical Failure Risk",
+        f"{profile.clintox_risk_probability:.2%}",
+        "[green]Low[/green]" if profile.clintox_risk_probability < 0.5 else "[red]High Risk[/red]",
+    )
+    table.add_row(
+        "AMES Mutagenicity Risk",
+        f"{profile.ames_mutagenicity_probability:.2%}",
+        "[green]Negative[/green]"
+        if profile.ames_mutagenicity_probability < 0.5
+        else "[red]Positive (Alert)[/red]",
+    )
+
+    if profile.pbpk_cmax_free_ug_ml is not None:
+        table.add_row(
+            f"PBPK Cmax (Free, {dose}mg dose)",
+            f"{profile.pbpk_cmax_free_ug_ml:.4f} ug/mL",
+            "Unbound in vivo systemic exposure",
+        )
+    if profile.in_vivo_herg_margin is not None:
+        table.add_row(
+            "In Vivo Free hERG Margin",
+            f"{profile.in_vivo_herg_margin:.1f}x",
+            "FDA S7B recommends >= 30x",
+        )
+
+    console.print(table)
+
+    comp = profile.component_scores
+    console.print(
+        Panel(
+            f"[bold {score_color}]Clinical Developability Index (CDI): {score:.1f} / 100[/bold {score_color}] "
+            f"([bold]{profile.developability_tier}[/bold])\n\n"
+            f"  • Potency Pillar: [cyan]{comp.potency:.1f} / 25[/cyan]\n"
+            f"  • Safety Window Pillar: [cyan]{comp.safety_window:.1f} / 25[/cyan]\n"
+            f"  • Organ Toxicology Pillar: [cyan]{comp.organ_toxicology:.1f} / 25[/cyan]\n"
+            f"  • Human PK Druggability Pillar: [cyan]{comp.human_pk:.1f} / 25[/cyan]",
+            title="[bold]Summary Developability Score[/bold]",
+            border_style=score_color,
+        )
+    )
+
+    if profile.warnings:
+        console.print("\n[bold yellow]⚠️ Pharmacological & Regulatory Warnings:[/bold yellow]")
+        for w in profile.warnings:
+            console.print(f"  • [yellow]{w}[/yellow]")
+
+    if profile.recommendations:
+        console.print("\n[bold green]💡 Medicinal Chemistry Recommendations:[/bold green]")
+        for r in profile.recommendations:
+            console.print(f"  • [green]{r}[/green]")
+    console.print()
 
 
 switch_app = typer.Typer(help="Manage and switch Colab CLI accounts (tokens)")
@@ -1998,6 +2226,147 @@ def export_notebook(
 
     export_notebook_file(output, repo_url=repo_url, run_command=command)
     console.print(f"[bold green]Generated Google Colab notebook at:[/bold green] {output}")
+
+
+@retro_app.command("single-step")
+def retro_single_step_cli(
+    smiles: str = typer.Option(..., "--smiles", "-s", help="Target molecule product SMILES"),
+    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of precursor candidate sets"),
+    reaction_type: Optional[int] = typer.Option(
+        None, "--reaction-type", "-t", help="USPTO reaction class (1-10)"
+    ),
+):
+    """Predict candidate precursor reactant sets for a target molecule."""
+    from tdc_studio.models.retrosynthesis.rule_policy import RuleRetroPolicy
+
+    policy = RuleRetroPolicy()
+    candidates = policy.predict_reactants(smiles, top_k=top_k, reaction_type=reaction_type)
+
+    console.print(f"[bold cyan]🎯 Target Molecule:[/bold cyan] {smiles}")
+    console.print(f"[bold green]Top-{len(candidates)} Retrosynthetic Precursors:[/bold green]")
+    for idx, (reactants, score) in enumerate(candidates, start=1):
+        console.print(f"  {idx}. [yellow]{reactants}[/yellow] (confidence: {score:.3f})")
+
+
+@retro_app.command("plan")
+def retro_plan_cli(
+    smiles: str = typer.Option(
+        ..., "--smiles", "-s", help="Target molecule SMILES to plan pathway for"
+    ),
+    top_k: int = typer.Option(
+        3,
+        "--top-k",
+        "-k",
+        help="Number of candidate routes to find (1 = optimal only, >1 = alternative routes)",
+    ),
+    banned: Optional[str] = typer.Option(
+        None, "--banned", help="Comma-separated SMILES to ban/exclude from commercial stock"
+    ),
+    min_diversity: float = typer.Option(
+        0.25, "--min-diversity", help="Minimum diversity distance between routes"
+    ),
+    max_depth: int = typer.Option(5, "--max-depth", "-d", help="Maximum search tree depth"),
+    timeout: float = typer.Option(5.0, "--timeout", help="Search timeout in seconds"),
+    compare: bool = typer.Option(
+        True, "--compare", help="Display comparative Markdown table of all routes"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Optional JSON output file path"
+    ),
+    render_mermaid: bool = typer.Option(False, "--render-mermaid", help="Print Mermaid diagram"),
+):
+    """Plan multi-step chemical synthesis route from commercial stock reagents."""
+    import json
+
+    from tdc_studio.retrosynthesis.planner import RetroPlanner
+
+    banned_list = [s.strip() for s in banned.split(",") if s.strip()] if banned else None
+
+    planner = RetroPlanner(policy_type="rule", max_depth=max_depth, timeout_sec=timeout)
+    routes = planner.plan_routes(
+        target_smiles=smiles,
+        top_k=top_k,
+        diversity_threshold=min_diversity,
+        banned_smiles=banned_list,
+        timeout_sec=timeout,
+    )
+
+    champion = routes[0] if routes else None
+
+    if compare and len(routes) > 1:
+        console.print("\n[bold cyan]📊 Multi-Route Comparison Summary:[/bold cyan]")
+        console.print(planner.render_comparison_table(routes))
+        console.print("\n" + "=" * 70 + "\n")
+
+    if champion:
+        tree_str = planner.render_tree(champion)
+        console.print(tree_str)
+
+    if render_mermaid:
+        console.print("\n[bold magenta]Mermaid Diagram(s):[/bold magenta]")
+        if len(routes) > 1:
+            console.print(planner.render_multi_mermaid(routes))
+        elif champion:
+            console.print(planner.render_mermaid(champion))
+
+    if output:
+        out_payload = {
+            "target_smiles": smiles,
+            "routes_count": len(routes),
+            "routes": [r.to_dict() for r in routes],
+        }
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(out_payload, f, indent=2)
+        console.print(f"[bold green]Saved routes JSON to:[/bold green] {output}")
+
+
+@app.command()
+def mcp(
+    transport: str = typer.Option("stdio", "--transport", "-t", help="Transport protocol: 'stdio' or 'sse'"),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host IP for SSE transport"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port number for SSE transport"),
+):
+    """Launch the TDC-Studio Model Context Protocol (MCP) Server for AI Agent collaboration."""
+    from tdc_studio.mcp.server import run_mcp_server
+
+    console.print(f"[bold green]🚀 Launching TDC-Studio MCP Server ({transport})...[/bold green]")
+    run_mcp_server(transport=transport, host=host, port=port)
+
+
+@app.command()
+def dossier(
+    smiles: str = typer.Argument(..., help="Candidate molecule SMILES string"),
+    target_name: str = typer.Option("Target", "--target", "-t", help="Target gene symbol or name"),
+    target_seq: Optional[str] = typer.Option(None, "--sequence", "-s", help="Target protein amino acid sequence"),
+    dose_mg: float = typer.Option(100.0, "--dose", "-d", help="Clinical oral dose in mg"),
+    output_dir: str = typer.Option("reports", "--output-dir", "-o", help="Output directory for reports"),
+):
+    """Generate an ICH CTD Nonclinical Candidate Dossier (HTML and JSON)."""
+    import json
+
+    from tdc_studio.dossier.collector import DossierCollector
+    from tdc_studio.dossier.renderer import DossierRenderer
+
+    os.makedirs(output_dir, exist_ok=True)
+    console.print(f"[bold cyan]🔍 Collecting nonclinical data for candidate:[/bold cyan] {smiles}")
+
+    collector = DossierCollector()
+    payload = collector.collect(smiles=smiles, target_seq=target_seq, target_name=target_name, dose_mg=dose_mg)
+
+    renderer = DossierRenderer()
+    html_content = renderer.render_html(payload)
+
+    safe_name = "".join(c if c.isalnum() else "_" for c in target_name)[:20]
+    html_path = os.path.join(output_dir, f"dossier_{safe_name}.html")
+    json_path = os.path.join(output_dir, f"dossier_{safe_name}.json")
+
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(payload.to_dict(), f, indent=2)
+
+    console.print(f"[bold green]✅ Standalone HTML Report:[/bold green] {html_path}")
+    console.print(f"[bold green]✅ Machine-readable JSON:[/bold green] {json_path}")
 
 
 if __name__ == "__main__":

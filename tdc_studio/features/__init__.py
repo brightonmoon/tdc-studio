@@ -1,11 +1,10 @@
 from tdc_studio.features.boltzmann_conformers import (
     FEATURE_NAMES as BOLTZMANN_FEATURE_NAMES,
-)
-from tdc_studio.features.boltzmann_conformers import (
     batch_extract_boltzmann_features,
     compute_boltzmann_conformer_features,
     extract_boltzmann_conformer_vector,
 )
+from tdc_studio.features.filters import CompoundFilter, FilterResult
 from tdc_studio.features.lipo_motifs import LipoMotifExtractor, get_lipo_motif_extractor
 from tdc_studio.features.pocket_extractor import (
     BindingPocketExtractor,
@@ -29,8 +28,9 @@ __all__ = [
     "get_ashby_tennant_extractor",
     "LipoMotifExtractor",
     "get_lipo_motif_extractor",
+    "CompoundFilter",
+    "FilterResult",
     "compute_boltzmann_conformer_features",
-
     "extract_boltzmann_conformer_vector",
     "batch_extract_boltzmann_features",
     "BOLTZMANN_FEATURE_NAMES",
@@ -43,5 +43,4 @@ __all__ = [
     "ResidueContribution",
     "analyze_target_attention",
 ]
-
 

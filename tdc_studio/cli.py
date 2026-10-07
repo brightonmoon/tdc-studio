@@ -2333,41 +2333,55 @@ def mcp(
     run_mcp_server(transport=transport, host=host, port=port)
 
 
-@app.command()
-def dossier(
-    smiles: str = typer.Argument(..., help="Candidate molecule SMILES string"),
-    target_name: str = typer.Option("Target", "--target", "-t", help="Target gene symbol or name"),
+@app.command("dossier")
+def dossier_cli(
+    smiles: str = typer.Argument(..., help="Candidate molecule SMILES"),
+    target_name: Optional[str] = typer.Option("Target", "--target", "-t", help="Target gene symbol or name"),
     target_seq: Optional[str] = typer.Option(None, "--sequence", "-s", help="Target protein amino acid sequence"),
+    kd: Optional[float] = typer.Option(None, "--kd", help="Target binding affinity Kd in nM"),
     dose_mg: float = typer.Option(100.0, "--dose", "-d", help="Clinical oral dose in mg"),
-    output_dir: str = typer.Option("reports", "--output-dir", "-o", help="Output directory for reports"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path (.html or .json)"),
+    output_dir: str = typer.Option("reports", "--output-dir", help="Output directory for reports if --output not specified"),
+    output_format: str = typer.Option("html", "--format", "-f", help="Output format: 'html' or 'json'"),
 ):
-    """Generate an ICH CTD Nonclinical Candidate Dossier (HTML and JSON)."""
+    """Generate an ICH CTD Nonclinical Candidate Dossier (interactive HTML and JSON)."""
     import json
 
     from tdc_studio.dossier.collector import DossierCollector
     from tdc_studio.dossier.renderer import DossierRenderer
 
-    os.makedirs(output_dir, exist_ok=True)
-    console.print(f"[bold cyan]🔍 Collecting nonclinical data for candidate:[/bold cyan] {smiles}")
+    console.print("\n[bold cyan]🧬 TDC-Studio Candidate Evaluation Dossier Generator[/bold cyan]")
+    console.print(f"  Molecule: [bold yellow]{smiles}[/bold yellow]")
 
     collector = DossierCollector()
-    payload = collector.collect(smiles=smiles, target_seq=target_seq, target_name=target_name, dose_mg=dose_mg)
+    payload = collector.collect(
+        smiles=smiles,
+        target_seq=target_seq,
+        target_name=target_name or "Target",
+        target_kd_nm=kd,
+        dose_mg=dose_mg,
+    )
 
-    renderer = DossierRenderer()
-    html_content = renderer.render_html(payload)
+    if output is not None:
+        out_path = DossierRenderer.export_file(payload, output_path=output, output_format=output_format)
+        console.print(f"[bold green]✓ Dossier successfully generated:[/bold green] [bold]{out_path}[/bold]\n")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        safe_name = "".join(c if c.isalnum() else "_" for c in (target_name or "Target"))[:20]
+        html_path = os.path.join(output_dir, f"dossier_{safe_name}.html")
+        json_path = os.path.join(output_dir, f"dossier_{safe_name}.json")
 
-    safe_name = "".join(c if c.isalnum() else "_" for c in target_name)[:20]
-    html_path = os.path.join(output_dir, f"dossier_{safe_name}.html")
-    json_path = os.path.join(output_dir, f"dossier_{safe_name}.json")
+        html_content = DossierRenderer.render_html(payload)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(payload.to_dict(), f, indent=2)
 
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(payload.to_dict(), f, indent=2)
+        console.print(f"[bold green]✅ Standalone HTML Report:[/bold green] {html_path}")
+        console.print(f"[bold green]✅ Machine-readable JSON:[/bold green] {json_path}")
 
-    console.print(f"[bold green]✅ Standalone HTML Report:[/bold green] {html_path}")
-    console.print(f"[bold green]✅ Machine-readable JSON:[/bold green] {json_path}")
 
 
 if __name__ == "__main__":
     app()
+

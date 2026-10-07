@@ -118,6 +118,7 @@ class DossierCollector:
             ti_profile = ti_obj.to_dict()
             if target_name:
                 ti_profile["target_name"] = target_name
+
             pbpk_dict = {
                 "cmax_total_ug_ml": ti_obj.pbpk_cmax_total_ug_ml,
                 "cmax_free_ug_ml": ti_obj.pbpk_cmax_free_ug_ml,

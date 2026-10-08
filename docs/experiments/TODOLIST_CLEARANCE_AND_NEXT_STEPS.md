@@ -28,33 +28,34 @@
 
 ## 3. 🎯 차기 작업 TODOLIST
 
-### [Phase 1] Colab 원격 환경 의존성 원클릭 고속 초기화
-새 세션에서 다음 명령어로 단일 패키지 단위 고속 설치 후 커널을 갱신합니다:
-```bash
-# 1. uv를 통한 필수 패키지 설치 (패키지당 3~5초 소요)
-colab install -s sota-training "scikit-learn>=1.5.0"
-colab install -s sota-training "catboost>=1.2.0"
-colab install -s sota-training "PyTDC"
-colab install -s sota-training "torch-geometric"
-colab install -s sota-training "rdkit"
+### [Phase 1] Colab 원격 환경 의존성 원클릭 고속 초기화 [완료]
+- `scikit-learn`, `catboost`, `PyTDC`, `torch-geometric`, `rdkit`, `transformers`를 `colab install`로 고속 구성 완료.
+- 커널 재기동(`colab restart-kernel -s sota-training`) 완료.
 
-# 2. 커널 재기동 (메모리 모듈 갱신)
-colab restart-kernel -s sota-training
-```
+### [Phase 2] 간세포 클리어런스(Hepatocyte Clearance) 최종 원격 학습 [완료]
+- D-MPNN 210차원 전이 피처 기반 Tri-Objective CatBoost 앙상블 학습 완료 (`deploy/train_clearance_cascade.py`).
+- **최종 검증 성과 (Bemis-Murcko Scaffold Split)**:
+  - **Spearman $\rho$**: **0.5847** (공식 가이드 목표치 $\ge 0.45$ 초과 달성!)
+  - **Pearson $r$**: 0.5384
+  - **MAE**: 27.5106
+  - **RMSE**: 40.9603
+  - **$R^2$**: 0.2720
 
-### [Phase 2] 간세포 클리어런스(Hepatocyte Clearance) 최종 원격 학습
-D-MPNN 210차원 전이 피처가 완벽히 결합된 Tri-Objective 앙상블 원격 실행:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\colab_exec.ps1 sota-training deploy/train_clearance_cascade.py
-```
-- **기대 목표**: Bemis-Murcko Scaffold Split 기준 Spearman $\rho \ge 0.58 \sim 0.62+$ (공식 목표치 0.45 대폭 초과 달성).
+### [Phase 3] 학습 아티팩트 다운로드 및 동기화 [완료]
+- 모델 산출물 로컬 동기화 완료:
+  - `models/export/clearance_cascade/clearance_cascade_summary.json`
+  - `models/export/clearance_cascade/clearance_cascade_model.joblib` (3.7 MB)
 
-### [Phase 3] 학습 아티팩트 다운로드 및 W&B 동기화
-훈련 완료 즉시 모델 산출물 수신:
-```powershell
-colab download -s sota-training /content/tdc-studio/models/export/clearance_cascade/clearance_cascade_summary.json models/export/clearance_cascade/clearance_cascade_summary.json
-colab download -s sota-training /content/tdc-studio/models/export/clearance_cascade/clearance_cascade_model.joblib models/export/clearance_cascade/clearance_cascade_model.joblib
-```
-
-### [Phase 4] 지질친화도(Lipophilicity) Tri-Hybrid 스태킹 고도화
-- `deploy/train_lipo_stacking.py`: ChemBERTa 언어 임베딩 + 24-dim 모티프에 D-MPNN 위상 표현을 결합하여 가이드 최종 목표 $R^2 \ge 0.85$ 도전.
+### [Phase 4] 지질친화도(Lipophilicity) Tri-Hybrid 스태킹 고도화 [완료]
+- `colab_exec.ps1` UTF-8 without BOM 인코딩 보정 및 `deploy/train_lipo_stacking.py`, `tdc_studio/models/hybrid/lipo_stacker.py` GPU ChemBERTa 가속/D-MPNN 210차원 슬라이싱 적용.
+- 원격 GPU 학습 완료 (`deploy/train_lipo_stacking.py`).
+- **최종 검증 성과 (Bemis-Murcko Scaffold Split)**:
+  - **$R^2$**: 0.6004
+  - **Pearson $r$**: 0.7879
+  - **Spearman $\rho$**: 0.7738
+  - **MAE**: 0.5887
+  - **RMSE**: 0.7502
+  - **Stack Weights**: [0.616 (Motifs GBDT), 0.355 (ChemBERTa), 0.029 (D-MPNN)]
+- 산출물 동기화 완료:
+  - `models/export/lipophilicity_stacker/lipophilicity_stacking_summary.json`
+  - `models/export/lipophilicity_stacker/lipo_stacker_model.joblib` (2.4 MB)

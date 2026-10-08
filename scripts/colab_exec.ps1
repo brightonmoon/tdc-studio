@@ -125,8 +125,8 @@ $tempFile = Join-Path $tempDir $tempFileName
 
 # Combine header and original code
 $combinedCode = $header + "`n`n" + $originalCode
-$ansiEncoding = [System.Text.Encoding]::GetEncoding(949)
-[System.IO.File]::WriteAllText($tempFile, $combinedCode, $ansiEncoding)
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($tempFile, $combinedCode, $utf8NoBom)
 
 # 4. Execute using colab exec
 Write-Host "Executing '$FilePath' on Colab session '$Session' with arguments: $($ScriptArgs -join ' ')..." -ForegroundColor Cyan

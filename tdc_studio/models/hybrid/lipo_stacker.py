@@ -29,12 +29,18 @@ _LIPO_CHEMBERTA_CACHE: Dict[str, np.ndarray] = {}
 def extract_chemberta_features_cached(
     smiles_list: List[str],
     batch_size: int = 64,
-    device: str = "cpu",
+    device: Optional[str] = None,
 ) -> np.ndarray:
     """Extract or mock ChemBERTa 384-dimensional embeddings safely with memory caching."""
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     missing = [s for s in smiles_list if s and s not in _LIPO_CHEMBERTA_CACHE]
     if missing:
         try:
+            print(
+                f"[ChemBERTa] Extracting representations for {len(missing)} molecules on {device}...",
+                flush=True,
+            )
             from transformers import AutoModel, AutoTokenizer
 
             model_name = "DeepChem/ChemBERTa-77M-MTR"
@@ -60,7 +66,13 @@ def extract_chemberta_features_cached(
                     embs = pooled.cpu().numpy()
                 for s_key, vec in zip(batch, embs):
                     _LIPO_CHEMBERTA_CACHE[s_key] = vec
-        except Exception:
+                if (i // batch_size) % 10 == 0 or (i + batch_size) >= len(missing):
+                    print(
+                        f"[ChemBERTa] Processed {min(i + batch_size, len(missing))}/{len(missing)} compounds...",
+                        flush=True,
+                    )
+        except Exception as e:
+            print(f"[ChemBERTa Warning] Falling back to hash embeddings: {e}", flush=True)
             # Graceful fallback to 384-dim deterministic hash if huggingface is offline/mocked
             rng = np.random.default_rng(42)
             for s_key in missing:
@@ -178,6 +190,8 @@ class LipophilicityStacker:
             if res.success:
                 w_opt = np.maximum(res.x, 0.0)
                 self.weights = w_opt / np.sum(w_opt)
+            else:
+                self.weights = init_w / np.sum(init_w)
 
         self.is_fitted = True
         return self

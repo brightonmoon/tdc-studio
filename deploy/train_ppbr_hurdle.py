@@ -65,7 +65,10 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
-from tdc.single_pred import ADME
+try:
+    from tdc.single_pred import ADME
+except ImportError:
+    ADME = None
 from torch.utils.data import DataLoader, Dataset
 import yaml
 
@@ -406,6 +409,8 @@ def main():
 
     # 4. Load Data
     logger.info("Loading official TDC PPBR_AZ dataset...")
+    if ADME is None:
+        raise ImportError("PyTDC is required to load PPBR_AZ dataset. Install via 'pip install PyTDC'")
     tdc_data = ADME(name="PPBR_AZ", path="data")
     split_method = cfg.get("data", {}).get("split_type", "random")
     seed = int(cfg.get("data", {}).get("seed", 42))

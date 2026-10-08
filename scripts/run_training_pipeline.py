@@ -55,7 +55,24 @@ def check_wandb_status() -> tuple[bool, Optional[str]]:
 
 
 def get_active_colab_session() -> Optional[str]:
-    """Retrieve active Colab session identifier."""
+    """Retrieve active Colab session identifier from colab-cli sessions.json or cli."""
+    import json
+
+    # 1. Check local config sessions.json directly for registered session keys
+    home = Path.home()
+    config_paths = [
+        home / ".config" / "colab-cli" / "sessions.json",
+        Path(r"C:\Users\xps\.colab_munhyeongdo4\.config\colab-cli\sessions.json"),
+    ]
+    for cp in config_paths:
+        if cp.exists():
+            try:
+                data = json.loads(cp.read_text(encoding="utf-8"))
+                for s_name in data.keys():
+                    return s_name
+            except Exception:
+                pass
+
     if not shutil.which("colab"):
         return None
     try:
@@ -66,9 +83,14 @@ def get_active_colab_session() -> Optional[str]:
             # Match session names like 'gpu-t4-...' or lines containing online/running
             if any(status in line.upper() for status in ["RUNNING", "ACTIVE", "ASSIGNED", "ONLINE", "T4", "GPU"]):
                 parts = line.split()
+                # Check for explicit gpu- prefixed ID first
                 for p in parts:
                     clean = p.strip("*-[]|,")
-                    if clean.startswith("gpu-") or "session" in clean or len(clean) > 8:
+                    if clean.startswith("gpu-"):
+                        return clean
+                for p in parts:
+                    clean = p.strip("*-[]|,")
+                    if "session" in clean or len(clean) > 8:
                         return clean
         # Fallback: check if any non-header bullet exists
         for line in lines:
@@ -147,14 +169,21 @@ def execute_pipeline(
     # Phase 3 & 4: Remote Colab Cloud GPU Execution & Monitoring
     # =========================================================================
     print("\n[Phase 3 & 4/5] Remote Cloud GPU Execution & Real-Time Monitoring")
-    remote_train_cmd = f"tdc-studio train --local --config {resolved_config.name}"
+    try:
+        rel_config = str(resolved_config.relative_to(Path.cwd())).replace("\\", "/")
+    except ValueError:
+        rel_config = str(resolved_config).replace("\\", "/")
+
+    train_args = ["train", "--local", "--config", rel_config]
     if epochs:
-        remote_train_cmd += f" --epochs {epochs}"
+        train_args.extend(["--epochs", str(epochs)])
+
+    remote_train_cmd = f"tdc-studio {' '.join(train_args)}"
 
     if target_session:
         print(f"  Dispatching task to active Colab session '{target_session}' via PowerShell helper...")
         ps_script = Path("scripts/colab_exec.ps1").resolve()
-        runner_job = Path("deploy/colab_runner_job.py").resolve()
+        main_entry = Path("main.py").resolve()
 
         if ps_script.exists():
             exec_cmd = [
@@ -163,16 +192,16 @@ def execute_pipeline(
                 "-ExecutionPolicy", "Bypass",
                 "-File", str(ps_script),
                 target_session,
-                str(runner_job),
-                remote_train_cmd,
-            ]
+                str(main_entry),
+            ] + train_args
         else:
             exec_cmd = [
                 "uv", "run", "tdc-studio", "remote", "exec",
                 "-s", target_session,
-                "-f", str(runner_job),
-                "--arg", remote_train_cmd,
+                "-f", str(main_entry),
             ]
+            for arg in train_args:
+                exec_cmd.extend(["--arg", arg])
     else:
         print(f"  Dispatching ephemeral cloud GPU job ({gpu}) via `tdc-studio remote run`...")
         exec_cmd = [

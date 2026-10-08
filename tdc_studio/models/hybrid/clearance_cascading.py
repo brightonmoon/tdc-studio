@@ -3,11 +3,12 @@
 Biochemical rationale:
     Intrinsic clearance in human liver microsomes (CYP Phase I oxidation) is a primary
     biochemical determinant of hepatic clearance. By cascading the SOTA microsomal clearance
-    predictions (Spearman rho = 0.6918) alongside membrane permeability (Caco-2) and molecular
-    descriptors, the hepatocyte clearance prediction directly benefits from the pre-learned
-    CYP catalytic manifold without data leakage.
+    predictions (Spearman rho = 0.6918) alongside multi-task D-MPNN representations and
+    comprehensive RDKit 200+ descriptors, the hepatocyte clearance prediction directly benefits
+    from the pre-learned CYP catalytic manifold without data leakage.
 """
 
+import os
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -24,14 +25,44 @@ try:
 except ImportError:
     HAS_CATBOOST = False
 
+try:
+    from rdkit.ML.Descriptors import MoleculeDescriptors
 
-def compute_clearance_features(smiles_list: List[str]) -> np.ndarray:
-    """Extract standard physicochemical and RDKit descriptors for clearance modeling."""
+    _RDKIT_CALC = MoleculeDescriptors.MolecularDescriptorCalculator(
+        [d[0] for d in Descriptors._descList]
+    )
+except Exception:
+    _RDKIT_CALC = None
+
+
+def compute_clearance_features(
+    smiles_list: List[str], full_rdkit: bool = False
+) -> np.ndarray:
+    """Extract physicochemical descriptors for clearance modeling.
+
+    Args:
+        smiles_list: List of molecular SMILES.
+        full_rdkit: If True, computes the full suite of RDKit 2D descriptors (200+ features).
+                    If False, returns standard 12-dimensional physicochemical features.
+    """
+    if full_rdkit and _RDKIT_CALC is not None:
+        features = []
+        for s in smiles_list:
+            mol = Chem.MolFromSmiles(s) if s else None
+            if mol is not None:
+                row = list(_RDKIT_CALC.CalcDescriptors(mol))
+            else:
+                row = [0.0] * len(Descriptors._descList)
+            features.append(row)
+        arr = np.array(features, dtype=np.float32)
+        return np.nan_to_num(arr, nan=0.0, posinf=1e4, neginf=-1e4)
+
+    # Standard 12-dim physicochemical features
     features = []
     for s in smiles_list:
         row = [0.0] * 12
         try:
-            mol = Chem.MolFromSmiles(s)
+            mol = Chem.MolFromSmiles(s) if s else None
             if mol is not None:
                 logp = float(Descriptors.MolLogP(mol))
                 mw = float(Descriptors.MolWt(mol))
@@ -43,15 +74,12 @@ def compute_clearance_features(smiles_list: List[str]) -> np.ndarray:
                 rings = float(mol.GetRingInfo().NumRings())
                 arom_rings = float(rdMolDescriptors.CalcNumAromaticRings(mol))
                 heavy = float(mol.GetNumHeavyAtoms())
-                # Halogens
                 halogens = float(
                     sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in (9, 17, 35, 53))
                 )
-                # Basic amine flag
                 basic = float(
                     len(mol.GetSubstructMatches(Chem.MolFromSmarts("[NX3;!$(NC=O)][CX4]")))
                 )
-
                 row = [
                     logp,
                     mw,
@@ -78,41 +106,132 @@ class CascadedClearancePredictor:
     def __init__(
         self,
         base_gbdt_params: Optional[Dict[str, Any]] = None,
-        use_caco2_prior: bool = True,
+        use_caco2_prior: bool = False,
+        use_full_rdkit: bool = True,
+        dmpnn_checkpoint: Optional[str] = "models/export/cluster_4_clearance/best_model.pt",
+        ensemble_seeds: Optional[List[int]] = None,
         model_type: str = "auto",
     ):
         params = base_gbdt_params or {}
-        use_cb = (model_type == "catboost") or (model_type == "auto" and HAS_CATBOOST)
-        if use_cb and HAS_CATBOOST:
-            cb_params = {
-                "iterations": params.get("iterations", params.get("max_iter", 300)),
-                "learning_rate": params.get("learning_rate", 0.03),
-                "depth": params.get("depth", params.get("max_depth", 6)),
-                "l2_leaf_reg": params.get("l2_leaf_reg", params.get("l2_regularization", 2.0)),
-                "loss_function": "RMSE",
-                "verbose": 0,
-                "random_seed": params.get("random_seed", params.get("random_state", 42)),
-            }
-            self.gbdt = CatBoostRegressor(**cb_params)
-            self.model_type = "catboost"
-        else:
-            hist_params = {
-                "max_iter": params.get("max_iter", params.get("iterations", 300)),
-                "learning_rate": params.get("learning_rate", 0.03),
-                "max_leaf_nodes": params.get("max_leaf_nodes", 31),
-                "min_samples_leaf": params.get("min_samples_leaf", 15),
-                "l2_regularization": params.get(
-                    "l2_regularization", params.get("l2_leaf_reg", 1.0)
-                ),
-                "random_state": params.get("random_state", params.get("random_seed", 42)),
-            }
-            self.gbdt = HistGradientBoostingRegressor(**hist_params)
-            self.model_type = "histgbdt"
-
+        self.use_cb = (model_type == "catboost") or (model_type == "auto" and HAS_CATBOOST)
+        self.model_type = "catboost" if self.use_cb else "histgbdt"
+        self.base_params = params
         self.use_caco2_prior = use_caco2_prior
+        self.use_full_rdkit = use_full_rdkit
+        self.dmpnn_checkpoint = dmpnn_checkpoint if (dmpnn_checkpoint and os.path.exists(dmpnn_checkpoint)) else None
+        self.ensemble_seeds = ensemble_seeds or ([42, 43, 44] if self.use_cb else [42])
+
+        self.models = []
         self.is_fitted = False
-        self._mic_mean = 0.0
-        self._mic_std = 1.0
+        self._dmpnn_model = None
+
+    def _get_dmpnn_model(self):
+        if self._dmpnn_model is not None:
+            return self._dmpnn_model
+        if not self.dmpnn_checkpoint or not os.path.exists(self.dmpnn_checkpoint):
+            return None
+        try:
+            import torch
+            from tdc_studio.models.graph.dmpnn import DMPNNModel
+
+            config = {
+                "in_dim": 14,
+                "edge_dim": 6,
+                "hidden_dim": 400,
+                "depth": 3,
+                "dropout": 0.15,
+                "use_descriptors": True,
+                "descriptor_dim": 210,
+                "tasks": [
+                    {"name": "half_life_obach", "type": "regression"},
+                    {"name": "clearance_hepatocyte_az", "type": "regression"},
+                    {"name": "clearance_microsome_az", "type": "regression"},
+                    {"name": "cyp3a4_veith", "type": "classification"},
+                    {"name": "ppbr_az", "type": "regression"},
+                ],
+            }
+            dmp_model = DMPNNModel(config)
+            ckpt = torch.load(self.dmpnn_checkpoint, map_location="cpu")
+            dmp_model.load_state_dict(ckpt, strict=False)
+            dmp_model.eval()
+            self._dmpnn_model = dmp_model
+            return self._dmpnn_model
+        except Exception:
+            return None
+
+    def _extract_dmpnn_features(self, smiles_list: List[str]) -> Optional[np.ndarray]:
+        dmp_model = self._get_dmpnn_model()
+        if dmp_model is None:
+            return None
+        try:
+            import torch
+            from torch_geometric.data import Data
+            from tdc_studio.data.transforms import SmilesToGraphTransform
+            from tdc_studio.data.collate import molecule_collate_fn
+
+            g_trans = SmilesToGraphTransform()
+            preds_all = []
+            batch_size = 64
+
+            for i in range(0, len(smiles_list), batch_size):
+                b_smiles = smiles_list[i : i + batch_size]
+                b_items = []
+                for sm in b_smiles:
+                    g = g_trans(sm) if sm else None
+                    if g is None:
+                        g = Data(
+                            x=torch.zeros((1, 14)),
+                            edge_index=torch.empty((2, 0), dtype=torch.long),
+                            edge_attr=torch.empty((0, 6), dtype=torch.float),
+                        )
+                    mol = Chem.MolFromSmiles(sm) if sm else None
+                    if mol is not None:
+                        desc_dict = Descriptors.CalcMolDescriptors(mol)
+                        desc_vals = [
+                            0.0
+                            if (v is None or np.isnan(v) or np.isinf(v))
+                            else float(np.clip(v, -100.0, 100.0))
+                            for v in desc_dict.values()
+                        ]
+                    else:
+                        desc_vals = [0.0] * 210
+                    b_items.append({
+                        "drug_graph": g,
+                        "descriptors": torch.tensor(desc_vals, dtype=torch.float32),
+                        "drug_smiles_str": sm,
+                    })
+                collated = molecule_collate_fn(b_items)
+                with torch.no_grad():
+                    out = dmp_model(collated)  # Shape: (B, 5)
+                    # Use indices 0 (half_life), 1 (hepatocyte), 2 (microsome), 4 (ppbr)
+                    sub = out[:, [0, 1, 2, 4]].cpu().numpy()
+                    preds_all.append(sub)
+
+            return np.vstack(preds_all)
+        except Exception:
+            return None
+
+    def _build_feature_matrix(
+        self,
+        smiles_list: List[str],
+        mic_preds: np.ndarray,
+        caco2_preds: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        physchem_feats = compute_clearance_features(smiles_list, full_rdkit=self.use_full_rdkit)
+        mic_col = mic_preds.reshape(-1, 1).astype(np.float32)
+
+        feat_list = [physchem_feats, mic_col]
+
+        dmp_feats = self._extract_dmpnn_features(smiles_list)
+        if dmp_feats is not None:
+            feat_list.append(dmp_feats)
+
+        if self.use_caco2_prior and caco2_preds is not None:
+            caco2_col = caco2_preds.reshape(-1, 1).astype(np.float32)
+            interaction = (mic_col * caco2_col).astype(np.float32)
+            feat_list.extend([caco2_col, interaction])
+
+        return np.hstack(feat_list)
 
     def fit(
         self,
@@ -121,28 +240,38 @@ class CascadedClearancePredictor:
         mic_preds_train: np.ndarray,
         caco2_preds_train: Optional[np.ndarray] = None,
     ) -> "CascadedClearancePredictor":
-        """Fit the cascaded hepatocyte model with prior features.
-
-        Args:
-            smiles_train: List of training SMILES.
-            y_train: Target hepatocyte clearance values (log10 or standardized).
-            mic_preds_train: Predicted microsomal clearance (out-of-fold for train to prevent leakage).
-            caco2_preds_train: Optional predicted Caco-2 permeability.
-        """
-        physchem_feats = compute_clearance_features(smiles_train)
-        mic_col = mic_preds_train.reshape(-1, 1).astype(np.float32)
-
-        feat_list = [physchem_feats, mic_col]
-        if self.use_caco2_prior and caco2_preds_train is not None:
-            caco2_col = caco2_preds_train.reshape(-1, 1).astype(np.float32)
-            # Permeability x Microsome interaction term
-            interaction = (mic_col * caco2_col).astype(np.float32)
-            feat_list.extend([caco2_col, interaction])
-
-        X_train = np.hstack(feat_list)
+        """Fit the cascaded hepatocyte model with prior features and ensemble seeds."""
+        X_train = self._build_feature_matrix(smiles_train, mic_preds_train, caco2_preds_train)
         valid_mask = ~np.isnan(y_train) & ~np.isnan(X_train).any(axis=1)
+        X_clean, y_clean = X_train[valid_mask], y_train[valid_mask]
 
-        self.gbdt.fit(X_train[valid_mask], y_train[valid_mask])
+        self.models = []
+        for seed in self.ensemble_seeds:
+            if self.use_cb and HAS_CATBOOST:
+                cb_params = {
+                    "iterations": self.base_params.get("iterations", 500),
+                    "learning_rate": self.base_params.get("learning_rate", 0.025),
+                    "depth": self.base_params.get("depth", 6),
+                    "l2_leaf_reg": self.base_params.get("l2_leaf_reg", 3.0),
+                    "loss_function": "RMSE",
+                    "verbose": 0,
+                    "random_seed": seed,
+                }
+                m = CatBoostRegressor(**cb_params)
+            else:
+                hist_params = {
+                    "max_iter": self.base_params.get("max_iter", 300),
+                    "learning_rate": self.base_params.get("learning_rate", 0.03),
+                    "max_leaf_nodes": self.base_params.get("max_leaf_nodes", 31),
+                    "min_samples_leaf": self.base_params.get("min_samples_leaf", 15),
+                    "l2_regularization": self.base_params.get("l2_regularization", 2.0),
+                    "random_state": seed,
+                }
+                m = HistGradientBoostingRegressor(**hist_params)
+
+            m.fit(X_clean, y_clean)
+            self.models.append(m)
+
         self.is_fitted = True
         return self
 
@@ -153,20 +282,12 @@ class CascadedClearancePredictor:
         caco2_preds: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Predict hepatocyte clearance given new SMILES and microsomal predictions."""
-        if not self.is_fitted:
+        if not self.is_fitted or not self.models:
             raise RuntimeError("Model is not fitted yet.")
 
-        physchem_feats = compute_clearance_features(smiles_list)
-        mic_col = mic_preds.reshape(-1, 1).astype(np.float32)
-
-        feat_list = [physchem_feats, mic_col]
-        if self.use_caco2_prior and caco2_preds is not None:
-            caco2_col = caco2_preds.reshape(-1, 1).astype(np.float32)
-            interaction = (mic_col * caco2_col).astype(np.float32)
-            feat_list.extend([caco2_col, interaction])
-
-        X = np.hstack(feat_list)
-        return self.gbdt.predict(X)
+        X = self._build_feature_matrix(smiles_list, mic_preds, caco2_preds)
+        preds = [m.predict(X) for m in self.models]
+        return np.mean(preds, axis=0)
 
     def evaluate(
         self,

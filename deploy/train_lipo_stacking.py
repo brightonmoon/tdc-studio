@@ -70,16 +70,96 @@ def main():
         model_type=args.model_type,
     )
 
+    # Optional Branch 3: Pretrained 4-Layer D-MPNN Predictions (from models/checkpoint_5tasks)
+    dmpnn_chk = "models/checkpoint_5tasks/best_model.pt"
+    gnn_val = None
+    gnn_test = None
+
+    if os.path.exists(dmpnn_chk):
+        try:
+            logger.info("Loading pretrained D-MPNN from %s for Tri-Hybrid Stacking...", dmpnn_chk)
+            import torch
+            from rdkit import Chem
+            from rdkit.Chem import Descriptors
+            from torch_geometric.data import Data
+            from sklearn.linear_model import RidgeCV
+
+            from tdc_studio.cli import load_yaml
+            from tdc_studio.core.registry import MODELS
+            from tdc_studio.data.transforms import SmilesToGraphTransform
+            from tdc_studio.data.collate import molecule_collate_fn
+
+            cfg = load_yaml("configs/config_distribution_mtl_5tasks.yaml")
+            model_cls = MODELS.get(cfg["model"]["type"])
+            dmpnn_model = model_cls(cfg["model"])
+            weights = torch.load(dmpnn_chk, map_location="cpu", weights_only=False)
+            dmpnn_model.load_state_dict(weights)
+            dmpnn_model.eval()
+
+            g_trans = SmilesToGraphTransform()
+
+            def extract_dmpnn_batch(smiles_l):
+                preds = []
+                batch_size = 64
+                for i in range(0, len(smiles_l), batch_size):
+                    batch_smiles = smiles_l[i : i + batch_size]
+                    batch_items = []
+                    for sm in batch_smiles:
+                        g = g_trans(sm)
+                        if g is None:
+                            g = Data(
+                                x=torch.zeros((1, 14)),
+                                edge_index=torch.empty((2, 0), dtype=torch.long),
+                                edge_attr=torch.empty((0, 6), dtype=torch.float),
+                            )
+                        mol = Chem.MolFromSmiles(sm) if sm else None
+                        if mol is not None:
+                            desc_dict = Descriptors.CalcMolDescriptors(mol)
+                            desc_vals = [
+                                0.0
+                                if (v is None or np.isnan(v) or np.isinf(v))
+                                else float(np.clip(v, -100.0, 100.0))
+                                for v in desc_dict.values()
+                            ]
+                        else:
+                            desc_vals = [0.0] * 210
+                        batch_items.append({
+                            "drug_graph": g,
+                            "descriptors": torch.tensor(desc_vals, dtype=torch.float32),
+                            "drug_smiles_str": sm,
+                        })
+                    collated = molecule_collate_fn(batch_items)
+                    with torch.no_grad():
+                        out = dmpnn_model(collated)
+                        preds.extend(out[:, 3].cpu().numpy())
+                return np.array(preds, dtype=np.float32)
+
+            logger.info("Extracting D-MPNN representations for train, val, test splits...")
+            raw_trn = extract_dmpnn_batch(smiles_train)
+            raw_val = extract_dmpnn_batch(smiles_val)
+            raw_tst = extract_dmpnn_batch(smiles_test)
+
+            calib = RidgeCV()
+            calib.fit(raw_trn.reshape(-1, 1), y_train)
+            gnn_val = calib.predict(raw_val.reshape(-1, 1))
+            gnn_test = calib.predict(raw_tst.reshape(-1, 1))
+            logger.info("Successfully calibrated D-MPNN Branch.")
+        except Exception as e:
+            logger.warning("Could not load D-MPNN predictions (%s), continuing with 2-Branch stacker.", e)
+            gnn_val = None
+            gnn_test = None
+
     logger.info("Fitting stacker on %d training samples with validation calibration...", len(smiles_train))
     stacker.fit(
         smiles_train=smiles_train,
         y_train=y_train,
-        val_data=(smiles_val, y_val, None),
+        val_data=(smiles_val, y_val, gnn_val),
     )
 
     test_metrics = stacker.evaluate(
         smiles_test=smiles_test,
         y_test=y_test,
+        gnn_preds_test=gnn_test,
     )
 
     logger.info("=================================================================")

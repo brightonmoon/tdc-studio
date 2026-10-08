@@ -158,6 +158,7 @@ def test_dmpnn_hurdle_compute_loss_e2e():
 def test_ppbr_hurdle_compute_metrics():
     """Verify compute_metrics calculates all hurdle stratification metrics."""
     import numpy as np
+
     from deploy.train_ppbr_hurdle import compute_metrics
 
     y_true = np.array([30.0, 65.0, 75.0, 88.0, 92.0, 98.0])

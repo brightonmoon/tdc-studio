@@ -140,12 +140,14 @@ https://github.com/brightonmoon/tdc-studio.git 리포지토리를 클론하고 `
 
 ### 🧰 4. 터미널 코딩 에이전트용 스킬 정의서 (Agent Skill for CLI)
 터미널 실행 권한을 가진 자율 코딩 에이전트(Antigravity CLI, Claude Code, Devin 등)는 별도의 상주 서버 구동 없이도 CLI 명령을 직접 오케스트레이션할 수 있습니다:
-* **스킬 파일 경로**: [**`skills/tdc-studio/SKILL.md`**](skills/tdc-studio/SKILL.md)
+* **추론 및 평가 스킬**: [**`skills/tdc-studio/SKILL.md`**](skills/tdc-studio/SKILL.md)
+* **클라우드 학습 및 W&B 모니터링 스킬**: [**`skills/tdc-colab-wandb-training/SKILL.md`**](skills/tdc-colab-wandb-training/SKILL.md)
 * **에이전트가 실행하는 핵심 CLI 패턴**:
   - `uv run tdc-studio predict "<SMILES>"`: 25대 ADMET 지표 즉시 산출
   - `uv run tdc-studio ti "<SMILES>" --kd <NM> --dose <MG>`: 치료지수 및 CDI 평가
   - `uv run tdc-studio dossier "<SMILES>" --target <TARGET> --output-dir reports`: 원클릭 비임상 IND 보고서(HTML/JSON) 발행
   - `uv run tdc-studio retrosynthesis plan --smiles "<SMILES>" --top-k 3`: A* 상용 시약 역합성 트리 탐색
+  - `uv run python scripts/run_training_pipeline.py --config <CONFIG>`: 5단계 표준 Colab Cloud GPU 학습 및 W&B 모니터링 / 아티팩트 동기화
 
 ### 💬 5. 에이전트와의 실전 신약개발 협업 질의 예시
 * **[표적 결합 및 심장 안전성]**: *"HER2 표적($K_d < 20\text{nM}$)을 유지하면서 hERG 심장 독성을 낮춘 Imatinib 변이체를 설계하고, 1일 1회(QD) 100mg 투여 시의 정상상태 PBPK 혈중 농도를 계산해줘."*

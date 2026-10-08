@@ -49,7 +49,9 @@ def sync_artifacts(
 
         # Identify run cluster
         cluster = None
-        if "clearance" in run_name.lower():
+        if "caco2" in run_name.lower() or "absorption" in run_name.lower():
+            cluster = "cluster_1_absorption"
+        elif "clearance" in run_name.lower():
             cluster = "cluster_4_clearance"
         elif "cyp450" in run_name.lower():
             cluster = "cluster_3_cyp450"

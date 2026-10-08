@@ -134,6 +134,7 @@ class CascadedClearancePredictor:
             return None
         try:
             import torch
+
             from tdc_studio.models.graph.dmpnn import DMPNNModel
 
             config = {
@@ -168,8 +169,9 @@ class CascadedClearancePredictor:
         try:
             import torch
             from torch_geometric.data import Data
-            from tdc_studio.data.transforms import SmilesToGraphTransform
+
             from tdc_studio.data.collate import molecule_collate_fn
+            from tdc_studio.data.transforms import SmilesToGraphTransform
 
             g_trans = SmilesToGraphTransform()
             preds_all = []

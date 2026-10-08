@@ -1,10 +1,22 @@
 # 03. 학습 및 하이퍼파라미터 최적화 운영 가이드 (Training & HPO)
 
-TDC-Studio는 로컬 개발 머신의 자원 부담을 없애고 클라우드 GPU의 유연성을 극대화하기 위해 **"3단계 표준 실험 파이프라인"**을 운영합니다.
+TDC-Studio는 로컬 개발 머신의 자원 부담을 없애고 클라우드 GPU의 유연성을 극대화하기 위해 **"5단계 표준 실험 파이프라인"**과 자동화된 오케스트레이터([`scripts/run_training_pipeline.py`](../scripts/run_training_pipeline.py))를 운영합니다.
+
+> 💡 **상세 워크플로우 가이드**: 보다 구체적인 Colab 멀티 계정 스위칭, W&B 아티팩트 자동 동기화 및 에이전트 운영 지침은 **[Google Colab & W&B 표준 워크플로우 가이드](guides/cloud_training_wandb_workflow.md)**를 참조하십시오.
 
 ```
-[1단계: 로컬 사전 검증] ────► [2단계: 클라우드 GPU 위임] ────► [3단계: W&B 모니터링]
-  `--dry-run` 1초 점검           Google Colab CLI (A100)           실시간 메트릭 및 아티팩트
+[Phase 1: 사전 점검] ─► [Phase 2: 1-Step 로컬 드라이런] ─► [Phase 3: Colab GPU 디스패치] ─► [Phase 4: W&B 실시간 모니터링] ─► [Phase 5: 아티팩트 동기화]
+  세션 & W&B 인증           --dry-run --local (1초)             Python 3.11 uv 환경                실시간 Loss / Metric 스트리밍         models/export/ 다운로드
+```
+
+---
+
+## ⚡ 원클릭 표준 파이프라인 실행 (권장)
+
+AI 에이전트 및 연구자는 로컬에서 개별 명령어를 조합할 필요 없이, 표준 파이프라인 러너를 통해 1~5단계를 원클릭으로 일괄 수행할 수 있습니다:
+
+```bash
+uv run python scripts/run_training_pipeline.py --config configs/config_ames_standalone.yaml
 ```
 
 ---
@@ -15,7 +27,7 @@ TDC-Studio는 로컬 개발 머신의 자원 부담을 없애고 클라우드 GP
 
 ### (1) 단일 모델 학습 드라이런
 ```bash
-uv run tdc-studio train --config configs/config.yaml --dry-run
+uv run tdc-studio train --config configs/config.yaml --dry-run --local
 ```
 * **동작:** 1 에포크, 1 배치만 Forward 및 Backward를 수행하여 모델 파라미터 업데이트가 정상인지 확인하고 즉시 종료합니다.
 

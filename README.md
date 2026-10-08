@@ -141,7 +141,9 @@ https://github.com/brightonmoon/tdc-studio.git 리포지토리를 클론하고 `
 ### 🧰 4. 터미널 코딩 에이전트용 스킬 정의서 (Agent Skill for CLI)
 터미널 실행 권한을 가진 자율 코딩 에이전트(Antigravity CLI, Claude Code, Devin 등)는 별도의 상주 서버 구동 없이도 CLI 명령을 직접 오케스트레이션할 수 있습니다:
 * **추론 및 평가 스킬**: [**`skills/tdc-studio/SKILL.md`**](skills/tdc-studio/SKILL.md)
-* **클라우드 학습 및 W&B 모니터링 스킬**: [**`skills/tdc-colab-wandb-training/SKILL.md`**](skills/tdc-colab-wandb-training/SKILL.md)
+* **클라우드 학습 및 W&B 모니터링 스킬**: [**`skills/tdc-colab-wandb-training/SKILL.md`**](skills/tdc-colab-wandb-training/SKILL.md) (Antigravity: [`.agents/skills/tdc-colab-wandb-training/SKILL.md`](.agents/skills/tdc-colab-wandb-training/SKILL.md))
+* **에이전트 행동 지침 및 로컬 훈련 금지 헌법**: [**`AGENTS.md`**](AGENTS.md)
+* **상세 클라우드 학습 & W&B 워크플로우**: [**`docs/guides/cloud_training_wandb_workflow.md`**](docs/guides/cloud_training_wandb_workflow.md)
 * **에이전트가 실행하는 핵심 CLI 패턴**:
   - `uv run tdc-studio predict "<SMILES>"`: 25대 ADMET 지표 즉시 산출
   - `uv run tdc-studio ti "<SMILES>" --kd <NM> --dose <MG>`: 치료지수 및 CDI 평가
@@ -335,6 +337,7 @@ TDC-Studio 기여 및 코드 수정 시 반드시 준수해야 하는 5대 원�
 ### 🛠️ 엔지니어링 및 운영 가이드
 | 문서 | 설명 |
 | :--- | :--- |
+| **[☁️ Colab & W&B 클라우드 학습 표준 워크플로우](docs/guides/cloud_training_wandb_workflow.md)** | **5단계 표준 학습 라이프사이클, Colab 멀티 계정 스위칭, W&B 실시간 스트리밍 및 모델 자동 동기화** |
 | **[01. 환경 설정 및 설치](docs/01_environment_setup.md)** | Python 3.11 고정 이유, UV 가상환경, Colab CLI 인증 가이드 |
 | **[03. 학습 및 HPO 운영](docs/03_training_and_hpo.md)** | 로컬 1-Step 드라이런, Colab GPU 위임 및 W&B 실시간 추적 |
 | **[04. 컴포넌트 확장 가이드](docs/04_extending_components.md)** | `@MODELS`, `@DATASETS` 데코레이터를 이용한 신규 모델/데이터 추가법 |

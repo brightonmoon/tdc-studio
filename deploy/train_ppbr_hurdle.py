@@ -69,6 +69,11 @@ from tdc.single_pred import ADME
 from torch.utils.data import DataLoader, Dataset
 import yaml
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 from concurrent.futures import ThreadPoolExecutor
 from tdc_studio.data.collate import molecule_collate_fn
 from tdc_studio.data.transforms import RDKit2DDescriptorsTransform, SmilesToGraphTransform
@@ -643,8 +648,8 @@ def main():
     logger.info("Benchmark summary exported to: %s", summary_path.resolve())
 
     if wandb_run:
-        wandb.summary.update({f"test/{k}": v for k, v in final_test_metrics.items()})
-        wandb.finish()
+        wandb_run.summary.update({f"test/{k}": v for k, v in final_test_metrics.items()})
+        wandb_run.finish()
 
 
 def train_one_model(
@@ -788,7 +793,7 @@ def train_one_model(
             )
 
         if wandb_run and seed == 42:
-            wandb.log(
+            wandb_run.log(
                 {
                     "epoch": epoch,
                     "train/loss_total": avg_train_loss,

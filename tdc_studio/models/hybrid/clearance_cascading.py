@@ -118,6 +118,7 @@ class CascadedClearancePredictor:
         self.model_type = "catboost" if self.use_cb else "histgbdt"
         self.base_params = params
         self.use_caco2_prior = use_caco2_prior
+        self.use_full_rdkit = use_full_rdkit
         self.dmpnn_checkpoint = dmpnn_checkpoint
         self.ensemble_seeds = ensemble_seeds or ([42, 43, 44] if self.use_cb else [42])
         self.loss_objectives = loss_objectives or [("MAE", 0.55), ("Huber:delta=12.0", 0.45)]

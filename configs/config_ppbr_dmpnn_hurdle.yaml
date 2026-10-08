@@ -8,6 +8,7 @@ data:
   batch_size: 32
   seed: 42
   metric_name: "mae"
+  augmented_data_path: "data/external/ppbr_augmented_train_combined.csv"
   params:
     dataset_name: "ppbr_az"
     split_type: "random"

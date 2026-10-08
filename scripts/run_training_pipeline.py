@@ -183,7 +183,7 @@ def execute_pipeline(
     if target_session:
         print(f"  Dispatching task to active Colab session '{target_session}' via PowerShell helper...")
         ps_script = Path("scripts/colab_exec.ps1").resolve()
-        main_entry = Path("main.py").resolve()
+        runner_job = Path("deploy/colab_runner_job.py").resolve()
 
         if ps_script.exists():
             exec_cmd = [
@@ -192,16 +192,16 @@ def execute_pipeline(
                 "-ExecutionPolicy", "Bypass",
                 "-File", str(ps_script),
                 target_session,
-                str(main_entry),
-            ] + train_args
+                str(runner_job),
+                remote_train_cmd,
+            ]
         else:
             exec_cmd = [
                 "uv", "run", "tdc-studio", "remote", "exec",
                 "-s", target_session,
-                "-f", str(main_entry),
+                "-f", str(runner_job),
+                "--arg", remote_train_cmd,
             ]
-            for arg in train_args:
-                exec_cmd.extend(["--arg", arg])
     else:
         print(f"  Dispatching ephemeral cloud GPU job ({gpu}) via `tdc-studio remote run`...")
         exec_cmd = [

@@ -136,7 +136,7 @@ def main():
     print("\n[Step 1/3] Checking existing environment health...")
     env_info = verify_active_environment()
     if env_info.get("all_healthy"):
-        print("★ All required dependencies are already installed and verified! Skipping pip install.")
+        print("[OK] All required dependencies are already installed and verified! Skipping pip install.")
         print("Environment Summary:")
         for k, v in env_info.items():
             print(f"  - {k}: {v}")

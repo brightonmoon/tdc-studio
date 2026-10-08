@@ -69,11 +69,11 @@ def main():
 
     predictor = CascadedClearancePredictor(
         base_gbdt_params={
-            "iterations": 500,
-            "learning_rate": 0.03,
+            "iterations": 350,
+            "learning_rate": 0.035,
             "depth": 6,
             "l2_leaf_reg": 3.0,
-            "max_iter": 350,
+            "max_iter": 300,
             "l2_regularization": 2.0,
         },
         use_caco2_prior=False,
@@ -84,27 +84,28 @@ def main():
         model_type=args.model_type,
     )
 
-    logger.info("Fitting Cascaded Clearance Predictor on %d training samples...", len(train_df))
+    print(f"\n[Clearance Pipeline] Fitting Cascaded Predictor on {len(train_df)} training samples...", flush=True)
     predictor.fit(
         smiles_train=train_df["Drug"].tolist(),
         y_train=np.asarray(train_df["Y"], dtype=np.float32),
         mic_preds_train=mic_train,
     )
 
+    print(f"\n[Clearance Pipeline] Evaluating on {len(test_df)} test samples (Bemis-Murcko Scaffold Split)...", flush=True)
     test_metrics = predictor.evaluate(
         smiles_test=test_df["Drug"].tolist(),
         y_test=np.asarray(test_df["Y"], dtype=np.float32),
         mic_preds_test=mic_test,
     )
 
-    logger.info("=================================================================")
-    logger.info("[SOTA] FINAL HEPATOCYTE CLEARANCE TEST METRICS (Scaffold Split):")
-    logger.info("   Spearman rho : %.4f (Target: >= 0.45)", test_metrics["spearman_rho"])
-    logger.info("   Pearson r    : %.4f", test_metrics["pearson_r"])
-    logger.info("   MAE          : %.4f", test_metrics["mae"])
-    logger.info("   RMSE         : %.4f", test_metrics["rmse"])
-    logger.info("   R^2          : %.4f", test_metrics["r2"])
-    logger.info("=================================================================")
+    print("=================================================================", flush=True)
+    print("[SOTA] FINAL HEPATOCYTE CLEARANCE TEST METRICS (Scaffold Split):", flush=True)
+    print(f"   Spearman rho : {test_metrics['spearman_rho']:.4f} (Target: >= 0.45)", flush=True)
+    print(f"   Pearson r    : {test_metrics['pearson_r']:.4f}", flush=True)
+    print(f"   MAE          : {test_metrics['mae']:.4f}", flush=True)
+    print(f"   RMSE         : {test_metrics['rmse']:.4f}", flush=True)
+    print(f"   R^2          : {test_metrics['r2']:.4f}", flush=True)
+    print("=================================================================", flush=True)
 
     with open(os.path.join(args.export_dir, "clearance_cascade_summary.json"), "w") as f:
         json.dump(test_metrics, f, indent=2)

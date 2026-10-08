@@ -187,6 +187,10 @@ class CascadedClearancePredictor:
             from tdc_studio.data.collate import molecule_collate_fn
             from tdc_studio.data.transforms import SmilesToGraphTransform
 
+            print(
+                f"[Clearance DMPNN] Extracting representations for {len(smiles_list)} compounds...",
+                flush=True,
+            )
             g_trans = SmilesToGraphTransform()
             preds_all = []
             batch_size = 64
@@ -227,9 +231,11 @@ class CascadedClearancePredictor:
                     sub = out[:, [0, 1, 2, 4]].cpu().numpy()
                     preds_all.append(sub)
 
-            return np.vstack(preds_all)
+            arr = np.vstack(preds_all)
+            print(f"[Clearance DMPNN] Extracted representations shape: {arr.shape}", flush=True)
+            return arr
         except Exception as e:
-            print(f"[Warning] Failed to extract DMPNN features: {e}")
+            print(f"[Warning] Failed to extract DMPNN features: {e}", flush=True)
             return None
 
     def _build_feature_matrix(
@@ -271,14 +277,21 @@ class CascadedClearancePredictor:
 
         self.models = []
         n_seeds = max(len(self.ensemble_seeds), 1)
+        total_models = len(norm_objectives) * len(self.ensemble_seeds)
+        model_idx = 0
 
         for loss_fn, obj_w in norm_objectives:
             per_model_weight = obj_w / n_seeds
             for seed in self.ensemble_seeds:
+                model_idx += 1
+                print(
+                    f"[Clearance Ensemble] ({model_idx}/{total_models}) Training {loss_fn} (seed={seed}, weight={per_model_weight:.3f})...",
+                    flush=True,
+                )
                 if self.use_cb and HAS_CATBOOST:
                     cb_params = {
-                        "iterations": self.base_params.get("iterations", 500),
-                        "learning_rate": self.base_params.get("learning_rate", 0.025),
+                        "iterations": self.base_params.get("iterations", 350),
+                        "learning_rate": self.base_params.get("learning_rate", 0.03),
                         "depth": self.base_params.get("depth", 6),
                         "l2_leaf_reg": self.base_params.get("l2_leaf_reg", 3.0),
                         "loss_function": loss_fn,
@@ -301,6 +314,7 @@ class CascadedClearancePredictor:
 
                 m.fit(X_clean, y_clean)
                 self.models.append((m, per_model_weight))
+                print(f"[Clearance Ensemble] ({model_idx}/{total_models}) Done.", flush=True)
 
         self.is_fitted = True
         return self

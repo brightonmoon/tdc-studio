@@ -29,7 +29,7 @@ model:
   high_threshold: 90.0
   high_subthreshold: 85.0
   low_threshold: 70.0
-  weight_gate: 1.0
+  weight_gate: 50.0
   weight_high: 0.5
   weight_low: 0.8
   weight_mixture: 1.0

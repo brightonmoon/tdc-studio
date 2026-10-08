@@ -303,7 +303,7 @@ def main():
 
     # 4. Load Data
     logger.info("Loading official TDC PPBR_AZ dataset...")
-    tdc_data = ADME(name="PPBR_AZ")
+    tdc_data = ADME(name="PPBR_AZ", path="data")
     split_method = cfg.get("data", {}).get("split_type", "random")
     seed = int(cfg.get("data", {}).get("seed", 42))
     splits = tdc_data.get_split(method=split_method, seed=seed)
@@ -333,7 +333,13 @@ def main():
     logger.info("Initializing Graph and 210-dim RDKit Descriptors transforms...")
     graph_transform = SmilesToGraphTransform(extended=False)
     desc_transform = RDKit2DDescriptorsTransform(fill_na=0.0)
-    desc_dim = int(cfg.get("model", {}).get("descriptor_dim", 210))
+    sample_desc = desc_transform("CC")
+    desc_dim = (
+        len(sample_desc)
+        if sample_desc is not None
+        else int(cfg.get("model", {}).get("descriptor_dim", 210))
+    )
+    logger.info("Adaptive RDKit descriptor dimension detected: %d", desc_dim)
 
     t0 = time.time()
     logger.info("Building Training Dataset...")
@@ -386,6 +392,7 @@ def main():
 
     # 6. Instantiate Model, Optimizer, and Scheduler
     model_cfg = dict(cfg.get("model", {}))
+    model_cfg["descriptor_dim"] = desc_dim
     model = DMPNNHurdleModel(model_cfg).to(device)
     logger.info("Instantiated DMPNNHurdleModel: depth=%s, hidden_dim=%s, descriptor_dim=%s",
                 model_cfg.get("depth", 3), model_cfg.get("hidden_dim", 300), desc_dim)
@@ -404,10 +411,12 @@ def main():
 
             project_name = tracking_cfg.get("project", "tdc-learning")
             entity_name = tracking_cfg.get("entity", "tdc-studio")
+            wandb_mode = "online" if os.environ.get("WANDB_API_KEY") else "offline"
             wandb_run = wandb.init(
                 project=project_name,
                 entity=entity_name,
                 name="ppbr_dmpnn_hurdle_sota",
+                mode=wandb_mode,
                 config={
                     "model_config": model_cfg,
                     "train_size": len(train_dataset),

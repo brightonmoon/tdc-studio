@@ -85,6 +85,12 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
             nn.Linear(hidden_dim, 1),
         )
 
+        # Prior bias initialization reflecting PPBR distribution
+        with torch.no_grad():
+            self.gate_head[-1].bias.fill_(1.2)
+            self.high_head[-1].bias.fill_(92.0)
+            self.low_head[-1].bias.fill_(55.0)
+
         # 4. Hurdle Loss Function
         high_threshold = config.get("high_threshold", 90.0)
         low_threshold = config.get("low_threshold", 70.0)
@@ -179,8 +185,9 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
         gate_logits = self.gate_head(h)  # Shape: (B, 1)
         p_gate = torch.sigmoid(gate_logits)
 
-        pred_high = self.high_head(h)  # Shape: (B, 1)
-        pred_low = self.low_head(h)  # Shape: (B, 1)
+        # Regressors bounded within physically valid [0.0, 100.0]% binding
+        pred_high = torch.clamp(self.high_head(h), min=0.0, max=100.0)
+        pred_low = torch.clamp(self.low_head(h), min=0.0, max=100.0)
 
         # Smooth mixture prediction
         pred_mixture = p_gate * pred_high + (1.0 - p_gate) * pred_low

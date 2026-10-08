@@ -73,6 +73,7 @@ def main():
         use_full_rdkit=True,
         dmpnn_checkpoint="models/export/cluster_4_clearance/best_model.pt",
         ensemble_seeds=[42, 43, 44],
+        loss_objectives=[("MAE", 0.55), ("Huber:delta=12.0", 0.45)],
         model_type=args.model_type,
     )
 
@@ -90,7 +91,7 @@ def main():
     )
 
     logger.info("=================================================================")
-    logger.info("🏆 FINAL HEPATOCYTE CLEARANCE TEST METRICS (Scaffold Split):")
+    logger.info("[SOTA] FINAL HEPATOCYTE CLEARANCE TEST METRICS (Scaffold Split):")
     logger.info("   Spearman rho : %.4f (Target: >= 0.45)", test_metrics["spearman_rho"])
     logger.info("   Pearson r    : %.4f", test_metrics["pearson_r"])
     logger.info("   MAE          : %.4f", test_metrics["mae"])

@@ -9,7 +9,7 @@ Biochemical rationale:
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from rdkit import Chem
@@ -110,6 +110,7 @@ class CascadedClearancePredictor:
         use_full_rdkit: bool = True,
         dmpnn_checkpoint: Optional[str] = "models/export/cluster_4_clearance/best_model.pt",
         ensemble_seeds: Optional[List[int]] = None,
+        loss_objectives: Optional[List[Tuple[str, float]]] = None,
         model_type: str = "auto",
     ):
         params = base_gbdt_params or {}
@@ -120,8 +121,9 @@ class CascadedClearancePredictor:
         self.use_full_rdkit = use_full_rdkit
         self.dmpnn_checkpoint = dmpnn_checkpoint if (dmpnn_checkpoint and os.path.exists(dmpnn_checkpoint)) else None
         self.ensemble_seeds = ensemble_seeds or ([42, 43, 44] if self.use_cb else [42])
+        self.loss_objectives = loss_objectives or [("MAE", 0.55), ("Huber:delta=12.0", 0.45)]
 
-        self.models = []
+        self.models: List[Tuple[Any, float]] = []
         self.is_fitted = False
         self._dmpnn_model = None
 
@@ -240,37 +242,46 @@ class CascadedClearancePredictor:
         mic_preds_train: np.ndarray,
         caco2_preds_train: Optional[np.ndarray] = None,
     ) -> "CascadedClearancePredictor":
-        """Fit the cascaded hepatocyte model with prior features and ensemble seeds."""
+        """Fit the cascaded hepatocyte model with prior features, loss objectives, and ensemble seeds."""
         X_train = self._build_feature_matrix(smiles_train, mic_preds_train, caco2_preds_train)
         valid_mask = ~np.isnan(y_train) & ~np.isnan(X_train).any(axis=1)
         X_clean, y_clean = X_train[valid_mask], y_train[valid_mask]
 
-        self.models = []
-        for seed in self.ensemble_seeds:
-            if self.use_cb and HAS_CATBOOST:
-                cb_params = {
-                    "iterations": self.base_params.get("iterations", 500),
-                    "learning_rate": self.base_params.get("learning_rate", 0.025),
-                    "depth": self.base_params.get("depth", 6),
-                    "l2_leaf_reg": self.base_params.get("l2_leaf_reg", 3.0),
-                    "loss_function": "RMSE",
-                    "verbose": 0,
-                    "random_seed": seed,
-                }
-                m = CatBoostRegressor(**cb_params)
-            else:
-                hist_params = {
-                    "max_iter": self.base_params.get("max_iter", 300),
-                    "learning_rate": self.base_params.get("learning_rate", 0.03),
-                    "max_leaf_nodes": self.base_params.get("max_leaf_nodes", 31),
-                    "min_samples_leaf": self.base_params.get("min_samples_leaf", 15),
-                    "l2_regularization": self.base_params.get("l2_regularization", 2.0),
-                    "random_state": seed,
-                }
-                m = HistGradientBoostingRegressor(**hist_params)
+        total_weight = sum(w for _, w in self.loss_objectives)
+        norm_objectives = [(loss, w / total_weight) for loss, w in self.loss_objectives]
 
-            m.fit(X_clean, y_clean)
-            self.models.append(m)
+        self.models = []
+        n_seeds = max(len(self.ensemble_seeds), 1)
+
+        for loss_fn, obj_w in norm_objectives:
+            per_model_weight = obj_w / n_seeds
+            for seed in self.ensemble_seeds:
+                if self.use_cb and HAS_CATBOOST:
+                    cb_params = {
+                        "iterations": self.base_params.get("iterations", 500),
+                        "learning_rate": self.base_params.get("learning_rate", 0.025),
+                        "depth": self.base_params.get("depth", 6),
+                        "l2_leaf_reg": self.base_params.get("l2_leaf_reg", 3.0),
+                        "loss_function": loss_fn,
+                        "verbose": 0,
+                        "random_seed": seed,
+                    }
+                    m = CatBoostRegressor(**cb_params)
+                else:
+                    hist_loss = "squared_error" if "RMSE" in loss_fn else "absolute_error"
+                    hist_params = {
+                        "loss": hist_loss,
+                        "max_iter": self.base_params.get("max_iter", 300),
+                        "learning_rate": self.base_params.get("learning_rate", 0.03),
+                        "max_leaf_nodes": self.base_params.get("max_leaf_nodes", 31),
+                        "min_samples_leaf": self.base_params.get("min_samples_leaf", 15),
+                        "l2_regularization": self.base_params.get("l2_regularization", 2.0),
+                        "random_state": seed,
+                    }
+                    m = HistGradientBoostingRegressor(**hist_params)
+
+                m.fit(X_clean, y_clean)
+                self.models.append((m, per_model_weight))
 
         self.is_fitted = True
         return self
@@ -286,8 +297,10 @@ class CascadedClearancePredictor:
             raise RuntimeError("Model is not fitted yet.")
 
         X = self._build_feature_matrix(smiles_list, mic_preds, caco2_preds)
-        preds = [m.predict(X) for m in self.models]
-        return np.mean(preds, axis=0)
+        pred_acc = np.zeros(len(X), dtype=np.float32)
+        for m, w in self.models:
+            pred_acc += w * m.predict(X)
+        return pred_acc
 
     def evaluate(
         self,

@@ -31,7 +31,10 @@ def main():
     )
     args = parser.parse_args()
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if "__file__" in globals() and __file__:
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    else:
+        repo_root = os.getcwd()
     if os.path.exists(repo_root):
         os.chdir(repo_root)
 

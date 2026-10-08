@@ -96,6 +96,7 @@ except Exception as _e:
 sys.argv = ['$($FilePath -replace '\\', '/')'] + $($argsStr)
 os.environ["FORCE_CLI_ARGS"] = "1"
 os.environ["TDC_REMOTE_EXECUTION"] = "1"
+__file__ = os.path.abspath('$($FilePath -replace '\\', '/')')
 "@
 
 

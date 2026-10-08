@@ -31,6 +31,10 @@ def main():
     )
     args = parser.parse_args()
 
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.exists(repo_root):
+        os.chdir(repo_root)
+
     os.makedirs(args.export_dir, exist_ok=True)
 
     logger.info("Loading Hepatocyte and Microsomal Clearance datasets...")
@@ -63,7 +67,7 @@ def main():
     predictor = CascadedClearancePredictor(
         base_gbdt_params={
             "iterations": 500,
-            "learning_rate": 0.025,
+            "learning_rate": 0.03,
             "depth": 6,
             "l2_leaf_reg": 3.0,
             "max_iter": 350,
@@ -73,7 +77,7 @@ def main():
         use_full_rdkit=True,
         dmpnn_checkpoint="models/export/cluster_4_clearance/best_model.pt",
         ensemble_seeds=[42, 43, 44],
-        loss_objectives=[("MAE", 0.55), ("Huber:delta=12.0", 0.45)],
+        loss_objectives=[("MAE", 0.50), ("Huber:delta=12.0", 0.30), ("RMSE", 0.20)],
         model_type=args.model_type,
     )
 

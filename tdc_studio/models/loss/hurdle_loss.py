@@ -104,28 +104,61 @@ class HurdleMultiTaskLoss(nn.Module):
         y_is_high = (y >= self.high_threshold).float()
         loss_gate = self.bce_loss(gate_logits, y_is_high)
 
-        # 2. High-binding Specialist Loss
-        high_mask = y >= self.high_subthreshold
-        if high_mask.sum() > 0:
-            loss_high = F.mse_loss(pred_high[high_mask], y[high_mask])
+        # 2. Specialist and Mixture Losses (Logit space if configured)
+        if self.is_logit_target and isinstance(preds, dict) and "z_high" in preds:
+            fb = torch.clamp(y / 100.0, min=1e-4, max=1.0 - 1e-4)
+            z = torch.log(fb / (1.0 - fb))
+
+            z_high = preds["z_high"].squeeze(-1)
+            z_low = preds["z_low"].squeeze(-1)
+            z_mixture = preds.get(
+                "z_mixture",
+                torch.sigmoid(gate_logits) * z_high + (1.0 - torch.sigmoid(gate_logits)) * z_low,
+            ).squeeze(-1)
+
+            if mask is not None:
+                z = z[m]
+                z_high = z_high[m]
+                z_low = z_low[m]
+                z_mixture = z_mixture[m]
+
+            high_mask = y >= self.high_subthreshold
+            if high_mask.sum() > 0:
+                loss_high = F.mse_loss(z_high[high_mask], z[high_mask])
+            else:
+                loss_high = F.mse_loss(z_high, z) * 0.1
+
+            sample_weights = torch.ones_like(y)
+            sample_weights[y < self.low_threshold] = self.low_sample_weight
+            sample_weights[(y >= self.low_threshold) & (y < self.high_threshold)] = 2.0
+            sample_weights[y >= self.high_threshold] = 0.5
+            loss_low = torch.mean(sample_weights * (z_low - z) ** 2)
+
+            loss_mixture = F.mse_loss(z_mixture, z)
+            loss_pct = F.l1_loss(pred_mixture, y) * 0.02
         else:
-            loss_high = F.mse_loss(pred_high, y) * 0.1
+            # Percentage space MSE
+            high_mask = y >= self.high_subthreshold
+            if high_mask.sum() > 0:
+                loss_high = F.mse_loss(pred_high[high_mask], y[high_mask])
+            else:
+                loss_high = F.mse_loss(pred_high, y) * 0.1
 
-        # 3. Low-binding Specialist Loss (weighted by low binding priority)
-        sample_weights = torch.ones_like(y)
-        sample_weights[y < self.low_threshold] = self.low_sample_weight
-        sample_weights[(y >= self.low_threshold) & (y < self.high_threshold)] = 2.0
-        sample_weights[y >= self.high_threshold] = 0.5
-        loss_low = torch.mean(sample_weights * (pred_low - y) ** 2)
+            sample_weights = torch.ones_like(y)
+            sample_weights[y < self.low_threshold] = self.low_sample_weight
+            sample_weights[(y >= self.low_threshold) & (y < self.high_threshold)] = 2.0
+            sample_weights[y >= self.high_threshold] = 0.5
+            loss_low = torch.mean(sample_weights * (pred_low - y) ** 2)
 
-        # 4. Mixture Loss
-        loss_mixture = F.mse_loss(pred_mixture, y)
+            loss_mixture = F.mse_loss(pred_mixture, y)
+            loss_pct = 0.0
 
         total_loss = (
             self.weight_gate * loss_gate
             + self.weight_high * loss_high
             + self.weight_low * loss_low
             + self.weight_mixture * loss_mixture
+            + loss_pct
         )
 
         metrics = {

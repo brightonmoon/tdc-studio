@@ -89,3 +89,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\colab_exec.ps1 -Session tdc-s
    - `weight_mixture`: 1.0
 3. **3D Boltzmann Conformer 보강 (선택 사항)**:
    - `tdc_studio/features/boltzmann_conformers.py`의 10-conformer 앙상블 3D steric 기술자(PBF, Spherocity, ROG 등)를 210-dim 기술자에 결합하여 구조적 엔트로피 효과 반영 가능.
+
+---
+
+## 6. 실험 경과 및 벤치마크 기록 (Experiment Log & Progression)
+
+| 실험 회차 | 핵심 변경 사항 | Test MAE (%) | Test $R^2$ | Pearson $r$ | Spearman $\rho$ | Gate AUC | High MAE ($\ge 85\%$) | Low MAE ($< 70\%$) |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Run 1** | 초기 아키텍처 (무제약 선형 헤드, 원시 % 손실) | $12.3145\%$ | $0.1107$ | $0.5617$ | $0.5543$ | $0.8067$ | $11.5438\%$ | $17.8798\%$ |
+| **Run 2** | 사전 바이어스 초기화 + $[0, 100]\%$ 바운딩 클램핑 + Gate 가중치 50.0 | $11.0343\%$ | $0.1389$ | $0.5830$ | $0.5739$ | $0.8271$ | $9.4112\%$ | $17.2326\%$ |
+| **Run 3** | **열역학적 로짓(Gibbs Logit) 공간 변환 + 로짓 혼합 + 시그모이드 역변환** | **$7.6548\%$** | **$0.3665$** | **$0.6828$** | **$0.7644$** | **$0.8794$** | **$5.1646\%$** | **$15.8602\%$** |
+
+> [!NOTE]
+> Run 3 적용 결과:
+> - **Test MAE**: $12.31\% \to 7.65\%$ ($-4.66\%$p 대폭 개선)
+> - **Spearman $\rho$**: $0.7644$ (역대 Tri-Hybrid 최고 기록 $0.7662$에 단일 모델로 근접)
+> - **Gate AUC**: $0.8794$ (목표 $0.85$ 초과 달성)
+> - **High-Binding MAE**: $5.16\%$ (초고결합군 $5\%$대 오차 달성)
+

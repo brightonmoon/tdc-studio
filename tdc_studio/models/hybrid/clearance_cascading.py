@@ -166,12 +166,14 @@ class CascadedClearancePredictor:
                 ],
             }
             dmp_model = DMPNNModel(config)
-            ckpt = torch.load(self.dmpnn_checkpoint, map_location="cpu")
+            ckpt = torch.load(chk_path, map_location="cpu")
             dmp_model.load_state_dict(ckpt, strict=False)
             dmp_model.eval()
             self._dmpnn_model = dmp_model
+            print(f"[Info] Successfully loaded DMPNN model from {chk_path}")
             return self._dmpnn_model
-        except Exception:
+        except Exception as e:
+            print(f"[Warning] Failed to load DMPNN model from {chk_path}: {e}")
             return None
 
     def _extract_dmpnn_features(self, smiles_list: List[str]) -> Optional[np.ndarray]:
@@ -224,7 +226,8 @@ class CascadedClearancePredictor:
                     preds_all.append(sub)
 
             return np.vstack(preds_all)
-        except Exception:
+        except Exception as e:
+            print(f"[Warning] Failed to extract DMPNN features: {e}")
             return None
 
     def _build_feature_matrix(

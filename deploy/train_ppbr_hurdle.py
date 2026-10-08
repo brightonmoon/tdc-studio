@@ -68,16 +68,72 @@ from tdc.single_pred import ADME
 from torch.utils.data import DataLoader, Dataset
 import yaml
 
+from concurrent.futures import ThreadPoolExecutor
 from tdc_studio.data.collate import molecule_collate_fn
 from tdc_studio.data.transforms import RDKit2DDescriptorsTransform, SmilesToGraphTransform
+from tdc_studio.features.boltzmann_conformers import (
+    FEATURE_NAMES as BOLTZMANN_FEATURE_NAMES,
+    compute_boltzmann_conformer_features,
+)
 from tdc_studio.models.graph.dmpnn_hurdle import DMPNNHurdleModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("train_ppbr_hurdle")
 
 
+def build_boltzmann_cache(
+    smiles_list: List[str],
+    cache_path: Path = Path("data/cache/boltzmann_3d_features.json"),
+    max_workers: int = 6,
+) -> Dict[str, List[float]]:
+    """Build or load precomputed Boltzmann 3D conformer ensemble features."""
+    cache: Dict[str, List[float]] = {}
+    if cache_path.exists():
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+            logger.info(
+                "Loaded %d cached Boltzmann 3D conformer records from %s",
+                len(cache),
+                cache_path.name,
+            )
+        except Exception as e:
+            logger.warning("Failed to load Boltzmann cache: %s. Recomputing.", e)
+
+    missing = [s for s in set(smiles_list) if s not in cache]
+    if missing:
+        logger.info(
+            "Extracting Boltzmann 3D features for %d compounds using %d threads...",
+            len(missing),
+            max_workers,
+        )
+        t0 = time.time()
+
+        def extract_one(s: str) -> Tuple[str, List[float]]:
+            try:
+                feat = compute_boltzmann_conformer_features(s, num_confs=5)
+                return s, [float(feat[k]) for k in BOLTZMANN_FEATURE_NAMES]
+            except Exception:
+                return s, [0.0] * len(BOLTZMANN_FEATURE_NAMES)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for s, vec in executor.map(extract_one, missing):
+                cache[s] = vec
+
+        logger.info("Completed Boltzmann 3D feature extraction in %.2f seconds", time.time() - t0)
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(cache, f)
+            logger.info("Saved updated Boltzmann cache to %s", cache_path.name)
+        except Exception as e:
+            logger.warning("Failed to save Boltzmann cache: %s", e)
+
+    return cache
+
+
 class PPBRDataset(Dataset):
-    """In-memory cached Dataset for PPBR molecular graphs and descriptors."""
+    """In-memory cached Dataset for PPBR molecular graphs, 2D and 3D Boltzmann descriptors."""
 
     def __init__(
         self,
@@ -86,9 +142,12 @@ class PPBRDataset(Dataset):
         graph_transform: SmilesToGraphTransform,
         desc_transform: RDKit2DDescriptorsTransform,
         desc_dim: int = 210,
+        boltzmann_cache: Optional[Dict[str, List[float]]] = None,
     ):
         self.samples = []
         valid_count = 0
+        b_dim = 8 if boltzmann_cache is not None else 0
+        base_desc_dim = desc_dim - b_dim
 
         for s, y in zip(smiles_list, targets):
             g = graph_transform(s)
@@ -97,7 +156,12 @@ class PPBRDataset(Dataset):
                 continue
 
             if d is None:
-                d = torch.zeros(desc_dim, dtype=torch.float32)
+                d = torch.zeros(base_desc_dim, dtype=torch.float32)
+
+            if boltzmann_cache is not None:
+                b_feats = boltzmann_cache.get(s, [0.0] * 8)
+                b_tensor = torch.tensor(b_feats, dtype=torch.float32)
+                d = torch.cat([d, b_tensor], dim=-1)
 
             self.samples.append(
                 {
@@ -254,6 +318,19 @@ def parse_args():
         help="Disable Weights & Biases logging",
     )
     parser.add_argument(
+        "--use-boltzmann-3d",
+        dest="use_boltzmann_3d",
+        action="store_true",
+        default=True,
+        help="Incorporate Boltzmann 3D steric ensemble descriptors",
+    )
+    parser.add_argument(
+        "--no-boltzmann-3d",
+        dest="use_boltzmann_3d",
+        action="store_false",
+        help="Disable Boltzmann 3D steric ensemble descriptors",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,
@@ -330,16 +407,28 @@ def main():
     logger.info("Dataset sizes -> Train: %d | Val: %d | Test: %d", len(train_df), len(val_df), len(test_df))
 
     # 5. Extract Molecular Representations & Build Datasets
-    logger.info("Initializing Graph and 210-dim RDKit Descriptors transforms...")
+    logger.info("Initializing Graph and RDKit Descriptors transforms...")
     graph_transform = SmilesToGraphTransform(extended=False)
     desc_transform = RDKit2DDescriptorsTransform(fill_na=0.0)
     sample_desc = desc_transform("CC")
-    desc_dim = (
+    base_desc_dim = (
         len(sample_desc)
         if sample_desc is not None
         else int(cfg.get("model", {}).get("descriptor_dim", 210))
     )
-    logger.info("Adaptive RDKit descriptor dimension detected: %d", desc_dim)
+
+    boltzmann_cache = None
+    if args.use_boltzmann_3d:
+        all_smiles = list(
+            set(train_df["Drug"].tolist() + val_df["Drug"].tolist() + test_df["Drug"].tolist())
+        )
+        boltzmann_cache = build_boltzmann_cache(all_smiles)
+        total_desc_dim = base_desc_dim + 8
+        logger.info("Integrated 8-dim Boltzmann 3D steric ensemble descriptors")
+    else:
+        total_desc_dim = base_desc_dim
+
+    logger.info("Adaptive Total Descriptor Dimension (2D + 3D Boltzmann): %d", total_desc_dim)
 
     t0 = time.time()
     logger.info("Building Training Dataset...")
@@ -348,7 +437,8 @@ def main():
         targets=train_df["Y"].tolist(),
         graph_transform=graph_transform,
         desc_transform=desc_transform,
-        desc_dim=desc_dim,
+        desc_dim=total_desc_dim,
+        boltzmann_cache=boltzmann_cache,
     )
 
     logger.info("Building Validation Dataset...")
@@ -357,7 +447,8 @@ def main():
         targets=val_df["Y"].tolist(),
         graph_transform=graph_transform,
         desc_transform=desc_transform,
-        desc_dim=desc_dim,
+        desc_dim=total_desc_dim,
+        boltzmann_cache=boltzmann_cache,
     )
 
     logger.info("Building Test Dataset...")
@@ -366,7 +457,8 @@ def main():
         targets=test_df["Y"].tolist(),
         graph_transform=graph_transform,
         desc_transform=desc_transform,
-        desc_dim=desc_dim,
+        desc_dim=total_desc_dim,
+        boltzmann_cache=boltzmann_cache,
     )
     logger.info("Feature extraction completed in %.2f seconds", time.time() - t0)
 
@@ -392,10 +484,14 @@ def main():
 
     # 6. Instantiate Model, Optimizer, and Scheduler
     model_cfg = dict(cfg.get("model", {}))
-    model_cfg["descriptor_dim"] = desc_dim
+    model_cfg["descriptor_dim"] = total_desc_dim
     model = DMPNNHurdleModel(model_cfg).to(device)
-    logger.info("Instantiated DMPNNHurdleModel: depth=%s, hidden_dim=%s, descriptor_dim=%s",
-                model_cfg.get("depth", 3), model_cfg.get("hidden_dim", 300), desc_dim)
+    logger.info(
+        "Instantiated DMPNNHurdleModel: depth=%s, hidden_dim=%s, descriptor_dim=%s",
+        model_cfg.get("depth", 3),
+        model_cfg.get("hidden_dim", 300),
+        total_desc_dim,
+    )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

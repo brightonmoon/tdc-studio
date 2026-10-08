@@ -26,6 +26,7 @@ class HurdleMultiTaskLoss(nn.Module):
         weight_high: float = 0.5,
         weight_low: float = 0.8,
         weight_mixture: float = 1.0,
+        weight_pct_mse: float = 15.0,
         low_sample_weight: float = 3.5,
         is_logit_target: bool = False,
     ):
@@ -37,6 +38,7 @@ class HurdleMultiTaskLoss(nn.Module):
         self.weight_high = weight_high
         self.weight_low = weight_low
         self.weight_mixture = weight_mixture
+        self.weight_pct_mse = weight_pct_mse
         self.low_sample_weight = low_sample_weight
         self.is_logit_target = is_logit_target
 
@@ -135,7 +137,8 @@ class HurdleMultiTaskLoss(nn.Module):
             loss_low = torch.mean(sample_weights * (z_low - z) ** 2)
 
             loss_mixture = F.mse_loss(z_mixture, z)
-            loss_pct = F.l1_loss(pred_mixture, y) * 0.02
+            loss_pct_mse = F.mse_loss(pred_mixture / 100.0, y / 100.0)
+            loss_pct = self.weight_pct_mse * loss_pct_mse + F.l1_loss(pred_mixture, y) * 0.01
         else:
             # Percentage space MSE
             high_mask = y >= self.high_subthreshold
@@ -167,6 +170,7 @@ class HurdleMultiTaskLoss(nn.Module):
             "loss_high": float(loss_high.item()),
             "loss_low": float(loss_low.item()),
             "loss_mixture": float(loss_mixture.item()),
+            "loss_pct": float(loss_pct.item() if isinstance(loss_pct, torch.Tensor) else loss_pct),
         }
 
         return total_loss, metrics

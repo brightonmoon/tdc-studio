@@ -16,6 +16,7 @@ PINNED_PACKAGES = {
     "PyTDC": "PyTDC==0.4.1",
     "rdkit": "rdkit>=2023.9.1",
     "scikit-learn": "scikit-learn>=1.3.0,<1.6.0",
+    "catboost": "catboost>=1.2.0",
     "lightgbm": "lightgbm>=4.0.0,<4.5.0",
     "wandb": "wandb>=0.16.0",
     "polite-http": "polite-http",

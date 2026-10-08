@@ -109,7 +109,8 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
             weight_high=config.get("weight_high", 0.5),
             weight_low=config.get("weight_low", 0.8),
             weight_mixture=config.get("weight_mixture", 1.0),
-            weight_pct_mse=config.get("weight_pct_mse", 15.0),
+            weight_pct_mse=config.get("weight_pct_mse", 20.0),
+            weight_pearson=config.get("weight_pearson", 1.0),
             low_sample_weight=config.get("low_sample_weight", 3.5),
             is_logit_target=self.is_logit_target,
         )

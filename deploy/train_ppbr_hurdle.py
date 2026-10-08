@@ -331,6 +331,13 @@ def parse_args():
         help="Disable Boltzmann 3D steric ensemble descriptors",
     )
     parser.add_argument(
+        "--scheduler",
+        type=str,
+        default=None,
+        choices=["cosine", "plateau"],
+        help="Learning rate scheduler ('cosine' or 'plateau')",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,
@@ -494,9 +501,21 @@ def main():
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=5, min_lr=min_lr
-    )
+    scheduler_type = (args.scheduler or cfg.get("scheduler", "cosine")).lower()
+    if scheduler_type == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max_epochs, eta_min=min_lr
+        )
+        logger.info(
+            "Configured CosineAnnealingLR scheduler with T_max=%d, min_lr=%.2e",
+            max_epochs,
+            min_lr,
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=5, min_lr=min_lr
+        )
+        logger.info("Configured ReduceLROnPlateau scheduler with patience=5, min_lr=%.2e", min_lr)
 
     # 7. Setup Experiment Tracking (W&B)
     wandb_run = None
@@ -545,6 +564,7 @@ def main():
         high_losses = []
         low_losses = []
         mix_losses = []
+        pearson_losses = []
 
         for batch in train_loader:
             batch = {k: v.to(device) if hasattr(v, "to") else v for k, v in batch.items()}
@@ -563,21 +583,26 @@ def main():
             high_losses.append(loss_metrics.get("loss_high", 0.0))
             low_losses.append(loss_metrics.get("loss_low", 0.0))
             mix_losses.append(loss_metrics.get("loss_mixture", 0.0))
+            pearson_losses.append(loss_metrics.get("loss_pearson", 0.0))
 
         avg_train_loss = total_loss / max(1, len(train_loader))
         avg_gate_loss = np.mean(gate_losses)
         avg_high_loss = np.mean(high_losses)
         avg_low_loss = np.mean(low_losses)
         avg_mix_loss = np.mean(mix_losses)
+        avg_pearson_loss = np.mean(pearson_losses)
 
         # Validation Step
         val_metrics, _ = evaluate(model, val_loader, device)
         val_mae = val_metrics["mae"]
-        scheduler.step(val_mae)
+        if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            scheduler.step(val_mae)
+        else:
+            scheduler.step()
         current_lr = optimizer.param_groups[0]["lr"]
 
         logger.info(
-            "Epoch %02d/%02d | TrLoss: %.4f (G:%.3f H:%.3f L:%.3f Mix:%.3f) | Val MAE: %.4f | Val R2: %.4f | Val Pr: %.4f | Gate AUC: %.4f | LR: %.2e",
+            "Epoch %02d/%02d | TrLoss: %.4f (G:%.3f H:%.3f L:%.3f Mix:%.3f Pr:%.3f) | Val MAE: %.4f | Val R2: %.4f | Val Pr: %.4f | Gate AUC: %.4f | LR: %.2e",
             epoch,
             max_epochs,
             avg_train_loss,
@@ -585,6 +610,7 @@ def main():
             avg_high_loss,
             avg_low_loss,
             avg_mix_loss,
+            avg_pearson_loss,
             val_mae,
             val_metrics["r2"],
             val_metrics["pearson_r"],
@@ -601,6 +627,7 @@ def main():
                     "train/loss_high": avg_high_loss,
                     "train/loss_low": avg_low_loss,
                     "train/loss_mixture": avg_mix_loss,
+                    "train/loss_pearson": avg_pearson_loss,
                     "val/mae": val_mae,
                     "val/rmse": val_metrics["rmse"],
                     "val/r2": val_metrics["r2"],

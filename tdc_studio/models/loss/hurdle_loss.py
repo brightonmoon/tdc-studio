@@ -7,6 +7,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def compute_pearson_loss(
+    preds: torch.Tensor, targets: torch.Tensor, eps: float = 1e-8
+) -> torch.Tensor:
+    """Compute differentiable Pearson correlation loss: 1.0 - Pearson_r(preds, targets)."""
+    if preds.numel() <= 1:
+        return torch.tensor(0.0, device=preds.device, requires_grad=True)
+    preds_c = preds - torch.mean(preds)
+    targets_c = targets - torch.mean(targets)
+    preds_var = torch.sum(preds_c ** 2)
+    targets_var = torch.sum(targets_c ** 2)
+    if preds_var < eps or targets_var < eps:
+        return torch.tensor(0.0, device=preds.device, requires_grad=True)
+    r = torch.sum(preds_c * targets_c) / (torch.sqrt(preds_var * targets_var) + eps)
+    r = torch.clamp(r, min=-1.0, max=1.0)
+    return 1.0 - r
+
+
 class HurdleMultiTaskLoss(nn.Module):
     """End-to-End Two-Stage Hurdle Multi-Task Loss.
 
@@ -15,6 +32,7 @@ class HurdleMultiTaskLoss(nn.Module):
     2. High-binding Specialist Loss: MSE on extreme high-binding compounds.
     3. Low/Mid-binding Specialist Loss: Weighted MSE heavily prioritizing rare low-binding (< 70%) compounds.
     4. End-to-End Mixture Loss: MSE of the gated mixture prediction p_gate * y_high + (1 - p_gate) * y_low.
+    5. Pearson Correlation Loss: Directly maximizes linear correlation with true targets.
     """
 
     def __init__(
@@ -26,7 +44,8 @@ class HurdleMultiTaskLoss(nn.Module):
         weight_high: float = 0.5,
         weight_low: float = 0.8,
         weight_mixture: float = 1.0,
-        weight_pct_mse: float = 15.0,
+        weight_pct_mse: float = 20.0,
+        weight_pearson: float = 1.0,
         low_sample_weight: float = 3.5,
         is_logit_target: bool = False,
     ):
@@ -39,6 +58,7 @@ class HurdleMultiTaskLoss(nn.Module):
         self.weight_low = weight_low
         self.weight_mixture = weight_mixture
         self.weight_pct_mse = weight_pct_mse
+        self.weight_pearson = weight_pearson
         self.low_sample_weight = low_sample_weight
         self.is_logit_target = is_logit_target
 
@@ -138,7 +158,12 @@ class HurdleMultiTaskLoss(nn.Module):
 
             loss_mixture = F.mse_loss(z_mixture, z)
             loss_pct_mse = F.mse_loss(pred_mixture / 100.0, y / 100.0)
-            loss_pct = self.weight_pct_mse * loss_pct_mse + F.l1_loss(pred_mixture, y) * 0.01
+            loss_pearson = compute_pearson_loss(pred_mixture, y)
+            loss_pct = (
+                self.weight_pct_mse * loss_pct_mse
+                + self.weight_pearson * loss_pearson
+                + F.l1_loss(pred_mixture, y) * 0.01
+            )
         else:
             # Percentage space MSE
             high_mask = y >= self.high_subthreshold
@@ -154,7 +179,9 @@ class HurdleMultiTaskLoss(nn.Module):
             loss_low = torch.mean(sample_weights * (pred_low - y) ** 2)
 
             loss_mixture = F.mse_loss(pred_mixture, y)
-            loss_pct = 0.0
+            loss_pct_mse = F.mse_loss(pred_mixture / 100.0, y / 100.0)
+            loss_pearson = compute_pearson_loss(pred_mixture, y)
+            loss_pct = self.weight_pct_mse * loss_pct_mse + self.weight_pearson * loss_pearson
 
         total_loss = (
             self.weight_gate * loss_gate
@@ -171,6 +198,9 @@ class HurdleMultiTaskLoss(nn.Module):
             "loss_low": float(loss_low.item()),
             "loss_mixture": float(loss_mixture.item()),
             "loss_pct": float(loss_pct.item() if isinstance(loss_pct, torch.Tensor) else loss_pct),
+            "loss_pearson": float(
+                loss_pearson.item() if isinstance(loss_pearson, torch.Tensor) else loss_pearson
+            ),
         }
 
         return total_loss, metrics

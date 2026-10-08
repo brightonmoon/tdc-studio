@@ -1,0 +1,45 @@
+# Standalone hERG Cardiotoxicity (Karim Benchmark) Training Configuration
+# Architecture: D-MPNN-Des (Directed Message Passing + 210 RDKit Descriptors)
+# Benchmark: TDC Tox - hERG_Karim (13,445 compounds)
+# Split: Strict Bemis-Murcko Scaffold Split (Zero Data Leakage)
+# Metric: ROC-AUC (Higher is better)
+
+data:
+  type: "tox_loader"
+  dataset_name: "herg_karim"
+  split_type: "scaffold"
+  batch_size: 64
+  seed: 42
+  metric_name: "roc_auc"
+  use_descriptors: true
+  params:
+    dataset_name: "herg_karim"
+    split_type: "scaffold"
+    seed: 42
+    task_type: "binary_classification"
+    metric_name: "roc_auc"
+    use_descriptors: true
+
+model:
+  type: "dmpnn"
+  in_dim: 14
+  edge_dim: 6
+  hidden_dim: 300
+  depth: 3
+  dropout: 0.15
+  use_descriptors: true
+  descriptor_dim: 210
+  task_type: "binary_classification"
+  loss_type: "bce"
+
+lr: 0.0005
+min_lr: 1.0e-6
+weight_decay: 1.0e-5
+max_epochs: 10
+early_stopping: 5
+eval_metric: "roc_auc"
+
+tracking:
+  project: "tdc-learning"
+  entity: "tdc-studio"
+  enabled: true

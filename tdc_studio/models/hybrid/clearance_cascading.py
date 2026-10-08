@@ -118,8 +118,7 @@ class CascadedClearancePredictor:
         self.model_type = "catboost" if self.use_cb else "histgbdt"
         self.base_params = params
         self.use_caco2_prior = use_caco2_prior
-        self.use_full_rdkit = use_full_rdkit
-        self.dmpnn_checkpoint = dmpnn_checkpoint if (dmpnn_checkpoint and os.path.exists(dmpnn_checkpoint)) else None
+        self.dmpnn_checkpoint = dmpnn_checkpoint
         self.ensemble_seeds = ensemble_seeds or ([42, 43, 44] if self.use_cb else [42])
         self.loss_objectives = loss_objectives or [("MAE", 0.55), ("Huber:delta=12.0", 0.45)]
 
@@ -130,7 +129,19 @@ class CascadedClearancePredictor:
     def _get_dmpnn_model(self):
         if self._dmpnn_model is not None:
             return self._dmpnn_model
-        if not self.dmpnn_checkpoint or not os.path.exists(self.dmpnn_checkpoint):
+        chk_path = self.dmpnn_checkpoint or "models/export/cluster_4_clearance/best_model.pt"
+        if not os.path.exists(chk_path):
+            candidates = [
+                os.path.abspath(chk_path),
+                os.path.join(os.getcwd(), chk_path),
+                os.path.join("/content/tdc-studio", chk_path),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    chk_path = c
+                    break
+        if not os.path.exists(chk_path):
+            print(f"[Warning] DMPNN checkpoint not found at: {chk_path}")
             return None
         try:
             import torch

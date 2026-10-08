@@ -42,7 +42,7 @@ import zipfile, os
 from pathlib import Path
 root = Path.cwd().resolve()
 zip_file = Path(r'$zipPath')
-targets = ['tdc_studio', 'configs', 'deploy', 'data', 'pyproject.toml', 'README.md']
+targets = ['tdc_studio', 'configs', 'deploy', 'data', 'scripts', 'pyproject.toml', 'README.md']
 with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
     for t in targets:
         tp = root / t
@@ -89,7 +89,7 @@ try:
         print("[Colab Auto-Setup] Unconfigured dependencies detected. Running scripts/install_deps.py...")
         subprocess.run([sys.executable, "scripts/install_deps.py"], check=False)
 except Exception as _e:
-    pass
+    print(f"[Colab Auto-Setup Warning] {_e}")
 
 sys.argv = ['$($FilePath -replace '\\', '/')'] + $($argsStr)
 os.environ["FORCE_CLI_ARGS"] = "1"

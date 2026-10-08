@@ -85,6 +85,19 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
             nn.Linear(hidden_dim, 1),
         )
 
+        self.is_logit_target = config.get("is_logit_target", True)
+
+        # Prior bias initialization reflecting PPBR distribution
+        with torch.no_grad():
+            if self.is_logit_target:
+                self.gate_head[-1].bias.fill_(0.95)
+                self.high_head[-1].bias.fill_(2.75)
+                self.low_head[-1].bias.fill_(0.20)
+            else:
+                self.gate_head[-1].bias.fill_(1.2)
+                self.high_head[-1].bias.fill_(92.0)
+                self.low_head[-1].bias.fill_(55.0)
+
         # 4. Hurdle Loss Function
         high_threshold = config.get("high_threshold", 90.0)
         low_threshold = config.get("low_threshold", 70.0)
@@ -96,7 +109,10 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
             weight_high=config.get("weight_high", 0.5),
             weight_low=config.get("weight_low", 0.8),
             weight_mixture=config.get("weight_mixture", 1.0),
+            weight_pct_mse=config.get("weight_pct_mse", 20.0),
+            weight_pearson=config.get("weight_pearson", 1.0),
             low_sample_weight=config.get("low_sample_weight", 3.5),
+            is_logit_target=self.is_logit_target,
         )
 
     def _extract_graph_features(self, batch: Dict[str, Any]) -> torch.Tensor:
@@ -179,19 +195,38 @@ class DMPNNHurdleModel(BaseTherapeuticsModel):
         gate_logits = self.gate_head(h)  # Shape: (B, 1)
         p_gate = torch.sigmoid(gate_logits)
 
-        pred_high = self.high_head(h)  # Shape: (B, 1)
-        pred_low = self.low_head(h)  # Shape: (B, 1)
+        if self.is_logit_target:
+            z_high = self.high_head(h)  # Shape: (B, 1)
+            z_low = self.low_head(h)    # Shape: (B, 1)
+            z_mixture = p_gate * z_high + (1.0 - p_gate) * z_low
 
-        # Smooth mixture prediction
-        pred_mixture = p_gate * pred_high + (1.0 - p_gate) * pred_low
+            # Convert to physical binding percentage (0 to 100%)
+            pred_high = 100.0 * torch.sigmoid(z_high)
+            pred_low = 100.0 * torch.sigmoid(z_low)
+            pred_mixture = 100.0 * torch.sigmoid(z_mixture)
 
-        out_dict = {
-            "gate_logits": gate_logits,
-            "gate_prob": p_gate,
-            "pred_high": pred_high,
-            "pred_low": pred_low,
-            "pred_mixture": pred_mixture,
-        }
+            out_dict = {
+                "gate_logits": gate_logits,
+                "gate_prob": p_gate,
+                "z_high": z_high,
+                "z_low": z_low,
+                "z_mixture": z_mixture,
+                "pred_high": pred_high,
+                "pred_low": pred_low,
+                "pred_mixture": pred_mixture,
+            }
+        else:
+            pred_high = torch.clamp(self.high_head(h), min=0.0, max=100.0)
+            pred_low = torch.clamp(self.low_head(h), min=0.0, max=100.0)
+            pred_mixture = p_gate * pred_high + (1.0 - p_gate) * pred_low
+
+            out_dict = {
+                "gate_logits": gate_logits,
+                "gate_prob": p_gate,
+                "pred_high": pred_high,
+                "pred_low": pred_low,
+                "pred_mixture": pred_mixture,
+            }
 
         if return_dict:
             return out_dict

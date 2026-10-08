@@ -153,3 +153,30 @@ def test_dmpnn_hurdle_compute_loss_e2e():
     assert model.gate_head[0].weight.grad is not None
     assert model.high_head[0].weight.grad is not None
     assert model.low_head[0].weight.grad is not None
+
+
+def test_ppbr_hurdle_compute_metrics():
+    """Verify compute_metrics calculates all hurdle stratification metrics."""
+    import numpy as np
+    from deploy.train_ppbr_hurdle import compute_metrics
+
+    y_true = np.array([30.0, 65.0, 75.0, 88.0, 92.0, 98.0])
+    y_pred = np.array([32.0, 60.0, 78.0, 85.0, 90.0, 96.0])
+    p_gate = np.array([0.05, 0.10, 0.20, 0.60, 0.85, 0.95])
+
+    metrics = compute_metrics(y_true, y_pred, p_gate)
+    assert "mae" in metrics
+    assert "rmse" in metrics
+    assert "r2" in metrics
+    assert "pearson_r" in metrics
+    assert "spearman_rho" in metrics
+    assert "gate_auc" in metrics
+    assert "gate_acc" in metrics
+    assert "high_binding_mae" in metrics
+    assert "low_binding_mae" in metrics
+    assert "mid_binding_mae" in metrics
+
+    assert metrics["mae"] > 0.0
+    assert metrics["r2"] > 0.8
+    assert metrics["gate_auc"] >= 0.9
+

@@ -8,6 +8,7 @@ data:
   batch_size: 32
   seed: 42
   metric_name: "mae"
+  augmented_data_path: "data/external/ppbr_augmented_train_combined.csv"
   params:
     dataset_name: "ppbr_az"
     split_type: "random"
@@ -25,20 +26,24 @@ model:
   dropout: 0.15
   use_descriptors: true
   descriptor_dim: 210
+  is_logit_target: true
   high_threshold: 90.0
   high_subthreshold: 85.0
   low_threshold: 70.0
-  weight_gate: 1.0
+  weight_gate: 2.0
   weight_high: 0.5
   weight_low: 0.8
   weight_mixture: 1.0
+  weight_pct_mse: 20.0
+  weight_pearson: 1.0
   low_sample_weight: 3.5
 
 lr: 0.0004
 min_lr: 1.0e-6
 weight_decay: 1.0e-5
-max_epochs: 60
-early_stopping: 20
+max_epochs: 80
+early_stopping: 25
+scheduler: "cosine"
 eval_metric: "mae"
 
 tracking:

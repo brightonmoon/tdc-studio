@@ -24,6 +24,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import sys
 import time
 from pathlib import Path
@@ -338,6 +339,19 @@ def parse_args():
         help="Learning rate scheduler ('cosine' or 'plateau')",
     )
     parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=[42, 100, 2024],
+        help="Random seeds for multi-seed ensemble training (default: 42 100 2024)",
+    )
+    parser.add_argument(
+        "--single-seed",
+        type=int,
+        default=None,
+        help="Train only a single seed instead of ensemble",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,
@@ -469,55 +483,23 @@ def main():
     )
     logger.info("Feature extraction completed in %.2f seconds", time.time() - t0)
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        collate_fn=molecule_collate_fn,
-        drop_last=(len(train_dataset) > batch_size),
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=molecule_collate_fn,
-    )
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=molecule_collate_fn,
-    )
+    # 6. Multi-Seed Training & Ensemble Loop
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 6. Instantiate Model, Optimizer, and Scheduler
+    if args.single_seed is not None:
+        seeds = [args.single_seed]
+    elif args.dry_run and not any("--seeds" in a for a in sys.argv):
+        seeds = [42]
+    else:
+        seeds = args.seeds or [42, 100, 2024]
+
+    logger.info("Target Training Seeds: %s", seeds)
+
     model_cfg = dict(cfg.get("model", {}))
     model_cfg["descriptor_dim"] = total_desc_dim
-    model = DMPNNHurdleModel(model_cfg).to(device)
-    logger.info(
-        "Instantiated DMPNNHurdleModel: depth=%s, hidden_dim=%s, descriptor_dim=%s",
-        model_cfg.get("depth", 3),
-        model_cfg.get("hidden_dim", 300),
-        total_desc_dim,
-    )
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler_type = (args.scheduler or cfg.get("scheduler", "cosine")).lower()
-    if scheduler_type == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=max_epochs, eta_min=min_lr
-        )
-        logger.info(
-            "Configured CosineAnnealingLR scheduler with T_max=%d, min_lr=%.2e",
-            max_epochs,
-            min_lr,
-        )
-    else:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=5, min_lr=min_lr
-        )
-        logger.info("Configured ReduceLROnPlateau scheduler with patience=5, min_lr=%.2e", min_lr)
-
-    # 7. Setup Experiment Tracking (W&B)
+    # Setup W&B if enabled
     wandb_run = None
     tracking_cfg = cfg.get("tracking", {})
     if tracking_cfg.get("enabled", False) and not args.no_wandb and not args.dry_run:
@@ -537,26 +519,215 @@ def main():
                     "train_size": len(train_dataset),
                     "val_size": len(val_dataset),
                     "test_size": len(test_dataset),
-                    "max_epochs": max_epochs,
-                    "batch_size": batch_size,
-                    "lr": learning_rate,
-                    "use_augmented": args.use_augmented,
+                    "seeds": seeds,
                 },
             )
-            logger.info("W&B experiment tracking initialized (project: %s, entity: %s)", project_name, entity_name)
         except Exception as e:
-            logger.warning("W&B initialization skipped: %s. Continuing with local logging.", e)
+            logger.warning("W&B initialization skipped: %s.", e)
 
-    # 8. Training Loop
-    out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    seed_results = {}
+    for s in seeds:
+        val_m, test_m, val_p, test_p = train_one_model(
+            seed=s,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            test_dataset=test_dataset,
+            model_cfg=model_cfg,
+            cfg=cfg,
+            args=args,
+            device=device,
+            out_dir=out_dir,
+            total_desc_dim=total_desc_dim,
+            wandb_run=wandb_run,
+        )
+        seed_results[s] = {
+            "val_metrics": val_m,
+            "test_metrics": test_m,
+            "val_preds": val_p,
+            "test_preds": test_p,
+        }
+
+    # 7. Evaluation & Ensemble Aggregation
+    if len(seeds) > 1:
+        ens_val_mixture = np.mean(
+            [seed_results[s]["val_preds"]["y_pred"] for s in seeds], axis=0
+        )
+        ens_val_gate = np.mean([seed_results[s]["val_preds"]["p_gate"] for s in seeds], axis=0)
+        val_y = seed_results[seeds[0]]["val_preds"]["y_true"]
+        ens_val_metrics = compute_metrics(val_y, ens_val_mixture, ens_val_gate)
+
+        ens_test_mixture = np.mean(
+            [seed_results[s]["test_preds"]["y_pred"] for s in seeds], axis=0
+        )
+        ens_test_gate = np.mean([seed_results[s]["test_preds"]["p_gate"] for s in seeds], axis=0)
+        test_y = seed_results[seeds[0]]["test_preds"]["y_true"]
+        ens_test_metrics = compute_metrics(test_y, ens_test_mixture, ens_test_gate)
+
+        print("\n" + "=" * 85)
+        print("🏆 MULTI-SEED ENSEMBLE BENCHMARK RESULTS (Official TDC Benchmark Split, N=323):")
+        print("=" * 85)
+        print(
+            f"{'Model / Seed':<16} | {'Test MAE':<10} | {'Test R^2':<10} | {'Pearson r':<10} | {'Spearman rho':<12} | {'Gate AUC':<10}"
+        )
+        print("-" * 85)
+        for s in seeds:
+            tm = seed_results[s]["test_metrics"]
+            print(
+                f"Seed {s:<11} | {tm['mae']:<10.4f} | {tm['r2']:<10.4f} | {tm['pearson_r']:<10.4f} | {tm['spearman_rho']:<12.4f} | {tm['gate_auc']:<10.4f}"
+            )
+        print("-" * 85)
+        print(
+            f"★ ENSEMBLE AVG  | {ens_test_metrics['mae']:<10.4f} | {ens_test_metrics['r2']:<10.4f} | {ens_test_metrics['pearson_r']:<10.4f} | {ens_test_metrics['spearman_rho']:<12.4f} | {ens_test_metrics['gate_auc']:<10.4f}"
+        )
+        print("=" * 85)
+        print(
+            f"   ★ High-Binding MAE  : {ens_test_metrics['high_binding_mae']:.4f} (Subset >= 85%)"
+        )
+        print(
+            f"   ★ Low-Binding MAE   : {ens_test_metrics['low_binding_mae']:.4f} (Subset < 70%)"
+        )
+        print(
+            f"   ★ Mid-Binding MAE   : {ens_test_metrics['mid_binding_mae']:.4f} (Subset 70-85%)"
+        )
+        print("=" * 85 + "\n")
+
+        final_val_metrics = ens_val_metrics
+        final_test_metrics = ens_test_metrics
+        model_arch_name = "DMPNNHurdleModel_MultiSeedEnsemble"
+    else:
+        single_seed = seeds[0]
+        final_val_metrics = seed_results[single_seed]["val_metrics"]
+        final_test_metrics = seed_results[single_seed]["test_metrics"]
+        model_arch_name = "DMPNNHurdleModel"
+
+        print("\n" + "=" * 80)
+        print("🏆 FINAL PPBR BENCHMARK TEST METRICS (Official TDC Benchmark Split, N=323):")
+        print(f"   ★ Test MAE          : {final_test_metrics['mae']:.4f} (Primary TDC Metric)")
+        print(f"   ★ Test R^2          : {final_test_metrics['r2']:.4f} (Target SOTA >= 0.600)")
+        print(f"   ★ Pearson r         : {final_test_metrics['pearson_r']:.4f} (Target >= 0.78)")
+        print(f"   ★ Spearman rho      : {final_test_metrics['spearman_rho']:.4f}")
+        print(
+            f"   ★ Gate AUC          : {final_test_metrics['gate_auc']:.4f} (Separating >=90% extreme binding)"
+        )
+        print(f"   ★ Gate Accuracy     : {final_test_metrics['gate_acc'] * 100:.2f}%")
+        print(
+            f"   ★ High-Binding MAE  : {final_test_metrics['high_binding_mae']:.4f} (Subset >= 85%)"
+        )
+        print(
+            f"   ★ Low-Binding MAE   : {final_test_metrics['low_binding_mae']:.4f} (Subset < 70%)"
+        )
+        print(
+            f"   ★ Mid-Binding MAE   : {final_test_metrics['mid_binding_mae']:.4f} (Subset 70-85%)"
+        )
+        print("=" * 80 + "\n")
+
+    # 8. Export Benchmark Summary and Artifacts
+    summary = {
+        "dataset": "PPBR_AZ",
+        "model_architecture": model_arch_name,
+        "training_samples": len(train_dataset),
+        "validation_samples": len(val_dataset),
+        "test_samples": len(test_dataset),
+        "augmented_training": args.use_augmented,
+        "seeds": seeds,
+        "individual_seed_metrics": {
+            str(s): seed_results[s]["test_metrics"] for s in seeds
+        },
+        "best_val_metrics": final_val_metrics,
+        "final_test_metrics": final_test_metrics,
+    }
+
+    summary_path = out_dir / "evaluation_summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    logger.info("Benchmark summary exported to: %s", summary_path.resolve())
+
+    if wandb_run:
+        wandb.summary.update({f"test/{k}": v for k, v in final_test_metrics.items()})
+        wandb.finish()
+
+
+def train_one_model(
+    seed: int,
+    train_dataset: Dataset,
+    val_dataset: Dataset,
+    test_dataset: Dataset,
+    model_cfg: Dict[str, Any],
+    cfg: Dict[str, Any],
+    args: argparse.Namespace,
+    device: torch.device,
+    out_dir: Path,
+    total_desc_dim: int,
+    wandb_run: Any = None,
+) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """Train a single DMPNNHurdleModel with a specific random seed and evaluate on val & test."""
+    logger.info("=" * 70)
+    logger.info(">>> Training Seed: %d", seed)
+    logger.info("=" * 70)
+
+    # Set seeds
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    batch_size = args.batch_size or int(cfg.get("data", {}).get("batch_size", 32))
+    max_epochs = args.epochs or int(cfg.get("max_epochs", 80))
+    learning_rate = args.lr or float(cfg.get("lr", 4.0e-4))
+    min_lr = float(cfg.get("min_lr", 1.0e-6))
+    weight_decay = float(cfg.get("weight_decay", 1.0e-5))
+    early_stopping_patience = int(cfg.get("early_stopping", 25))
+
+    if args.dry_run:
+        max_epochs = 1
+        batch_size = 16
+
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=molecule_collate_fn,
+        generator=g,
+        drop_last=(len(train_dataset) > batch_size),
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=molecule_collate_fn,
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=molecule_collate_fn,
+    )
+
+    seed_model_cfg = dict(model_cfg)
+    seed_model_cfg["descriptor_dim"] = total_desc_dim
+    model = DMPNNHurdleModel(seed_model_cfg).to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    scheduler_type = (args.scheduler or cfg.get("scheduler", "cosine")).lower()
+    if scheduler_type == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max_epochs, eta_min=min_lr
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=5, min_lr=min_lr
+        )
+
     best_val_mae = float("inf")
     best_metrics = {}
     patience_counter = 0
+    best_pt_path = out_dir / f"best_model_seed{seed}.pt"
 
-    logger.info("Starting training loop for %d epochs...", max_epochs)
     train_start_time = time.time()
-
     for epoch in range(1, max_epochs + 1):
         model.train()
         total_loss = 0.0
@@ -592,7 +763,6 @@ def main():
         avg_mix_loss = np.mean(mix_losses)
         avg_pearson_loss = np.mean(pearson_losses)
 
-        # Validation Step
         val_metrics, _ = evaluate(model, val_loader, device)
         val_mae = val_metrics["mae"]
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -601,24 +771,23 @@ def main():
             scheduler.step()
         current_lr = optimizer.param_groups[0]["lr"]
 
-        logger.info(
-            "Epoch %02d/%02d | TrLoss: %.4f (G:%.3f H:%.3f L:%.3f Mix:%.3f Pr:%.3f) | Val MAE: %.4f | Val R2: %.4f | Val Pr: %.4f | Gate AUC: %.4f | LR: %.2e",
-            epoch,
-            max_epochs,
-            avg_train_loss,
-            avg_gate_loss,
-            avg_high_loss,
-            avg_low_loss,
-            avg_mix_loss,
-            avg_pearson_loss,
-            val_mae,
-            val_metrics["r2"],
-            val_metrics["pearson_r"],
-            val_metrics["gate_auc"],
-            current_lr,
-        )
+        if epoch % 10 == 0 or epoch == max_epochs or args.dry_run:
+            logger.info(
+                "Seed %d | Ep %02d/%02d | TrLoss: %.4f (G:%.3f Mix:%.3f Pr:%.3f) | Val MAE: %.4f | Val R2: %.4f | Val Pr: %.4f | LR: %.2e",
+                seed,
+                epoch,
+                max_epochs,
+                avg_train_loss,
+                avg_gate_loss,
+                avg_mix_loss,
+                avg_pearson_loss,
+                val_mae,
+                val_metrics["r2"],
+                val_metrics["pearson_r"],
+                current_lr,
+            )
 
-        if wandb_run:
+        if wandb_run and seed == 42:
             wandb.log(
                 {
                     "epoch": epoch,
@@ -641,73 +810,56 @@ def main():
                 }
             )
 
-        # Save Best Checkpoint
         if val_mae < best_val_mae:
             best_val_mae = val_mae
             best_metrics = dict(val_metrics)
             patience_counter = 0
 
-            best_pt_path = out_dir / "best_model.pt"
             torch.save(
                 {
                     "epoch": epoch,
+                    "seed": seed,
                     "model_state_dict": model.state_dict(),
-                    "model_config": model_cfg,
+                    "model_config": seed_model_cfg,
                     "best_val_metrics": best_metrics,
                 },
                 best_pt_path,
             )
-            logger.info("  -> [BEST CHECKPOINT] Saved to %s (Val MAE: %.4f)", best_pt_path.name, val_mae)
+            if seed == 42:
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "seed": seed,
+                        "model_state_dict": model.state_dict(),
+                        "model_config": seed_model_cfg,
+                        "best_val_metrics": best_metrics,
+                    },
+                    out_dir / "best_model.pt",
+                )
         else:
             patience_counter += 1
             if patience_counter >= early_stopping_patience:
-                logger.info("Early stopping triggered after %d epochs without improvement.", early_stopping_patience)
+                logger.info("Early stopping triggered for Seed %d at epoch %d", seed, epoch)
                 break
 
-    logger.info("Training finished in %.2f seconds.", time.time() - train_start_time)
+    logger.info("Seed %d training finished in %.2f seconds.", seed, time.time() - train_start_time)
 
-    # 9. Final Benchmark Evaluation on Official Test Set
-    best_pt_path = out_dir / "best_model.pt"
-    if best_pt_path.exists():
-        logger.info("Loading best checkpoint for final evaluation...")
-        checkpoint = torch.load(best_pt_path, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
-
+    # Load best checkpoint and evaluate
+    checkpoint = torch.load(best_pt_path, map_location=device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    val_metrics, val_preds = evaluate(model, val_loader, device)
     test_metrics, test_preds = evaluate(model, test_loader, device)
 
-    print("\n" + "=" * 80)
-    print("🏆 FINAL PPBR BENCHMARK TEST METRICS (Official TDC Benchmark Split, N=323):")
-    print(f"   ★ Test MAE          : {test_metrics['mae']:.4f} (Primary TDC Metric)")
-    print(f"   ★ Test R^2          : {test_metrics['r2']:.4f} (Target SOTA >= 0.600)")
-    print(f"   ★ Pearson r         : {test_metrics['pearson_r']:.4f} (Target >= 0.78)")
-    print(f"   ★ Spearman rho      : {test_metrics['spearman_rho']:.4f}")
-    print(f"   ★ Gate AUC          : {test_metrics['gate_auc']:.4f} (Separating >=90% extreme binding)")
-    print(f"   ★ Gate Accuracy     : {test_metrics['gate_acc'] * 100:.2f}%")
-    print(f"   ★ High-Binding MAE  : {test_metrics['high_binding_mae']:.4f} (Subset >= 85%)")
-    print(f"   ★ Low-Binding MAE   : {test_metrics['low_binding_mae']:.4f} (Subset < 70%)")
-    print(f"   ★ Mid-Binding MAE   : {test_metrics['mid_binding_mae']:.4f} (Subset 70-85%)")
-    print("=" * 80 + "\n")
+    logger.info(
+        "Seed %d Final Test MAE: %.4f | R2: %.4f | Pearson: %.4f | Spearman: %.4f",
+        seed,
+        test_metrics["mae"],
+        test_metrics["r2"],
+        test_metrics["pearson_r"],
+        test_metrics["spearman_rho"],
+    )
 
-    # 10. Export Benchmark Summary and Artifacts
-    summary = {
-        "dataset": "PPBR_AZ",
-        "model_architecture": "DMPNNHurdleModel",
-        "training_samples": len(train_dataset),
-        "validation_samples": len(val_dataset),
-        "test_samples": len(test_dataset),
-        "augmented_training": args.use_augmented,
-        "best_val_metrics": best_metrics,
-        "final_test_metrics": test_metrics,
-    }
-
-    summary_path = out_dir / "evaluation_summary.json"
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-    logger.info("Benchmark summary exported to: %s", summary_path.resolve())
-
-    if wandb_run:
-        wandb.summary.update({f"test/{k}": v for k, v in test_metrics.items()})
-        wandb.finish()
+    return best_metrics, test_metrics, val_preds, test_preds
 
 
 if __name__ == "__main__":

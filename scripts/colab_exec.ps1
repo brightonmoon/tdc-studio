@@ -72,15 +72,33 @@ foreach ($arg in $ScriptArgs) {
 }
 $argsStr = "[" + ($argList -join ", ") + "]"
 
+# Retrieve local W&B API Key if present
+$wandbKey = $env:WANDB_API_KEY
+if (-not $wandbKey) {
+    try {
+        $wandbKey = (& $pyExe -c "import wandb; print(wandb.Api().api_key or '')" 2>$null).Trim()
+    } catch {
+        $wandbKey = ""
+    }
+}
+
 $header = @"
 import sys, os, zipfile
 workspace = os.path.abspath('/content/tdc-studio')
 if os.path.exists('/content/workspace.zip'):
-    with zipfile.ZipFile('/content/workspace.zip', 'r') as zf:
-        zf.extractall(workspace)
+    try:
+        with zipfile.ZipFile('/content/workspace.zip', 'r') as zf:
+            zf.extractall(workspace)
+    except Exception as _ze:
+        print(f"[Warning] Failed to extract workspace.zip: {_ze}")
 if workspace not in sys.path:
     sys.path.insert(0, workspace)
 os.chdir(workspace)
+
+# Cleanly purge stale in-memory module cache in persistent Colab IPython kernel
+for _m in list(sys.modules.keys()):
+    if _m == 'tdc_studio' or _m.startswith('tdc_studio.'):
+        del sys.modules[_m]
 
 # Idempotent dependency check for Colab VM
 try:
@@ -96,6 +114,8 @@ except Exception as _e:
 sys.argv = ['$($FilePath -replace '\\', '/')'] + $($argsStr)
 os.environ["FORCE_CLI_ARGS"] = "1"
 os.environ["TDC_REMOTE_EXECUTION"] = "1"
+if "$wandbKey":
+    os.environ["WANDB_API_KEY"] = "$wandbKey"
 __file__ = os.path.abspath('$($FilePath -replace '\\', '/')')
 "@
 

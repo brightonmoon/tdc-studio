@@ -464,6 +464,10 @@ class RDKit2DDescriptorsTransform:
                     vals.append(self.fill_na)
                 else:
                     vals.append(float(v))
+            if len(vals) > 210:
+                vals = vals[:210]
+            elif len(vals) < 210:
+                vals = vals + [self.fill_na] * (210 - len(vals))
             t = torch.tensor(vals, dtype=torch.float32)
             return torch.nan_to_num(t, nan=self.fill_na, posinf=100.0, neginf=-100.0)
         except Exception:

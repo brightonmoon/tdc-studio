@@ -296,6 +296,8 @@ class ToxDataModule(BaseTDCDataModule):
             synthetic_df=synthetic_df,
         )
         self.modality = modality.lower()
+        self.use_descriptors = kwargs.get("use_descriptors", False)
+        self.desc_transform = RDKit2DDescriptorsTransform() if self.use_descriptors else None
         self.graph_transform = SmilesToGraphTransform()
         self.smiles_tokenizer = SmilesTokenizer()
         self.fingerprint_transform = MorganFingerprintTransform()
@@ -337,10 +339,17 @@ class ToxDataModule(BaseTDCDataModule):
             s = str(row[smiles_col])
             lbl = float(row[label_col]) if label_col in row else 0.0
 
+            desc_vec = None
+            if self.desc_transform:
+                desc_vec = self.desc_transform(s)
+
             if self.modality == "graph":
                 g = self.graph_transform(s)
                 if g is not None:
-                    samples.append({"drug_graph": g, "label": lbl})
+                    sample = {"drug_graph": g, "label": lbl}
+                    if desc_vec is not None:
+                        sample["descriptors"] = desc_vec
+                    samples.append(sample)
             elif self.modality == "sequence":
                 seq = self.smiles_tokenizer(s)
                 samples.append({"smiles_seq": seq, "label": lbl})

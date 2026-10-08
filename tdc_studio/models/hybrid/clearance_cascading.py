@@ -210,7 +210,9 @@ class CascadedClearancePredictor:
                             if (v is None or np.isnan(v) or np.isinf(v))
                             else float(np.clip(v, -100.0, 100.0))
                             for v in desc_dict.values()
-                        ]
+                        ][:210]
+                        if len(desc_vals) < 210:
+                            desc_vals = desc_vals + [0.0] * (210 - len(desc_vals))
                     else:
                         desc_vals = [0.0] * 210
                     b_items.append({

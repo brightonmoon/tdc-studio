@@ -61,7 +61,11 @@ def sync_artifacts(
             or "ppbr" in run_name.lower()
         ):
             cluster = "cluster_2_distribution"
-        elif "toxicity" in run_name.lower() or "herg" in run_name.lower():
+        elif (
+            "toxicity" in run_name.lower()
+            or "herg" in run_name.lower()
+            or "ames" in run_name.lower()
+        ):
             cluster = "cluster_5_safety"
 
         if not cluster:

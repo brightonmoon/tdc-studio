@@ -10,4 +10,9 @@ if torch.cuda.is_available():
     print("Device Count:", torch.cuda.device_count())
 print("RDKit Version:", rdkit.__version__)
 print("PyTorch Version:", torch.__version__)
+try:
+    import tdc_studio
+    print("tdc_studio Path:", tdc_studio.__file__)
+except Exception as e:
+    print("tdc_studio import failed:", e)
 print("All check passed!")

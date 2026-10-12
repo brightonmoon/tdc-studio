@@ -42,10 +42,10 @@ flowchart LR
     Colab["☁️ <b>Cloud GPU Worker</b><br/>• Ephemeral VM (T4 / A100)<br/>• TDC Multi-Task & HPO<br/>• W&B 실시간 실험 추적"]
     Serving["🚀 <b>Production Serving</b><br/>• Docker (Python 3.11-slim)<br/>• FastAPI (/predict/pbpk, /dti)<br/>• 원클릭 IND Dossier (HTML)"]
 
-    Agent <-->|MCP Protocol (stdio/SSE)| MCP
+    Agent <-->|"MCP Protocol (stdio/SSE)"| MCP
     MCP <--> Local
-    Local -->|google-colab-cli| Colab
-    Colab -->|Model Sync| Serving
+    Local -->|"google-colab-cli"| Colab
+    Colab -->|"Model Sync"| Serving
     Serving <--> MCP
 ```
 

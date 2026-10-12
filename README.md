@@ -36,12 +36,16 @@
 
 ```mermaid
 flowchart LR
-    Agent["🤖 <b>AI Agent / LLM</b><br>• Claude / Antigravity<br>• Cursor / Copilot<br>• 자율 의사결정"]
-    <-->|MCP Protocol (stdio/SSE)| MCP["🔌 <b>TDC MCP Server</b><br>• 8대 Agentic Tools<br>• 25-ADMET / PBPK<br>• Retro* / Dossier"]
-    Local["💻 <b>Local Workstation</b><br>• Python 3.11 (uv)<br>• Ruff 린트 & 215 테스트<br>• CLI 1-Step 드라이런"]
-    -->|google-colab-cli| Colab["☁️ <b>Cloud GPU Worker</b><br>• Ephemeral VM (T4 / A100)<br>• TDC Multi-Task & HPO<br>• W&B 실시간 실험 추적"]
-    -->|Model Sync| Serving["🚀 <b>Production Serving</b><br>• Docker (Python 3.11-slim)<br>• FastAPI (/predict/pbpk, /dti)<br>• 원클릭 IND Dossier (HTML)"]
+    Agent["🤖 <b>AI Agent / LLM</b><br/>• Claude / Antigravity<br/>• Cursor / Copilot<br/>• 자율 의사결정"]
+    MCP["🔌 <b>TDC MCP Server</b><br/>• 8대 Agentic Tools<br/>• 25-ADMET / PBPK<br/>• Retro* / Dossier"]
+    Local["💻 <b>Local Workstation</b><br/>• Python 3.11 (uv)<br/>• Ruff 린트 & 215 테스트<br/>• CLI 1-Step 드라이런"]
+    Colab["☁️ <b>Cloud GPU Worker</b><br/>• Ephemeral VM (T4 / A100)<br/>• TDC Multi-Task & HPO<br/>• W&B 실시간 실험 추적"]
+    Serving["🚀 <b>Production Serving</b><br/>• Docker (Python 3.11-slim)<br/>• FastAPI (/predict/pbpk, /dti)<br/>• 원클릭 IND Dossier (HTML)"]
+
+    Agent <-->|MCP Protocol (stdio/SSE)| MCP
     MCP <--> Local
+    Local -->|google-colab-cli| Colab
+    Colab -->|Model Sync| Serving
     Serving <--> MCP
 ```
 
